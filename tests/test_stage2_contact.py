@@ -11,7 +11,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import unittest
 
 import test_headless
@@ -70,7 +69,6 @@ class StageTwoDiscoveryTests(unittest.TestCase):
         # The exact same code path renders human-readable routes without writing.
         import io
         import contextlib
-        from unittest.mock import patch
         scripts = ROOT / "code" / "personal-agent-os" / "scripts"
         sys.path.insert(0, str(scripts))
         import paos
@@ -97,7 +95,8 @@ class StageTwoDiscoveryTests(unittest.TestCase):
         source = self.f.root / "workflow" / "Workflows" / "intake.md"
         self.assertEqual(found["relative_path"], "Workflows/intake.md")
         self.assertEqual(found["source_locator"], str(source).replace("\\", "/"))
-        self.assertEqual(Path(found["source_locator"]).read_bytes(), source.read_bytes())
+        self.assertEqual(Path(found["source_path"]), source)
+        self.assertEqual(Path(found["source_path"]).read_bytes(), source.read_bytes())
         self.assertEqual(found["source_sha256"], hashlib.sha256(source.read_bytes()).hexdigest())
 
     def test_cli_help_has_contact_routes_and_library_source_semantics(self):

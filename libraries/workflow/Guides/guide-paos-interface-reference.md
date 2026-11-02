@@ -46,7 +46,7 @@ TODO 写入走 `attention todo-update/todo-write`，Rooter 使用对应 `rooter-
 ## Library 资源检索
 
 `library search <query> [--kind workflow|skill|all]` 复用本地检索器，读取登记库，
-不访问 Core。结果增加当前登记库组合出的 `source_locator`，`relative_path` 与原有内容仍保留；命中后实读原件。
+不访问 Core。结果增加 `source_path`（当前执行环境可读）与 `source_locator`（登记库稳定定位），保留原 `relative_path` 与 hash；命中后实读原件。
 `library catalog` 重建派生索引，保留原始使用事件；`library skill-use` 记录使用。
 
 ## Tool 目录（只读）

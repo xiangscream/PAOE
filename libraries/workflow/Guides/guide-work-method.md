@@ -40,7 +40,7 @@ version: 16
 | 本项目已经解决的类似问题 | `paos project experience <本人项目ID>` | 回到经验原件及其适用范围；没有经验不造空记录 |
 | 库的真实位置 | `paos library roots show` | 使用登记的 Workflow/Skill/Tool 路径，不猜相邻目录 |
 
-关键词优先描述要解决的问题，例如“工程变更”“独立复核”“规格写作”“文档表达”。已知资源 ID 时可直接检索 `spec-writing`、`clean-writing` 等。搜索结果可直接使用 `source_locator` 打开权威源文件；`relative_path` 仍相对该项 `library_kind` 对应的登记库根，可通过 `library roots show` 交叉核对。Windows/WSL 路径按当前安装环境转换，不相对项目或当前 shell 目录猜测。Catalog/搜索结果是派生导航；采用方法必须读源文件，不能凭名称或摘要推断方法正文。
+关键词优先描述要解决的问题，例如“工程变更”“独立复核”“规格写作”“文档表达”。已知资源 ID 时可直接检索 `spec-writing`、`clean-writing` 等。搜索结果的 `source_path` 是当前 CLI 环境可读取的权威原件路径（Windows/WSL 已分别按实际运行环境转换）；`source_locator` 是配置中保留的宿主稳定定位，`relative_path` 仍相对该项 `library_kind` 对应的登记库根。可通过 `library roots show` 交叉核对，不相对项目或当前 shell 目录猜测。Catalog/搜索结果是派生导航；采用方法必须读源文件，不能凭名称或摘要推断方法正文。
 
 Workflow、Skill 与 Tool 可以分别登记在不同目录。ENTRY 中的目录链接和本机 Library roots 是定位依据；本指南不使用 `../../skill` 等相邻目录假设，也不把共享正文复制进 Project。搜索无结果、库未登记和源文件不可读是不同情况：前者可换贴近任务的关键词，后两者沿 [安装入口](ops-entry.md)处理。
 
