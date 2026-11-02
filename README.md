@@ -51,7 +51,7 @@ PAOE 把这些问题拆成几件可验证的事：**留信（Mail）→ 登记�
 **软约束 · 工位与协作**
 每个长期 Agent 有一个固定工位（`Workstations/<agent>/`）：
 `ENTRY.md`（身份入口）、`TODO.md`（当前责任）、`mailbox/`（持久消息）、`notices/`（待读与处理记录）。
-**这些是 Markdown，你可以直接打开改**，不需要经过 PAOE 的工具。
+这些是 Markdown，可以直接阅读；普通项目正文可用 Obsidian / 文件工具维护，TODO 的结构化区域以及 Mail、Notice 等状态原件应沿各自写入合同更新。
 
 **Runtime 可换**
 Agent 的思考与执行交给 Codex / OpenCode 等 Harness；PAOE 只保存能活过它们的状态。
