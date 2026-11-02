@@ -196,109 +196,87 @@ def render_fixed_entry(
     skill_index_ref: str = "",
     tool_index_ref: str = "",
     staff_number: str = "",
+    installation_file: str = "",
+    library_roots_config: str = "",
+    source_root: str = "",
 ) -> str:
-    """Render the stable copy-paste entry for one long-lived Project Agent."""
-    project_id = _single_line(project.get("id"))
-    project_name = _single_line(project.get("name"))
-    agent_id = _single_line(session.get("id"))
-    identity_id = _single_line(session.get("identity_id"))
-    workflow_root_ref = _single_line(workflow_library)
-    skill_root_ref = _single_line(skill_library)
-    workflow_ref = (
-        _single_line(workflow_index_ref)
-        or (str(Path(workflow_root_ref) / "CATALOG.md") if workflow_root_ref else "")
-        or "（未登记；由 PAOS Library roots 提供）"
-    )
-    skill_ref = (
-        _single_line(skill_index_ref)
-        or (str(Path(skill_root_ref) / "CATALOG.md") if skill_root_ref else "")
-        or "（未登记；由 PAOS Library roots 提供）"
-    )
-    guide_ref_default = (
-        str(Path(workflow_root_ref) / "Guides" / "guide-work-method.md")
-        if workflow_root_ref
-        else ""
-    )
-    ops_ref_default = (
-        str(Path(workflow_root_ref) / "Guides" / "ops-entry.md")
-        if workflow_root_ref
-        else ""
-    )
-    guide_locator = _library_locator_label(
-        guide_ref or guide_ref_default,
-        "（未登记；由 PAOS Library roots 提供）",
-    )
-    ops_locator = _library_locator_label(
-        ops_ref or ops_ref_default,
-        "（未登记；由 PAOS Library roots 提供）",
-    )
-    tool_locator = _library_locator_label(
-        tool_index_ref,
-        "（未登记；由共享 Tool Index 提供）",
-    )
-    body_ref = _registered_body_ref(workflow_root_ref)
-    body_label = (
-        _library_locator_label(body_ref, "（未登记；由 PAOS Library roots 提供）")
-        if body_ref
-        else "（未登记；由 PAOS Library roots 提供）"
-    )
-    # 规则 locator：工位 AGENTS 与 Project AGENTS 分别暴露；两者实际指向同一文件时共用；
-    # 缺失如实标注（不伪称已生成，也不替现有员工写规则）。
-    project_root = workstation_path.parent.parent
-    workstation_rules = project_root / "Workstations" / agent_id / "AGENTS.md"
-    project_rules = project_root / "AGENTS.md"
-    ws_exists = workstation_rules.exists()
-    pr_exists = project_rules.exists()
-    if ws_exists and pr_exists and workstation_rules.resolve() == project_rules.resolve():
-        rules_lines = [f"- 本人/项目规则：{workstation_rules}"]
-    else:
-        ws_label = str(workstation_rules) if ws_exists else f"{workstation_rules}（未登记）"
-        pr_label = str(project_rules) if pr_exists else f"{project_rules}（未登记）"
-        rules_lines = [
-            f"- 本人规则（工位）：{ws_label}",
-            f"- 项目规则：{pr_label}",
-        ]
-    restore_body_ref = (
-        str(Path(workflow_root_ref) / "Workflows" / "wf-agent-work-cycle.md")
-        + "#恢复"
-        if workflow_root_ref
-        else "（未登记；由 PAOS Library roots 提供）"
-    )
+    """Render identity and real locators; shared guides own work behavior."""
+    import shlex
+    import sys
 
-    return "\n".join(
-        [
-            f"# Agent Workstation — {agent_id}"
-            + (f" · 员工号 {staff_number}" if staff_number else ""),
-            "",
-            "## 身份",
-            f"- Project：{project_id} · {project_name}",
-            f"- Agent：{agent_id}" + (f"（员工号 {staff_number}）" if staff_number else ""),
-            f"- Identity：{identity_id or '（未登记）'}",
-            "- 本目录是该 Agent 在本 Project 中的固定工位；长期存在，不依赖 Work/Session 存续。",
-            "",
-            "## 固定入口",
-            f"- 工位：{workstation_path}",
-            f"- TODO：{workstation_path / 'TODO.md'}",
-            f"- Notice：{workstation_path / 'notices'}",
-            f"- Mailbox：{workstation_path / 'mailbox'}",
-            *rules_lines,
-            f"- 恢复正文：{restore_body_ref}",
-            "- 恢复方式：从上方共享恢复正文开始（本页只给稳定入口，不复述步骤）。",
-            f"- GUIDE：{guide_locator}",
-            f"- OPS：{ops_locator}",
-            f"- Workflow 唯一现行正文 = {body_label}（版本以该文件实际正文为准，本页不手抄）",
-            f"- Workflow Index：{workflow_ref}",
-            f"- Skill Index：{skill_ref}",
-            f"- Tool Index：{tool_locator}",
-            "",
-            "## 工作约定",
-            "- TODO.md 是本工位当前执行清单与简短状态的可读事实源；完成事项后补充完成方式和结果。",
-            "- 正式成果直接写入 Project Vault 的 Works/ 或明确的项目文件位置，不把工位变成第二个项目库。",
-            "- PAOS 继续负责身份、正式责任、验收和运行治理；ENTRY.md 不授予权限，也不承载当前授权事实。",
-            "- Runtime 或唤醒器状态异常时保留工位文件，恢复后从同一工位继续。",
-            "",
-        ]
-    )
+    project_id = _single_line(project.get("id"))
+    agent_id = _single_line(session.get("id"))
+    project_root = workstation_path.parent.parent
+    workflow_root = str(workflow_library).strip()
+    skill_root = str(skill_library).strip()
+
+    def absolute_locator(raw: str) -> str:
+        """Freeze a caller-relative locator in the initialization directory."""
+        value = str(raw).strip()
+        return str(Path(posix_windows_drive_locator(value)).expanduser().resolve()) if value else ""
+
+    installed_path = absolute_locator(installation_file)
+    library_config_path = absolute_locator(library_roots_config)
+
+    def under(root: str, *parts: str) -> str:
+        return str(Path(root).joinpath(*parts)) if root else ""
+
+    def link(label: str, value: str, fragment: str = "") -> str:
+        locator = str(value).strip()
+        if not locator:
+            return "（未登记）"
+        readable, problem = _readable_locator(locator)
+        # Angle destinations preserve spaces; keep the actual locator
+        # visible rather than replacing it with another path index.
+        destination = locator.replace("\\", "/") + fragment
+        return f"[{label}](<{destination}>)" + ("" if readable else problem)
+
+    cycle = under(workflow_root, "Workflows", "wf-agent-work-cycle.md")
+    guide = guide_ref or under(workflow_root, "Guides", "guide-work-method.md")
+    ops = ops_ref or under(workflow_root, "Guides", "ops-entry.md")
+    workflow_index = workflow_index_ref or under(workflow_root, "CATALOG.md")
+    skill_index = skill_index_ref or under(skill_root, "CATALOG.md")
+    lines = [
+        f"# Agent Workstation — {agent_id}" + (f" · 员工号 {staff_number}" if staff_number else ""),
+        "", "## 身份", "",
+        f"- Project：{project_id}",
+        f"- Agent：{agent_id}",
+        f"- 工位：{workstation_path}",
+        "", "## 当前工作与项目", "",
+        "- 当前行动：[TODO](TODO.md)",
+        f"- 项目入口：{link('INDEX', str(project_root / 'INDEX.md'))}",
+        f"- 本人规则：{link('AGENTS', str(workstation_path / 'AGENTS.md'))}",
+        f"- 项目规则：{link('Project AGENTS', str(project_root / 'AGENTS.md'))}",
+        f"- 同事与职责：{link('TEAM', str(project_root / 'TEAM.md'))}",
+        "- 持久输入：mailbox/、notices/", "",
+        "## 安装与共享入口", "",
+        f"- 安装描述：{installed_path or '（未登记）'}",
+        f"- 方法库配置：{library_config_path or '（未登记）'}",
+    ]
+    if installed_path and source_root:
+        cli = Path(posix_windows_drive_locator(str(source_root))) / "scripts" / "paos.py"
+        argv = [sys.executable, "-X", "utf8", str(cli), "--installation-file", installed_path]
+        if library_config_path:
+            argv.extend(["--library-roots-config", library_config_path])
+        if os.name == "nt":
+            command = "& " + " ".join("'" + value.replace("'", "''") + "'" for value in argv)
+            language = "powershell"
+        else:
+            command, language = shlex.join(argv), "sh"
+        lines += ["- CLI：" + ("" if cli.is_file() else "（已登记但当前文件不可读）"),
+                  "", f"```{language}", command, "```", ""]
+    else:
+        lines += ["- CLI：（未登记；从当前安装取得 Source 与 installation-file，不猜路径）", ""]
+    lines += [
+        f"- 通用工作正文：{link('Agent 工作循环', cycle)}",
+        f"- 恢复入口：{link('恢复', cycle, '#恢复')}",
+        f"- 按任务找方法：{link('GUIDE', guide)}",
+        f"- 按目的找操作：{link('OPS', ops)}",
+        f"- Workflow 目录：{link('Catalog', workflow_index)}",
+        f"- Skill 目录：{link('Catalog', skill_index)}",
+        f"- Tool 目录：{link('Tool Index', tool_index_ref)}", "",
+    ]
+    return "\n".join(lines)
 
 
 def render_initial_todo(
@@ -329,10 +307,7 @@ def render_initial_todo(
         or work_title
         or "核对当前责任与输入，维护 Current 后继续。"
     )
-    next_action = (
-        "读取 ENTRY / GUIDE / OPS，运行 orient 与 inbox 核对当前责任和输入，"
-        f"然后开始执行：{goal}"
-    )
+    next_action = f"读取 ENTRY 的恢复入口，确认原输入后推进：{goal}"
     stage = _single_line(session.get("status")) or "not_started"
     input_version = (
         f"project-revision:{project.get('revision')}"
@@ -1142,6 +1117,9 @@ def ensure_fixed_workstation(
     skill_index_ref: str = "",
     tool_index_ref: str = "",
     staff_number: str = "",
+    installation_file: str = "",
+    library_roots_config: str = "",
+    source_root: str = "",
 ) -> dict[str, Any]:
     """Create or repair one stable Project-local Agent Workstation.
 
@@ -1172,6 +1150,9 @@ def ensure_fixed_workstation(
         skill_index_ref=skill_index_ref,
         tool_index_ref=tool_index_ref,
         staff_number=staff_number,
+        installation_file=installation_file,
+        library_roots_config=library_roots_config,
+        source_root=source_root,
     )
     todo_text = render_initial_todo(
         project=project,
