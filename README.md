@@ -1,11 +1,11 @@
-# PAOS
+# PAOE
 
 > **给 Agent 一份不会随对话消失的工作。**
 
 大多数多 Agent 框架关心的是"**让几个 Agent 协作把活干完**"。
-PAOS 关心的是另一件事：**对话关了、模型换了、电脑重启了，那份工作还在不在。**
+PAOE 关心的是另一件事：**对话关了、模型换了、电脑重启了，那份工作还在不在。**
 
-PAOS（Personal Agent OS）是一套运行在自己电脑上的 **CLI 与文件约定**：
+PAOE（Personal Agent Operating Environment）是一套运行在自己电脑上的 **CLI 与文件约定**：
 它把跨会话的工作事实——项目、工位、当前责任、消息、决策、证据——保存成 JSON 和 Markdown，
 让 Agent 可以被替换、暂停、接力、唤醒，而**工作本身一直连续**。
 
@@ -20,7 +20,17 @@ PAOS（Personal Agent OS）是一套运行在自己电脑上的 **CLI 与文件�
 | 部署形态 | 给开发者用的库或平台 | **本机单用户**，Python 标准库，无重型依赖 |
 | 前端 | 需要专门的服务与界面 | **一张画板**（节点 + 连线），直接反映工位与联系表 |
 
-一句话：**别的框架让 Agent 更像一个团队，PAOS 让工作更像一份资产。**
+一句话：**别的框架让 Agent 更像一个团队，PAOE 让工作更像一份资产。**
+
+## 命名与兼容边界
+
+产品名称统一为 **PAOE**。为避免无意义迁移，现有命令入口仍使用 `paos.py`，配置环境变量仍为 `PAOS_*`，数据 schema namespace 仍为 `paos-*`，仓库名仍为 `PAOS-portable`。这些是兼容性技术标识，不代表产品仍以 PAOS 为名称；本轮不改 CLI 命令、持久数据格式或目录路径。
+
+## 学习入口
+
+- [学习基线与路线](LEARNING-BASELINE.md)
+- [当前系统架构](ARCHITECTURE.md)
+- [当前代码地图](code/personal-agent-os/docs/CODE-MAP.md)
 
 ## 为什么这件事值得做
 
@@ -30,7 +40,7 @@ PAOS（Personal Agent OS）是一套运行在自己电脑上的 **CLI 与文件�
 - 换了个 Runtime，之前的任务上下文、责任边界全没了。
 - 消息"发出去了"，但没人真正消费——你却以为已经交接完成。
 
-PAOS 把这些问题拆成几件可验证的事：**留信（Mail）→ 登记（Notice）→ 唤醒（Wake）→ 消费（Handle）→ 归档**。
+PAOE 把这些问题拆成几件可验证的事：**留信（Mail）→ 登记（Notice）→ 唤醒（Wake）→ 消费（Handle）→ 归档**。
 每一步独立成立，**"发出去了"永远不等于"做完了"**。
 
 ## 核心概念
@@ -53,7 +63,7 @@ Agent 的思考与执行交给 Codex / OpenCode 等 Harness；PAOS 只保存能�
 
 **CAT 圆桌**
 Agent 之间（以及人和 Agent）围绕主题的临时讨论空间。
-讨论是自由的，但只有显式登记的结论才进入项目正式事实——**CAT 可以自由，PAOS 必须清楚。**
+讨论是自由的，但只有显式登记的结论才进入项目正式事实——**CAT 可以自由，PAOE 必须清楚。**
 
 ## 画板前端
 
@@ -65,7 +75,7 @@ Agent 之间（以及人和 Agent）围绕主题的临时讨论空间。
 - 点进工位看 TODO 全文、邮件、成果；点进 CAT 房间看完整对话、发言。
 - **项目口径**直接展示项目库的 `INDEX.md`（唯一映射指南）。
 
-![PAOS 画板](front/board-polished.png)
+![PAOE 画板](front/board-polished.png)
 
 上图为 WorkBuddy 原型。当前接入版读取 Portable 的登记和工位原件；界面与 CAT 的现场操作仍需在目标电脑验收。
 
@@ -133,9 +143,9 @@ python portable.py serve
 
 ```
 硬侧（代码，可重建）
-  PAOS CLI + 本地文件读写模块 · 可选独立 CAT
+  PAOE CLI + 本地文件读写模块 · 可选独立 CAT
 软侧（Markdown，人与 Agent 共改）
-  PAOS 库：workflow / skill / tool 方法资产
+  PAOE 方法库：workflow / skill / tool 方法资产
   项目库：工位 + INDEX + TEAM + 材料与成果
 运行状态（机器读写）
   data/（项目定位登记） + config/local/（本机安装配置）
@@ -145,13 +155,13 @@ python portable.py serve
 
 ## 它站在哪些项目的肩膀上
 
-PAOS 借鉴但不复制：
+PAOE 借鉴但不复制：
 
 - **AutoGen / CrewAI** 的多 Agent 消息协作 → CAT 圆桌，但 PAOS 把"讨论"与"正式事实"分开。
 - **LangGraph** 的状态思想 → 但 PAOS 更轻，不强制图结构，用文件合同代替编排。
 - **MetaGPT** 的角色 SOP → workflow 库，但 PAOS 是"软约束"（方法与范例），不是强制流程。
 
-最大的不同仍是：**那些框架优化"怎么让 Agent 干活"，PAOS 在意"工作本身能不能持续、可迁移、被人看懂"。**
+最大的不同仍是：**那些框架优化"怎么让 Agent 干活"，PAOE 在意"工作本身能不能持续、可迁移、被人看懂"。**
 
 ## 适合谁
 
@@ -161,7 +171,7 @@ PAOS 借鉴但不复制：
 
 ## 当前状态
 
-PAOS-portable 是从一个真实使用中的 PAOS 系统**抽离、收敛出的可迁移单元**：
+本仓库 PAOS-portable 是 PAOE 的**可迁移代码与随包方法资产**：
 代码与业务资料分离、数据根从代码里抽出、历史依赖与可重建物剔除。
 画板是可选的 Python 标准库后端与原生 JS；工位与库为 Markdown / JSON。
 正常文件接续不要求旧 Core、Work/Session 状态机、Dashboard 或画板在线。

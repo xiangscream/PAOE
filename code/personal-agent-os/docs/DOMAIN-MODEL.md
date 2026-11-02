@@ -1,29 +1,32 @@
-# Domain model — Workless 现行语义
+# PAOE 当前领域模型
 
-> 现行口径（2026-10 Workless 收敛后）：Project 文件与 Git 保存成果；长期固定 Home 承接责任；Current 由本人维护；输入经 durable Mail/Notice；原生 runtime 是唯一推理者；**无 Work/无 Cycle/无 ACK 前置**。旧三态 Work 口径是历史设计稿，仅解释 `VERSION_HISTORY.md` 与已归档材料；不在 README/操作指南里充作现行语义。
+> 本文描述 PAOS-portable / PAOE 当前实现，不沿用早期 Project Store、Work、Cycle 或 Session 管理模型。
 
-## 对象
+| 对象 | 含义 | 权威位置 |
+|---|---|---|
+| Installation | 当前机器的源码、数据、库与可选 Rooter 定位 | installation.json |
+| Project Registry | Project Vault 根目录、Home 名册与 Coordinator 定位 | data_root/project-registry/projects/<id>.json |
+| Project Vault | 项目业务事实、口径、材料、决策与成果 | Obsidian 项目目录 |
+| Project Home | 一个长期 Agent 的身份与责任 | Workstations/<home-id>/ |
+| Rooter Home | 安装级维护 Agent，不属于 Project | installation descriptor 的 rooter_home |
+| TODO | Home 当前责任 | Home/TODO.md，paos-todo/v4 |
+| Mail | 发给 Home 的持久消息原件 | Home/mailbox/<message-id>.md |
+| Notice | 输入到达与处理事实 | Home/notices/ |
+| Workflow / Skill / Tool | 可复用工作方法与工具说明 | 已登记的共享 Library |
+| Runtime Contact | 目标 Harness / 原生会话的本机联系定位 | Home 的 Contact 数据 |
+| CAT Room | 可选跨 Agent 讨论空间 | 独立 CAT 仓库与服务 |
 
-| 对象 | 含义 | 在哪 |
-| --- | --- | --- |
-| Project | 一条业务主线（唯一 Store 上下文） | `private-data/project-registry/projects/<id>.json`（Store 合同） |
-| Agent Home（长期固定工位） | 一个有稳定身份与固定工位的成员责任 | `Workstations/<agent>/`（ENTRY.md + TODO.md(paos-todo/v4) + mailbox/ + notices/） |
-| Current | 本责任区实时行动表（objective/approved_scope/stage/next_action/waiting/results/inflight/delivery 等） | 所属 Home TODO.md 的 Current 区 |
-| Session | 一个原生 Runtime 会话/执行容器（可重建、可代换） | Project Store 资料（历史可读），不承载 Home 责任 |
-| Mail | 发出即不可变的定向消息 | `Workstations/<agent>/mailbox/<message_id>.md` |
-| Notice | Home 对一件输入/激活意图的 durable 处理事实 | `Workstations/<agent>/notices/<notice_id>.md` |
-| CAT Room | 可选跨 Runtime 协作（另一仓） | CAT 仓；非 PAOS Store |
-| Workflow / Skill Library | 共享方法论与技能单正文 | `PAOS-Libraries/{workflow,skill}`（必须 install configure 登记） |
+## 关键关系
 
-## 语义规则
+- Project Registry 只回答项目目录在哪里、哪些 Home 已登记、谁是 Coordinator；不保存项目进度或业务内容。
+- Project Vault 通过 INDEX.md 指向当前项目口径；TEAM.md 维护当前成员职责；原始材料和成果留在项目目录。
+- 每个长期 Agent 有稳定 Home。换 Runtime 或新建会话不重新分配 Home 身份。
+- Rooter 属于安装级，不创建虚构的 Rooter Project。
+- TODO v4 是当前责任的唯一原件，包含 Pinned、Current 和 Tasks；任务状态由 Markdown checkbox 表达。
+- Mail 是持久输入；Notice 是接收与处理记录。提醒、读取、处理、交付和验收不能合并为一个状态。
+- Library 的 Markdown 源文件是权威；Catalog 和搜索结果是派生导航。
+- Runtime 与 CAT 是外部协作边界。PAOE 不接管模型推理或 CAT 自身的持久化。
 
-- **责任存于 Home**：无 Work 对象、无 claim/ack 与交接动词；Home 的 Current 就是本人的责任底面。
-- **成果存于文件与 Git**：Project JSON 记业务事实；产物/工件进项目路径或仓库，不复制多份"状态真相"。
-- **Mail 不可变**：同 message_id 不同内容被拒（`mail_message_id_conflict`）；投递状态以 mailbox 文件+dispatch JSON 为证。
-- **激活是一次性原生注入**：agent send/notifyMail 落信后请求一次 self-contained injection（成功即止，失败如实）；不引 Helper Runtime 流程代理。
-- **休眠 Runtime 不假装在线**：contact native-target/`paos team` 状态如实 unknown。
+## 历史概念
 
-## 历史边界
-
-- 旧 Work / Cycle / ACK / coordinator work-items 路由退役；相关历史数据在 Store 以惰性归档保留（可读，不参与执行）。
-- 旧 resume 链（`continues_session_id`）仅历史概念；现行恢复打法 = 固定工位 ENTRY/TODO + `paos orient`。
+旧版本的 Project Store、Session 生命周期管理、Work、Cycle、Work Item、Workbench 与旧 Dashboard 属于历史实现或历史设计，不是当前 Portable 的运行对象。历史资料保留供追溯，但不作为新功能的设计依据。

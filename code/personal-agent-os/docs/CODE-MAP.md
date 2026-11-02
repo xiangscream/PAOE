@@ -1,120 +1,114 @@
-# PAOS Code Map
+# PAOE 当前代码地图
 
-约 100 行的“改哪里”地图。给第一次进入仓库的 Agent 定位用；详细设计见 [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) 与 [`docs/DEVELOPMENT-PRINCIPLES.md`](DEVELOPMENT-PRINCIPLES.md)。安装侧可能另有一份基于某历史 HEAD 写成的本地学习批注（不随仓库分发；发现对不上时以代码为准）。
+本文只描述 7cd5300 这条 Portable 基线的现行目录和调用关系。不要套用旧版 attention-dashboard-v1-static、local_server、WorkflowService 或 ProjectStore 架构；这些不属于当前正常执行链。
 
-**模块位置**：除非注明 `scripts/…`，本页提到的 `.py` / `.mjs` 服务端与前端文件都在 `attention-dashboard-v1-static/` 下。CLI 与服务端共享的模块在 `scripts/`（`paos.py`、`paos_attention_service.py`、`paos_installation.py`、`paos_contact.py` 等）。`local_server.py` 会在导入时把 `scripts/` 插入 `sys.path`，`workflow_service.py` 部分方法内动态 import `scripts/paos_contact`——`attention-dashboard-v1-static/` 不是自包含目录。
+## 1. 仓库分区
 
-主启动路径是 `scripts/start.ps1` → `attention-dashboard-v1-static/paos_server.py`（薄壳：`import local_server`，只负责响应头 `X-PAOS-Runtime-Fingerprint`）；`local_server.py` 是核心实现。
+~~~text
+PAOS-portable/
+├─ portable.py                         安装定位助手：plan / init / doctor / serve
+├─ config/local/                       本机配置（不提交）
+├─ data/                               安装数据根（按安装描述定位）
+├─ libraries/workflow/                 随包 Workflow / Guide / Template 示例
+├─ front/
+│  ├─ paos_front_server.py             可选本地画板后端
+│  └─ index.html                       原生 HTML / CSS / JS / SVG
+├─ code/personal-agent-os/
+│  ├─ scripts/paos.py                  CLI 入口与命令分发
+│  ├─ scripts/paos_*.py                领域服务模块
+│  ├─ runtime_adapters/                原生 Runtime 接入适配
+│  ├─ attention-memory-pipeline-v0/    保留的独立扫描/派生数据管道
+│  └─ docs/                            代码说明、合同与历史资料
+└─ tests/                              隔离文件、集成与画板测试
+~~~
 
-## 一张图
+实际安装的 Project Vault、Rooter Home、Workflow / Skill Library 和 Tool Catalog 可以位于仓库之外。仓库中的 config/local、真实业务数据和凭据不应提交。
 
-```text
-浏览器 / Agent
-  ↓ HTTP JSON
-attention-dashboard-v1-static/local_server.py    路由表 GET/POST/PUT、错误映射、静态 fallback
-  ↓
-attention-dashboard-v1-static/workflow_service.py  薄 facade：请求分发到 WorkflowService mixins（见下）
-  ↓
-工作流 mixins（权威清单 = workflow_service.py:36 `class WorkflowService(...)` 组合声明，随代码演进读源码，不在本页复制）：
-  主组合 SessionWorkflowMixin / CoordinationWorkflowMixin
-  + AgentContinuityWorkflowMixin / DecisionWorkflowMixin
-  + hooks：TypedReferenceHooks / CoordinatorContinuityGuard / AgentContinuityHooks / ArtifactRevisionHooks / WorkingMemoryHooks
-  workflow_support.py 只是 mixins 共用 helper，不是 mixin；session_lifecycle.py 经 session_workflow.py import 参与语义
-  ↓
-contracts (session/work/coordination/project) + project_schema.py
-  ↓
-attention-dashboard-v1-static/project_store.py   项目 JSON 唯一写入者：mutate_v2 + revision + Ledger + receipt
-  ↓
-项目 JSON 落盘：`local_server.py` 的 `DEFAULT_PROJECT_REGISTRY_ROOT = REPO_ROOT / "private-data" / "project-registry"`
-即仓库根 `private-data/project-registry/projects/<id>.json`（仓库默认值；实际安装以启动参数/配置为准）
+## 2. 入口
 
-只读投影（均为 attention-dashboard-v1-static/ 下）：
-context_compiler.py                Context Pack 与握手 Prompt
-session_projection.py              Session Detail
-office_projection.py               Office / Delta
-relations_projection.py            Session/Cycle ↔ Agent 关系事实
-lifecycle_projection.py            生命周期治理 findings（只读）
-session_lifecycle.py               Session 终结语义：Close / Submit / Abandon（V1.3 后周期=Session；无 Cycle 结束手续）
-needs_me_projection.py             严格 Human-attention 投影
-plugin_registry.py                 插件清单/禁用/入口 URL
-```
-
-前端为原生 JS（两套，别读错）：
-
-```text
-真实界面：attention-dashboard-v1-static/projects.html + projects.mjs   走 /api/* 读真实项目总览
-project.html / session.html：静态退役提示页（不读 /api/*，仅提示改用工位 Current/Mail/Notice 与同版 CLI；旧 Work/Cycle 接单页面已退出）
-旧原型（已退役 2026-10-10）：index.html + app.mjs 原读合成数据；目录按真实依赖闭合退回（UI 入口删除）
-```
-
-## 常见改动路径
-
-### GET
-
-`local_server.do_GET` → `GET_ROUTES` 路由表 → 具体 `get_*` handler → `ProjectStore` / 投影模块 → JSON 响应。
-
-### Mutation
-
-以 `POST /api/projects/<id>/sessions` 为例：
-
-```text
-local_server.py handle_session_open
-  → workflow_service.WorkflowService.open_session
-  → session_workflow.py SessionWorkflowMixin.open_session
-  → session_contracts.normalize_open_payload
-  → project_store.ProjectStore.mutate_v2
-  → project_schema.validate_project_v2
-  → Ledger + operation_receipt + 备份 + 原子替换
-```
-
-### Context Pack
-
-```text
-Open Session 成功后
-  → context_compiler.build_context_pack
-  → project_store.write_context_pack_atomic（原子写快照）
-  → context_compiler.build_prompt_markdown（生成握手 Prompt）
-```
-
-### 需要改什么？
-
-除注明 `scripts/…` 外，下表文件均在 `attention-dashboard-v1-static/` 下。
-
-| 你关心 | 去这里 |
+| 入口 | 用途 |
 |---|---|
-| 新 API 路由 / 状态码 / JSON 响应 | `local_server.py` |
-| CLI 子命令（安装/唤醒/mail/todo 等） | `scripts/paos.py` 及 `scripts/paos_*.py` |
-| Session Open/Ack/Update/Close/Abandon 语义 | `session_workflow.py` + `session_lifecycle.py` |
-| ~~Work 创建/Review/Cancel/评价~~ | 已退役：Work 不是系统对象，`work_workflow.py` 已删除 |
-| Coordinator 授权/撤销/定向 Request | `coordination_workflow.py` |
-| Authority Matrix / actor capability vocabulary | `authority_manifest.py` + `docs/AUTHORITY-MATRIX.md` |
-| 请求 body 归一化与错误文案 | `session_contracts.py` / `coordination_contracts.py` / `project_contracts.py` |
-| 项目 JSON 结构与校验 | `project_schema.py` |
-| 文件落盘/备份/恢复/revision | `project_store.py` |
-| 握手 Prompt 文本 | `context_compiler.py` |
-| 生命周期治理信号 | `lifecycle_projection.py` |
-| Human/Coordinator Abandon Session | `session_workflow.py` / `coordination_workflow.py` / `session_lifecycle.py` |
-| 项目总览页 DOM（唯一活界面） | `projects.mjs`（+ `projects-model.mjs` 纯逻辑；`project.html`/`session.html` 为静态退役提示页，无对应 .mjs） |
-| 旧原型 DOM（已退役：UI 入口删除，仅存派生数据供运维/测试） | —（原 `app.mjs`；`project.mjs`/`session.mjs` 已随 b63b87a 删除） |
-| 前端纯逻辑/格式化 | `ui-common.mjs` / `ux-polish.mjs`（`model.mjs`/`project-model.mjs`/`session-model.mjs` 已随原型退役） |
-| 测试入口 | `scripts/verify.py` |
+| portable.py plan | 只读查看将生成的本机配置 |
+| portable.py init | 创建新的本机安装配置，不创建项目或工位 |
+| portable.py doctor | 只读检查配置与路径，不证明业务链路 |
+| code/personal-agent-os/scripts/paos.py | 日常 CLI |
+| python portable.py serve | 启动可选画板；默认只监听 127.0.0.1 |
 
-## 分层禁止
+CLI 帮助以实际代码为准：
 
-- `local_server.py`：不写磁盘、不调 `_atomic_write`、不夹带业务逻辑。
-- Contracts：不 import `ProjectStore` / `WorkflowService` / `local_server`。
-- `project_store.py`：不 import workflow 模块，不 import `local_server`。
-- `context_compiler.py`：不 import HTTP 层，不引用 `private-data` 路径。
-- `mutate_v2` / Ledger / receipt / backup / Restore / 原子写：默认不重构，除非发现真实 bug。
+~~~sh
+python code/personal-agent-os/scripts/paos.py --help
+python code/personal-agent-os/scripts/paos.py library --help
+python code/personal-agent-os/scripts/paos.py attention --help
+~~~
 
-## 插件边界
+## 3. 核心模块
 
-- `plugin_registry.py` 只读插件清单与 Manifest，路由只做 URL 白名单。
-- 插件不会直接改写项目数据；写路径必须像内置逻辑一样通过 workflow → store。
-- 相关动态：`GET /api/plugins` 与项目页内插件动作渲染。
+| 模块 | 职责 | 学习时关注 |
+|---|---|---|
+| paos.py | argparse、命令分发、输出与异常出口 | build_parser、execute、main |
+| paos_installation.py | installation descriptor 与路径解析 | 配置来源、路径规范化 |
+| paos_registry.py | Project 五字段定位登记 | read、register、home-add、原子写入 |
+| paos_home.py | Project Home / Rooter Home 定位 | Home ref、身份与路径边界 |
+| paos_workstation.py | 工位布局、ENTRY 与工位相关操作 | 路径映射、身份检查 |
+| paos_todo.py | TODO v4 解析、渲染和写入 | Pinned / Current / Tasks、指纹与锁 |
+| paos_mail.py | 持久 Mail | 消息身份、接收者解析、幂等 |
+| paos_notice.py | Notice 读写与处理 | 输入处理状态与来源引用 |
+| paos_attention_service.py | Home 状态读面、输入与激活相关操作 | Notice / TODO 的组合边界 |
+| paos_contact.py | peers / team / Contact 读面 | TEAM 来源、Contact 事实与未知状态 |
+| paos_agent_activation.py | 持久激活意图 | intent 与实际 Runtime 注入分离 |
+| paos_wakeup.py | 原生联系目标绑定、状态与触发 | Contact target、一次性调用 |
+| runtime_injection.py | Runtime 注入入口 | 适配分发与错误返回 |
+| runtime_adapters/ | Codex / OpenCode 等具体接入 | 平台差异留在适配层 |
+| paos_library.py | Workflow / Skill Catalog、检索与使用记录 | Markdown 原件与派生索引 |
+| paos_cat_cli.py | CAT HTTP 客户端 | 外部系统边界 |
+| front/paos_front_server.py | Board 读面与有限动作 | CLI 子进程、错误和结果未知 |
+| front/index.html | 画板展示层 | DOM、SVG、事件、HTTP JSON |
 
-## CAT 边界
+## 4. 常见调用链
 
-- CAT 是独立仓库 `co-agent-2`；PAOS 本仓库**不包含 CAT 代码**。
-- PAOS 与 CAT 之间只通过 CAT 的 HTTP API 互操作。
-- 不要把 CAT 的 runtime adapter、inbox/marker/STOP 行为搬进 PAOS 后端。
+~~~text
+CLI 读操作:
+命令行 -> paos.py (build_parser / main / execute)
+       -> 目标 paos_*.py 模块 -> installation / registry / home 定位
+       -> 读取 JSON 或 Markdown 原件 -> 输出文本或 JSON
+
+TODO 更新:
+Agent / Human -> paos.py attention todo-update / todo-write
+              -> paos_attention_service.py -> paos_todo.py
+              -> 身份校验 -> 指纹 / 锁 / 原子发布 -> TODO.md
+
+发送消息:
+Agent / Human -> paos.py agent send
+              -> activation / attention service
+              -> paos_mail.py 持久化 Mail -> paos_notice.py 登记输入
+              -> 可选 Contact / runtime_injection 一次性提醒
+
+画板读取:
+Browser index.html -> HTTP JSON -> paos_front_server.py
+                   -> Board 读取 Registry / Home / Library
+                   -> 必要动作调用 paos.py 子进程 -> JSON -> Browser
+~~~
+
+## 5. 按目标找代码
+
+| 想理解或修改 | 从这里开始 |
+|---|---|
+| 命令参数或帮助文字 | scripts/paos.py 的 build_parser |
+| 命令实际做什么 | scripts/paos.py 的 execute 分发及对应模块 |
+| Project 如何定位 | scripts/paos_registry.py |
+| TODO 如何安全更新 | scripts/paos_todo.py |
+| Mail / Notice 如何分工 | scripts/paos_mail.py、paos_notice.py、paos_attention_service.py |
+| Agent 如何联系另一个 Home | scripts/paos_contact.py、paos_agent_activation.py、paos_wakeup.py |
+| Runtime 提醒如何适配 | scripts/runtime_injection.py、runtime_adapters/ |
+| Workflow / Skill 如何检索 | scripts/paos_library.py |
+| 画板如何展示系统 | front/paos_front_server.py、front/index.html |
+| 自动测试在哪里 | tests/、scripts/verify.py |
+
+## 6. 阅读与修改纪律
+
+- 先读根目录 ARCHITECTURE.md、AGENTS.md 和 DEVELOPMENT-PRINCIPLES.md，再读具体模块。
+- 先沿调用链找到现有写者，不在 CLI、前端或新模块里复制第二套写入逻辑。
+- 普通读操作优先用临时 fixture；不要为了学习读取或改写真实生产 Home。
+- 修改核心合同、路径或持久写入时，先理解其调用者和测试；不要只看单个函数。
+- 当前实现与本页不一致时，以代码为准，并修订本地图，不新增相互矛盾的解释。
