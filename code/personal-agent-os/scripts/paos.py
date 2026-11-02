@@ -1010,8 +1010,9 @@ def execute_team(
             "backend": "local_files",
             "installation": installation,
             "note": (
-                "TEAM=长期固定工位名册，与 Session 状态分离；历史 probe 不声称现在在线；"
-                "只有 --probe 的 fresh 结果或 last_probe 附检查时间。在线 attach 与离线人工启动分开；本命令不启动 Harness。"
+                "TEAM=长期固定工位名册，与 Session 状态分离；本读面不探测原生 Runtime，"
+                "--probe 是兼容性 no-op；Contact 只显示已登记的事实，不据此声称在线或实际接手。"
+                "人工打开会话与实际提醒分开；本命令不启动 Harness。"
             ),
         },
     }
@@ -3297,7 +3298,7 @@ def build_parser() -> argparse.ArgumentParser:
     x = libs.add_parser(
         "search",
         help="Find active Workflow/Skill source files in the registered Libraries",
-        epilog="Example: paos library search '工程变更' --kind workflow. Open the returned source_locator; read the source before using it. For tools use: paos library tools.",
+        epilog="Example: paos library search '工程变更' --kind workflow. Open source_path (current runtime-readable file); source_locator is its stable registered location. Read the source before using it. For tools use: paos library tools.",
     )
     x.add_argument("query", help="1–200 character query; all distinct whitespace-separated terms must match")
     x.add_argument("--kind", choices=["all", "workflow", "skill"], default="all")
