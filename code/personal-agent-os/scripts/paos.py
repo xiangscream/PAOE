@@ -3048,7 +3048,7 @@ def build_parser() -> argparse.ArgumentParser:
     peers.add_argument("project_id")
     peers.add_argument("agent_id")
     peers.add_argument("--root", help="Override Project root when root_path is missing")
-    peers.add_argument("--probe", action="store_true", help="Fresh-probe each bound peer Runtime now")
+    peers.add_argument("--probe", action="store_true", help="Compatibility no-op: no native probe is performed; runtime state remains unverified")
 
     team = sub.add_parser(
         "team",
@@ -3058,7 +3058,7 @@ def build_parser() -> argparse.ArgumentParser:
     team.add_argument("project_id")
     team.add_argument("agent_id")
     team.add_argument("--root", help="Override Project root when root_path is missing")
-    team.add_argument("--probe", action="store_true", help="Fresh-probe each bound Runtime now")
+    team.add_argument("--probe", action="store_true", help="Compatibility no-op: no native probe is performed; runtime state remains unverified")
 
     agent = sub.add_parser(
         "agent",

@@ -102,8 +102,8 @@ class StageTwoDiscoveryTests(unittest.TestCase):
 
     def test_cli_help_has_contact_routes_and_library_source_semantics(self):
         for args, terms in [
-            (("peers", "--help"), ("TEAM.md", "rooter-001")),
-            (("team", "--help"), ("TEAM.md", "Rooter")),
+            (("peers", "--help"), ("TEAM.md", "rooter-001", "no native probe")),
+            (("team", "--help"), ("TEAM.md", "Rooter", "no native probe")),
             (("agent", "send", "--help"), ("sender context", "rooter-001", "--remind")),
             (("library", "search", "--help"), ("source_locator", "--kind")),
             (("library", "tools", "--help"), ("installed", "authorized")),

@@ -85,7 +85,7 @@ S号寻址和跨Project参数查安装 `agent send --help`。普通消息使用�
 
 普通发信仍用 `agent send --remind`，调用者不用查 pipe、PID或端口。健康接收器只在行为代码需要更新时由本人加载。纯版本公告向未启动入口只留持久通知；需要实际接续的业务仍按[工作循环](../Workflows/wf-agent-work-cycle.md#交付与收口)办理。
 
-原会话、模型和 STOP 保持；发送者不借目标 pipe、token 或身份，也不自行启动同事服务。启动条件及配置正文见 [已安装接收器说明](C:/Users/remo/Desktop/agent学习计划/PAOS-Projects/3002-Personal-Agent-OS/Source/personal-agent-os/docs/CODEX-SELF-REMINDER.md)。运行文件存在不等于进程存活；缺失或离线如实记录。生命周期日志帮助定位后续退出，不自动重启、不把 prepared 称为送达。
+原会话、模型和 STOP 保持；发送者不借目标 pipe、token 或身份，也不自行启动同事服务。启动条件及配置正文见**当前安装的** `source_root/docs/CODEX-SELF-REMINDER.md`（先用 `paos install show` 获取 `source_root`，不使用旧电脑绝对路径）。运行文件存在不等于进程存活；缺失或离线如实记录。生命周期日志帮助定位后续退出，不自动重启、不把 prepared 称为送达。
 
 本人正常prepare在原锁下仅归档同Thread、正向已死或正向身份失配的登记，再发布新入口；不终止同号无关进程，不手改grant或rebind。缺实例字段的旧活receiver先核OS精确启动合同：runtime-file与目标stop-file都须按规范化路径或samefile核为同一位置，再核既有授权空消息拒绝，保留旧原件并原子补身份，保持原服务与token；不能只回填当前PID。任一路径无法核定则unknown，不发迁移探测。实例相符的活服务、查询未知、外Thread与STOP不覆盖。旧迁移验证不调用模型，失败保留旧登记；细节读已安装接收器说明。统一用户级SessionStart已正常安装，沿既有installation/registry/Contact定位本人Home，不需逐员工复制Hook；新员工仍需完成正常Home/Contact登记。自动准备须由原Owner确认正常review/trust及真实startup/resume继承本人环境后才算采用。定义文件、信任记录和prepared状态不能代替真实恢复结果；现场采用进度读已安装接收器说明所指的原记录。正常审阅入口与定义见上述已安装说明，不写信任缓存或绕策略。
 
