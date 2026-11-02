@@ -5,7 +5,7 @@ title: 操作入口：按目的找命令
 description: 定位本人工作、已登记资源、同事与安装级 Rooter；使用现有文件和联系入口。
 tags: ops, operations, entry
 status: active
-version: 31
+version: 32
 ---
 
 # 操作入口
@@ -26,7 +26,7 @@ version: 31
 
 ## 联系同事与 Rooter
 
-项目成员用 `paos peers <本人项目ID> <本人Home>` 或项目 TEAM 找职责与准确 Home；安装级 Rooter 是 `rooter-001`，位置从 `paos install show` 的 `rooter_home` 取得。Rooter 不需要出现在项目成员表中，也不需要创建名为 rooter 的项目。
+项目成员先用 `paos peers <本人项目ID> <本人Home>` 找已登记同事；职责/专长来自项目 `TEAM.md` 的现行成员小节，CLI 未识别时直接打开其 `team_source.path`。返回值的 `installation_support` 单独列出安装级 Rooter（如已登记）；Rooter 不属于 Project 成员，也不需要创建 rooter 项目。联系人读面不探测在线状态，无法证明对方已接手。
 
 项目 Agent 向已登记 Rooter 提交一个需要接续的新请求，使用已有高层入口：
 
@@ -34,7 +34,7 @@ version: 31
 paos agent send <本人项目ID> --to rooter-001 --sender-kind agent --sender-id <本人完整HomeID> --subject "安装协助" --body @<UTF-8短请求文件> --message-id <本次唯一ASCII标识> --remind
 ```
 
-这里第一个位置参数是本次发送的项目上下文，不是 Rooter 的项目 ID。目标由安装登记解析；不要改成 `mail send rooter`，也不要直接往猜测的 Rooter mailbox 写文件。普通项目 Agent 联系其他已登记 Home 同样使用 `agent send ... --to <完整HomeID>`；具体跨项目参数以同版帮助为准。
+这里第一个位置参数是本次发送的项目上下文，不是 Rooter 的项目 ID。目标由安装登记解析；不要改成 `mail send rooter`，也不要直接往猜测的 Rooter mailbox 写文件。普通项目 Agent 联系其他已登记 Home（包括跨项目）仍用 `agent send <本人项目ID> --to <目标完整HomeID>`，不把目标项目 ID 填在第一个位置；发现目标不在当前 TEAM 时，通过已知项目或 Coordinator 取得准确 Home ID，不遍历其他项目库。完整参数使用同版 `agent send --help`。
 
 只检查 Rooter 的联系配置可用 `paos wake status rooter rooter-001`：此处 `rooter` 是现有 wake 命令的位置参数，目标实际沿安装级 Home 解析，不表示要登记一个 rooter 项目。`attention rooter-show` 等命令是 Rooter 当前页读写入口，不是向它发送任务的替代命令。
 

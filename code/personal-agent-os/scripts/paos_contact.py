@@ -499,6 +499,30 @@ def _read_project_home_state(
         }
 
 
+def _team_role_summaries(root: Path, registered_ids: set[str]) -> dict[str, str]:
+    """Read the current TEAM role lines on demand; TEAM.md remains the SSOT."""
+    try:
+        lines = (root / "TEAM.md").read_text(encoding="utf-8").splitlines()
+    except (FileNotFoundError, OSError, UnicodeError):
+        return {}
+    roles: dict[str, str] = {}
+    in_current = False
+    agent_id: str | None = None
+    for line in lines:
+        if line.startswith("## "):
+            in_current = line.strip() == "## 当前成员"
+            agent_id = None
+        elif in_current and line.startswith("### "):
+            candidate = line[4:].strip()
+            agent_id = candidate if candidate in registered_ids else None
+        elif agent_id:
+            match = re.match(r"^\s*-\s*(?:职责/专长|职责|专长)\s*[：:]\s*(.+)$", line)
+            if match:
+                roles[agent_id] = match.group(1).strip()
+                agent_id = None
+    return roles
+
+
 def build_team_rows(
     project: dict[str, Any],
     data_root: Path,
@@ -508,6 +532,8 @@ def build_team_rows(
 ) -> dict[str, Any]:
     """TEAM rows over fixed workstations; optional agent_ids narrows Home reads."""
     root = Path(posix_windows_drive_locator(str(data_root))).expanduser()
+    registered_ids = set(str(item) for item in project.get("homes") or [])
+    roles = _team_role_summaries(root, registered_ids)
     sessions_by_agent: dict[str, list[dict[str, Any]]] = {}
     for session in project.get("sessions") or []:
         if isinstance(session, dict) and str(session.get("id") or ""):
@@ -519,6 +545,8 @@ def build_team_rows(
             if not workstation.is_dir():
                 continue
             agent_id = workstation.name
+            if agent_id not in registered_ids:
+                continue
             if agent_ids is not None and agent_id not in agent_ids:
                 continue
             active = [
@@ -532,6 +560,9 @@ def build_team_rows(
                 "identity_id": (session or {}).get("identity_id"),
                 "staff_number": (numbers_map or {}).get(agent_id),
                 "agent_label": (session or {}).get("agent_label"),
+                "role_summary": roles.get(agent_id) or "",
+                "role_source": str(root / "TEAM.md") if agent_id in roles else "",
+                "is_coordinator": agent_id == project.get("coordinator_home_id"),
                 "membership_basis": "fixed_workstation",
                 "session_status": (session or {}).get("status") or "no_active_session",
                 "workstation_todo": read_team_todo(root, agent_id),
@@ -576,6 +607,10 @@ def parse_team_payload(payload: dict[str, Any], lines: list[str]) -> None:
             + (f" [员工号={staff}]" if staff else "")
             + f"[session={agent.get('session_status') or 'unknown'}]"
         )
+        if agent.get("role_summary"):
+            lines.append(f"  Role / expertise (TEAM): {agent['role_summary']}")
+        if agent.get("is_coordinator"):
+            lines.append("  Coordinator: registered in Project")
         home_read = agent.get("home_read") or {}
         if home_read.get("available"):
             model = home_read.get("read_model") or {}

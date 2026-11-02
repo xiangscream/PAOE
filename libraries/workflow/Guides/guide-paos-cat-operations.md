@@ -5,12 +5,12 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 83
+version: 84
 ---
 
 # PAOS 操作指南
 
-从固定 ENTRY 取安装入口。Windows 使用 `C:\Users\remo\.paos\bin\paos.cmd`，WSL 使用 `/home/remo/.local/bin/paos`。下面的 `paos` 代表该入口。Portable 的 `health` 检查本地安装，工位与联系读 `status`，安装定位读 `install show`；这些不依赖 Core HTTP；参数不清楚时查对应子命令的 `--help`。
+从本人固定 ENTRY 的代码块取得**当前机器实际的 CLI 调用前缀**（包括显式安装文件和方法库配置）；以下 `paos` 只是这个前缀的简写，不应假定当前系统已有同名全局别名。Portable 的 `health` 检查本地安装，`status` 读取工位与联系结果，`install show` 定位安装；不依赖旧 Core HTTP。参数不清楚时直接查对应子命令的 `--help`。
 
 ## 查看当前事实
 
@@ -26,41 +26,27 @@ Mail、正式 Requests 和已配置 CAT 分开读取。读取失败不是零消�
 
 ## 联系并让对方接续
 
-需要同事接续时，用 `agent send --remind`：先保存 Mail 与 Notice，再沿该 Home 的 Contact 提醒一次。目标用所属 Project 和完整 Home ID，发送方用本人 Home。先从本人 Current 取得**成果原件的绝对路径**；再另写一份 UTF-8 **短交接正文**，只写结论、接续动作和原件绝对链接。原件与短正文分开保存，不把整篇报告当作默认邮件正文。正文用 `@` 读短正文文件。
+需要同事接续时，用 `agent send <本人项目ID> --to <目标完整HomeID> --remind`：先保存 Mail 与 Notice，再沿目标 Home 的 Contact 提醒一次。第一个项目参数是发送上下文，不是目标所属 Project；因此项目同事、跨项目同事、安装级 Rooter 均用已有接口，不另建项目。先从本人 Current 取得成果原件，再编写简短 UTF-8 交接正文，说明结论、接续动作和原件的实际路径；正文用 `@` 读取文件。
 
 普通交接保存成果后，用 `agent send --remind` 交付、`attention todo-update` 校准本人当前页；下游回告后直接读其成果并继续。解除等待的验收回告也属于需要接续的交付。对方没有回流或报告失败时，再用 `status --message-id` 定位。已有原件和回告即可引用，无须另写一份收件证明或逐级重查全部状态。记录完成状态或回告时，把当前结论写在前，再接续动作和原件。
 
-短正文示例（`$handoffFile` 指向这个文件）：
+短正文示例：
 
 ```markdown
 # 交付接续
 
 结论：本次候选已通过受影响检查，结论与边界见原件。
-接续：请读取原件，按其中“下一步”继续；无需重新加载完整过程。
-原件：C:/Users/remo/Desktop/agent学习计划/PAOS-Projects/3002-Personal-Agent-OS/Works/<成果路径>.md
+接续：请阅读原件并推进其中明确的下一步。
+原件：<本次成果原件的实际绝对路径>
 ```
 
-```powershell
-$paosCmd        = 'C:\Users\remo\.paos\bin\paos.cmd'
-$selfHome       = '<本人完整Home ID>'
-$targetProject  = '<目标Project>'
-$targetHome     = '<目标完整Home ID>'
-$sourceOriginal = '<成果原件绝对路径>'
-$handoffFile    = '<短交接正文绝对路径>'
-$carrier        = '@' + $handoffFile
-$messageId      = '<本次唯一ASCII消息标识>'
+以下 `paos` 表示本人 ENTRY 的完整 CLI 调用前缀，`request.md` 是已保存的短交接文件；参数与目标 ID 由当前任务决定，不复制示例占位符直接执行：
 
-& $paosCmd agent send $targetProject --to $targetHome --sender-kind agent --sender-id $selfHome --subject '交付接续' --body $carrier --message-id $messageId --remind
+```sh
+paos agent send 3002 --to 3002-s010 --sender-kind agent --sender-id 3002-s001 --subject "交付接续" --body @request.md --message-id handoff-unique-001 --remind
 ```
 
-WSL/bash 使用同一组参数；变量取当前任务的目标、本人 Home 与**短正文**路径，不把成果原件塞进 `--body`：
-
-```bash
-paosCmd=/home/remo/.local/bin/paos
-sourceOriginal='<成果原件绝对路径>'   # 仅在短正文中作为链接引用
-handoffFile='<短交接正文绝对路径>'
-"$paosCmd" agent send "$targetProject" --to "$targetHome" --sender-kind agent --sender-id "$selfHome" --subject '交付接续' --body "@$handoffFile" --message-id "$messageId" --remind
-```
+安装级问题改为 `--to rooter-001`；跨项目仍保持第一个位置参数为发件人项目。若只是简短咨询，不必为了套模板专门创建交接报告或第二份任务。相关联系人与入口见 [操作入口](ops-entry.md#联系同事与-rooter)。
 
 读取投递和提醒各自的结果。需要下游接续的正式交付，将该次完整回执保存在既有任务成果旁；保留目标、时间、message_id和提醒结果，不只截取delivered或next_action。留信成功不等于对方被提醒；原生受理不等于业务完成，最终看对方实际读取与产物。需要接续的新交付使用首次提醒，即使对方正在工作；省略 `--remind` 仅用于不要求接续的留档告知。相同 message-id 的高层重放保留已完成提醒，不再第二次注入；正文或目标改变时是新输入，使用新标识。
 
