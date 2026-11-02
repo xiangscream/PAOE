@@ -197,6 +197,7 @@ def render_fixed_entry(
     tool_index_ref: str = "",
     staff_number: str = "",
     installation_file: str = "",
+    library_roots_config: str = "",
     source_root: str = "",
 ) -> str:
     """Render identity and real locators; shared guides own work behavior."""
@@ -208,6 +209,14 @@ def render_fixed_entry(
     project_root = workstation_path.parent.parent
     workflow_root = str(workflow_library).strip()
     skill_root = str(skill_library).strip()
+
+    def absolute_locator(raw: str) -> str:
+        """Freeze a caller-relative locator in the initialization directory."""
+        value = str(raw).strip()
+        return str(Path(posix_windows_drive_locator(value)).expanduser().resolve()) if value else ""
+
+    installed_path = absolute_locator(installation_file)
+    library_config_path = absolute_locator(library_roots_config)
 
     def under(root: str, *parts: str) -> str:
         return str(Path(root).joinpath(*parts)) if root else ""
@@ -241,12 +250,14 @@ def render_fixed_entry(
         f"- 同事与职责：{link('TEAM', str(project_root / 'TEAM.md'))}",
         "- 持久输入：mailbox/、notices/", "",
         "## 安装与共享入口", "",
-        f"- 安装描述：{str(installation_file).strip() or '（未登记）'}",
+        f"- 安装描述：{installed_path or '（未登记）'}",
+        f"- 方法库配置：{library_config_path or '（未登记）'}",
     ]
-    if installation_file and source_root:
+    if installed_path and source_root:
         cli = Path(posix_windows_drive_locator(str(source_root))) / "scripts" / "paos.py"
-        argv = [sys.executable, "-X", "utf8", str(cli), "--installation-file",
-                posix_windows_drive_locator(str(installation_file))]
+        argv = [sys.executable, "-X", "utf8", str(cli), "--installation-file", installed_path]
+        if library_config_path:
+            argv.extend(["--library-roots-config", library_config_path])
         if os.name == "nt":
             command = "& " + " ".join("'" + value.replace("'", "''") + "'" for value in argv)
             language = "powershell"
@@ -1107,6 +1118,7 @@ def ensure_fixed_workstation(
     tool_index_ref: str = "",
     staff_number: str = "",
     installation_file: str = "",
+    library_roots_config: str = "",
     source_root: str = "",
 ) -> dict[str, Any]:
     """Create or repair one stable Project-local Agent Workstation.
@@ -1139,6 +1151,7 @@ def ensure_fixed_workstation(
         tool_index_ref=tool_index_ref,
         staff_number=staff_number,
         installation_file=installation_file,
+        library_roots_config=library_roots_config,
         source_root=source_root,
     )
     todo_text = render_initial_todo(

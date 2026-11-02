@@ -25,6 +25,7 @@ SCRIPTS = ROOT / "code" / "personal-agent-os" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import paos
 from paos_todo import parse_todo
+from paos_library import ensure_workflow_library, ensure_skill_library, register_library_roots
 
 
 def normalized_path(value):
@@ -183,6 +184,75 @@ class StageOneEntryTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(parse_todo(match.group(1) + "\n")["schema"], "paos-todo/v4")
 
+
+    def run_generated_entry(self, home, *args, env=None):
+        """Execute the actual ENTRY command from the Home, not the fixture's helper."""
+        entry = (home / "ENTRY.md").read_text(encoding="utf-8")
+        match = re.search(r"```(?:sh|powershell)\n([^\n]+)\n```", entry)
+        self.assertIsNotNone(match, entry)
+        command = match.group(1)
+        if os.name == "nt":
+            suffix = " ".join("'" + item.replace("'", "''") + "'" for item in ("--json", *args))
+            argv = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                    "$ErrorActionPreference='Stop'; " + command + " " + suffix + "; exit $LASTEXITCODE"]
+        else:
+            argv = [*shlex.split(command), "--json", *args]
+        result = subprocess.run(argv, cwd=home, env=env if env is not None else dict(os.environ),
+                                capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return json.loads(result.stdout)
+
+    def test_relative_installation_file_is_pinned_before_entry_is_written(self):
+        fingerprint = hashlib.sha256(self.f.record.read_bytes()).hexdigest()
+        self.f.call("project", "home-add", "3002", "3002-s003",
+                    "--expected-fingerprint", fingerprint)
+        env = dict(os.environ, PAOS_INSTALLATION_FILE=str(self.f.root / "wrong-installation.json"),
+                   PAOS_LIBRARY_ROOTS_CONFIG="")
+        process = subprocess.run([sys.executable, str(SCRIPTS / "paos.py"),
+                                  "--installation-file", "installation.json", "--json",
+                                  "workstation", "init", "3002", "3002-s003"],
+                                 cwd=self.f.root, env=env, capture_output=True, text=True,
+                                 encoding="utf-8", timeout=30)
+        self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+        home = Path(json.loads(process.stdout)["workstation_path"])
+        entry = (home / "ENTRY.md").read_text(encoding="utf-8")
+        self.assertIn(normalized_path(self.f.install), normalized_path(entry))
+        self.assertIn("--library-roots-config", entry)
+        # A same-named descriptor in the new CWD must not hijack this Home.
+        (home / "installation.json").write_text("{}", encoding="utf-8")
+        installed = self.run_generated_entry(home, "health", env=env)
+        self.assertEqual(Path(installed["installation"]), self.f.install)
+        roots = self.run_generated_entry(home, "library", "roots", "show", env=env)
+        self.assertEqual(Path(roots["config_path"]), self.f.libconfig)
+
+    def test_generated_entry_pins_roots_even_with_conflicting_valid_env(self):
+        home = self.new_home()
+        alternate_workflow = self.f.root / "other-workflow"
+        alternate_skill = self.f.root / "other-skill"
+        ensure_workflow_library(alternate_workflow)
+        ensure_skill_library(alternate_skill)
+        (alternate_workflow / "Workflows" / "other.md").write_text(
+            "---\nschema: paos-workflow/v1\nid: only-in-b\ntitle: B method\n"
+            "description: An unrelated library\nstatus: active\n---\n# B\n",
+            encoding="utf-8")
+        alternate_config = self.f.root / "other-library-roots.json"
+        register_library_roots(alternate_config, workflow_root=alternate_workflow,
+                               skill_root=alternate_skill)
+        env = dict(os.environ,
+                   PAOS_LIBRARY_ROOTS_CONFIG=str(alternate_config),
+                   PAOS_INSTALLATION_FILE=str(self.f.root / "wrong-installation.json"))
+        entry = (home / "ENTRY.md").read_text(encoding="utf-8")
+        self.assertIn(normalized_path(self.workflow), normalized_path(entry))
+        self.assertNotIn(normalized_path(alternate_workflow), normalized_path(entry))
+        roots = self.run_generated_entry(home, "library", "roots", "show", env=env)
+        self.assertEqual(Path(roots["config_path"]), self.f.libconfig)
+        self.assertEqual(Path(roots["workflow_root"]), self.workflow)
+        a = self.run_generated_entry(home, "library", "search", "daily-intake",
+                                     "--kind", "workflow", env=env)
+        self.assertEqual([item["id"] for item in a["items"]], ["daily-intake"])
+        b = self.run_generated_entry(home, "library", "search", "only-in-b",
+                                     "--kind", "workflow", env=env)
+        self.assertEqual(b["match_count"], 0)
 
 if __name__ == "__main__":
     unittest.main()

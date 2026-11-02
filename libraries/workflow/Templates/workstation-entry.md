@@ -33,7 +33,8 @@ version: 10
 ## 安装与共享入口
 
 - 安装描述：<当前 installation.json 的绝对路径>
-- CLI：<当前解释器、Source CLI 与显式 installation-file 组成的可执行命令>
+- 方法库配置：<本次初始化实际选定的 Library roots config 绝对路径>
+- CLI：<当前解释器、Source CLI、显式 installation-file 与 library-roots-config 组成的可执行命令>
 - 通用工作正文：[Agent 工作循环](<workflow-root>/Workflows/wf-agent-work-cycle.md)
 - 恢复入口：[恢复](<workflow-root>/Workflows/wf-agent-work-cycle.md#恢复)
 - 按任务找方法：[GUIDE](<workflow-root>/Guides/guide-work-method.md)

@@ -1119,6 +1119,7 @@ def execute_workstation(
                 skill_library=skill_library,
                 tool_index_ref=str(roots.get("tool_catalog") or ""),
                 installation_file=str(installation_path),
+                library_roots_config=str(roots_path),
                 source_root=str(installation.get("source_root") or ""),
                 staff_number=staff,
             )
@@ -2664,6 +2665,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the installation descriptor path (default ~/.paos/installation.json)",
     )
     p.add_argument(
+        "--library-roots-config",
+        help="Pin the Library roots registry for this CLI invocation, overriding PAOS_LIBRARY_ROOTS_CONFIG",
+    )
+    p.add_argument(
         "--agent-numbers-file",
         help=(
             "Override the unique staff-number registry path (default: AgentNumBers locator from installation descriptor)"
@@ -3374,7 +3379,14 @@ def main(argv: list[str] | None = None) -> int:
     # All Home/Contact helpers use this one explicit installation, including
     # cross-project delivery. Scope is this invocation, restored for embedding.
     previous = os.environ.get("PAOS_INSTALLATION_FILE")
+    previous_roots = os.environ.get("PAOS_LIBRARY_ROOTS_CONFIG")
     os.environ["PAOS_INSTALLATION_FILE"] = str(installation_path)
+    # Generated ENTRY commands pin the selected registry for this invocation.
+    # Other commands keep the pre-existing environment/installation priority.
+    if args.library_roots_config:
+        os.environ["PAOS_LIBRARY_ROOTS_CONFIG"] = str(
+            Path(posix_windows_drive_locator(args.library_roots_config)).expanduser().resolve()
+        )
     try:
         result = execute(args, ProjectRegistry(installation_path), installation_path=installation_path)
         print(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=2))
@@ -3392,6 +3404,11 @@ def main(argv: list[str] | None = None) -> int:
             os.environ.pop("PAOS_INSTALLATION_FILE", None)
         else:
             os.environ["PAOS_INSTALLATION_FILE"] = previous
+        if args.library_roots_config:
+            if previous_roots is None:
+                os.environ.pop("PAOS_LIBRARY_ROOTS_CONFIG", None)
+            else:
+                os.environ["PAOS_LIBRARY_ROOTS_CONFIG"] = previous_roots
 
 
 def _load_roots(installation_path):
