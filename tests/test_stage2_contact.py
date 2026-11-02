@@ -64,6 +64,8 @@ class StageTwoDiscoveryTests(unittest.TestCase):
         result = self.f.call("team", "3002", "3002-s001")[1]
         self.assertEqual([row["agent_id"] for row in result["agents"]], ["3002-s001", "3002-s002"])
         self.assertEqual(result["agents"][1]["role_summary"], "影像设备联调")
+        self.assertIn("--probe 是兼容性 no-op", result["meta"]["note"])
+        self.assertNotIn("fresh 结果", result["meta"]["note"])
         self.assertEqual(result["installation_support"][0]["home_path"], str(self.f.rooter))
         self.assertNotIn("rooter-001", [row["agent_id"] for row in result["agents"]])
         # The exact same code path renders human-readable routes without writing.
@@ -104,7 +106,7 @@ class StageTwoDiscoveryTests(unittest.TestCase):
             (("peers", "--help"), ("TEAM.md", "rooter-001", "no native probe")),
             (("team", "--help"), ("TEAM.md", "Rooter", "no native probe")),
             (("agent", "send", "--help"), ("sender context", "rooter-001", "--remind")),
-            (("library", "search", "--help"), ("source_locator", "--kind")),
+            (("library", "search", "--help"), ("source_path", "source_locator", "--kind")),
             (("library", "tools", "--help"), ("installed", "authorized")),
         ]:
             with self.subTest(args=args):
