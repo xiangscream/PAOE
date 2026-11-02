@@ -3053,7 +3053,7 @@ def build_parser() -> argparse.ArgumentParser:
     team = sub.add_parser(
         "team",
         help="Read registered Project team, TEAM roles and separately registered installation Rooter",
-        epilog="Example: paos team 3002 3002-s001; TEAM.md owns expertise. Contact is not live availability.",
+        epilog="Example: paos team 3002 3002-s001; TEAM.md owns expertise; the installation Rooter is listed separately. Contact is not live availability.",
     )
     team.add_argument("project_id")
     team.add_argument("agent_id")
