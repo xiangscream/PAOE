@@ -5,7 +5,7 @@ title: PAOS 接口参考：本地工位、项目登记与方法库
 description: Agent 无 Core HTTP 运行的本地入口；内容维护走原文件，不另建项目概览。
 tags: paos, interface, reference, cli
 status: active
-version: 26
+version: 27
 ---
 
 # PAOS 接口参考
@@ -46,7 +46,7 @@ TODO 写入走 `attention todo-update/todo-write`，Rooter 使用对应 `rooter-
 ## Library 资源检索
 
 `library search <query> [--kind workflow|skill|all]` 复用本地检索器，读取登记库，
-不访问 Core。结果指回源文件；找到后再实读必要正文。
+不访问 Core。结果增加 `source_path`（当前执行环境可读）与 `source_locator`（登记库稳定定位），保留原 `relative_path` 与 hash；命中后实读原件。
 `library catalog` 重建派生索引，保留原始使用事件；`library skill-use` 记录使用。
 
 ## Tool 目录（只读）
@@ -62,7 +62,7 @@ TODO 写入走 `attention todo-update/todo-write`，Rooter 使用对应 `rooter-
 
 ## 联系与运行
 
-`peers/team` 查本地名册；`status` 组合本人工位与 Contact，不另维护进度。
+`peers/team` 只列 Project Registry 已登记且存在的成员 Home，现行职责从 Project `TEAM.md` 按需读取；另在 `installation_support` 列出已登记 Rooter，不伪造项目成员。未识别职责时打开返回的 `team_source`。联系人查询不探测在线，`status` 读取本人工位与 Contact，不另维护进度。
 `agent send --remind` 保留 Mail、Notice，然后显式提醒一次；结果未知不重投。
 `wake status/bind/unbind/trigger` 沿既有适配器运行。`cat` 直接访问独立 CAT 服务，
 只有这些明确需要外部运行的操作才使用对应传输。

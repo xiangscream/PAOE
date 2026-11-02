@@ -1283,6 +1283,14 @@ def search_library_resources(
             "version": document["version"],
             "library_kind": document["library_kind"],
             "relative_path": document["relative_path"],
+            "source_path": str(
+                _runtime_library_root_path(library_roots[f"{document['library_kind']}_root"])
+                / document["relative_path"]
+            ),
+            "source_locator": (
+                str(library_roots[f"{document['library_kind']}_root"]).replace("\\", "/").rstrip("/")
+                + "/" + document["relative_path"].replace("\\", "/")
+            ),
             "source_sha256": document["source_sha256"],
             "score": score,
             "matched_terms": terms,

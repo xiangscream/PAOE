@@ -962,6 +962,28 @@ def _apply_fresh_probe(root: Path, entry: dict[str, Any]) -> None:
     runtime.update({"state_basis": "probe_never_run", "checked_at": None})
 
 
+def _installation_support_contacts(registry: ProjectRegistry) -> list[dict[str, Any]]:
+    """Expose the registered Rooter locator, not a fake Project member or live status."""
+    descriptor = load_installation_descriptor(registry.installation_path)
+    raw = str(descriptor.get("rooter_home") or "").strip()
+    if not raw:
+        return []
+    home = Path(posix_windows_drive_locator(raw)).expanduser()
+    entry = home / "ENTRY.md"
+    return [{
+        "agent_id": "rooter-001",
+        "home_kind": "rooter",
+        "scope": "installation",
+        "purpose": "安装、Runtime 入口与恢复维护",
+        "home_path": str(home),
+        "entry_path": str(entry),
+        "entry_exists": entry.is_file(),
+        "runtime_state": "not_probed",
+        "send_hint": "agent send <本人项目ID> --to rooter-001 --remind",
+        "contact_hint": "wake status rooter rooter-001",
+    }]
+
+
 def execute_team(
     args: argparse.Namespace,
     registry: ProjectRegistry,
@@ -979,7 +1001,11 @@ def execute_team(
         "project_id": args.project_id,
         "agent_id": args.agent_id,
         "roster_filter": "fixed_workstation",
+        "roster_scope": "project_registry",
         "agents": agents,
+        "coordinator_home_id": project.get("coordinator_home_id"),
+        "team_source": {"path": str(root / "TEAM.md"), "exists": (root / "TEAM.md").is_file()},
+        "installation_support": _installation_support_contacts(registry),
         "meta": {
             "backend": "local_files",
             "installation": installation,
@@ -1016,7 +1042,11 @@ def execute_peers(args: argparse.Namespace, registry: ProjectRegistry) -> Any:
         "project_id": args.project_id,
         "agent_id": args.agent_id,
         "roster_filter": "fixed_workstation",
+        "roster_scope": "project_registry",
         "peers": peers,
+        "coordinator_home_id": project.get("coordinator_home_id"),
+        "team_source": {"path": str(root / "TEAM.md"), "exists": (root / "TEAM.md").is_file()},
+        "installation_support": _installation_support_contacts(registry),
     }
     if args.json_output:
         return payload
@@ -1052,6 +1082,15 @@ def render_contact(payload: dict[str, Any], *, include_self: bool) -> str:
         f"Roster ({filter_note}): {len(agents)}",
     ]
     parse_team_payload(body, lines)
+    source = payload.get("team_source") or {}
+    if source.get("path"):
+        lines.append(f"TEAM roles source: {source['path']} (exists={source.get('exists', False)})")
+    for support in payload.get("installation_support") or []:
+        lines.append(
+            f"Installation support: {support['agent_id']} ({support['purpose']}); "
+            f"ENTRY={support['entry_path']} (exists={support['entry_exists']}); "
+            f"contact={support['contact_hint']}; runtime={support['runtime_state']}"
+        )
     meta = payload.get("meta") or {}
     installation = meta.get("installation") or {}
     if isinstance(installation, dict) and installation:
@@ -3003,21 +3042,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     peers = sub.add_parser(
         "peers",
-        help="List durable Project Agents with TODO and Runtime contact",
+        help="Find registered Project colleagues (TEAM role, TODO) plus installation Rooter without probing",
+        epilog="Example: paos peers 3002 3002-s001; send via agent send 3002 --to 3002-s002, or --to rooter-001. Read TEAM.md for roles not shown.",
     )
     peers.add_argument("project_id")
     peers.add_argument("agent_id")
     peers.add_argument("--root", help="Override Project root when root_path is missing")
-    peers.add_argument("--probe", action="store_true", help="Fresh-probe each bound peer Runtime now")
+    peers.add_argument("--probe", action="store_true", help="Compatibility no-op: no native probe is performed; runtime state remains unverified")
 
     team = sub.add_parser(
         "team",
-        help="Stable team entry: long-term Agents, TODO links and Runtime attach",
+        help="Read registered Project team, TEAM roles and separately registered installation Rooter",
+        epilog="Example: paos team 3002 3002-s001; TEAM.md owns expertise; the installation Rooter is listed separately. Contact is not live availability.",
     )
     team.add_argument("project_id")
     team.add_argument("agent_id")
     team.add_argument("--root", help="Override Project root when root_path is missing")
-    team.add_argument("--probe", action="store_true", help="Fresh-probe each bound Runtime now")
+    team.add_argument("--probe", action="store_true", help="Compatibility no-op: no native probe is performed; runtime state remains unverified")
 
     agent = sub.add_parser(
         "agent",
@@ -3035,6 +3076,11 @@ def build_parser() -> argparse.ArgumentParser:
             "intent only (no inline wake). With --remind: also send one native reminder via Contact/"
             "runtime_injection; no polling or retry."
         ),
+        epilog=("Example: paos agent send 3002 --to rooter-001 --sender-kind agent "
+                "--sender-id 3002-s001 --subject '安装协助' --body @request.md "
+                "--message-id unique-001 --remind. First positional Project is sender context; "
+                "the target Home may be another Project or installation Rooter. "
+                "Mail saved != reminder accepted != task completed."),
     )
     x.add_argument("project_id")
     recipients = x.add_mutually_exclusive_group(required=True)
@@ -3245,11 +3291,13 @@ def build_parser() -> argparse.ArgumentParser:
         x.add_argument("kind", choices=["workflow", "skill"])
         x.add_argument("--root", required=True)
 
-    x = libs.add_parser("tools", help="Read the registered local Tool Catalog (read-only)")
+    x = libs.add_parser("tools", help="Read the registered local Tool Catalog (read-only)",
+                        epilog="Catalog lists candidate tools, not proof that a tool is installed, authorized or callable.")
 
     x = libs.add_parser(
         "search",
-        help="Search active resources in the installation-registered Workflow/Skill Libraries",
+        help="Find active Workflow/Skill source files in the registered Libraries",
+        epilog="Example: paos library search '工程变更' --kind workflow. Open the returned source_locator; read the source before using it. For tools use: paos library tools.",
     )
     x.add_argument("query", help="1–200 character query; all distinct whitespace-separated terms must match")
     x.add_argument("--kind", choices=["all", "workflow", "skill"], default="all")
