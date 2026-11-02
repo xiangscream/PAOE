@@ -145,7 +145,7 @@ class BoardTests(unittest.TestCase):
             data = json.load(response)
         self.assertEqual(data["coordinator"], "1001-s001")
         with urlopen(origin + "/") as response:
-            self.assertIn("PAOS 画板", response.read().decode("utf-8"))
+            self.assertIn("PAOE 画板", response.read().decode("utf-8"))
         request = Request(origin + "/api/room", data=json.dumps(
             {"title": "只测未配置", "members": ["1001-s001", "1001-s002"]}).encode(),
             headers={"Content-Type": "application/json"})

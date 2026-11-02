@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PAOS 画板</title>
+<title>PAOE 画板</title>
 <style>
   /* ============================================================
-   PAOS 画板 · 视觉规范（深色、轻量、无依赖）
+   PAOE 画板 · 视觉规范（深色、轻量、无依赖）
    仅做展示层：所有样式服务于"忠实反映后端字段"，不加业务逻辑。
    配色 / 间距 / 圆角 / 阴影集中在此，便于整体调整与复用。
    ============================================================ */
@@ -106,7 +106,7 @@
 </head>
 <body>
 <header>
-  <h1>PAOS 画板</h1>
+  <h1>PAOE 画板</h1>
   <select id="projSel" title="切换项目库"></select>
   <span class="sub" id="hdSub">加载中…</span>
   <span class="sp"></span>
@@ -129,7 +129,7 @@
 
 <script>
 /* ============================================================
- PAOS 画板 · 展示层（薄、可复用）
+ PAOE 画板 · 展示层（薄、可复用）
  原则：前端只读后端 /api/* 的字段并渲染，**不实现任何业务规则**。
  数据流：load() → /api/dashboard → 节点 / CAT 房间 / 项目口径；
  动作流：

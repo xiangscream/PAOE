@@ -1,6 +1,6 @@
-# Portable 画板
+# PAOE 画板
 
-画板沿用 WorkBuddy/S040 的拖动节点与侧栏原型，连接当前 Portable 文件底座。
+画板沿用 WorkBuddy/S040 的拖动节点与侧栏原型，连接当前 PAOE Portable 文件底座。
 仅使用 Python 标准库、HTML 和原生 JavaScript，无前端构建或额外安装步骤。
 
 ## 打开
