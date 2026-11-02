@@ -11,7 +11,7 @@ PAOE（Personal Agent Operating Environment）是一套运行在自己电脑上�
 
 ## 它跟别的多 Agent 系统有什么不同
 
-| 维度 | 常见多 Agent 框架 | PAOS |
+| 维度 | 常见多 Agent 框架 | PAOE |
 | --- | --- | --- |
 | 关注点 | Agent 怎么协作干活（对话、编排、角色分工） | **工作怎么活过对话、活过运行时更换** |
 | 状态在哪 | 内存、数据库、某个服务的会话里 | **你电脑上的 JSON / Markdown 文件**，人和 Agent 都能直接读改 |
@@ -24,7 +24,7 @@ PAOE（Personal Agent Operating Environment）是一套运行在自己电脑上�
 
 ## 命名与兼容边界
 
-产品名称统一为 **PAOE**。为避免无意义迁移，现有命令入口仍使用 `paos.py`，配置环境变量仍为 `PAOS_*`，数据 schema namespace 仍为 `paos-*`，仓库名仍为 `PAOS-portable`。这些是兼容性技术标识，不代表产品仍以 PAOS 为名称；本轮不改 CLI 命令、持久数据格式或目录路径。
+产品名称统一为 **PAOE**。为避免无意义迁移，现有命令入口仍使用 `paos.py`，配置环境变量仍为 `PAOS_*`，数据 schema namespace 仍为 `paos-*`，仓库名仍为 `PAOS-portable`。这些是兼容性技术标识，不代表产品仍以 PAOE 为名称；本轮不改 CLI 命令、持久数据格式或目录路径。
 
 ## 学习入口
 
@@ -51,10 +51,10 @@ PAOE 把这些问题拆成几件可验证的事：**留信（Mail）→ 登记�
 **软约束 · 工位与协作**
 每个长期 Agent 有一个固定工位（`Workstations/<agent>/`）：
 `ENTRY.md`（身份入口）、`TODO.md`（当前责任）、`mailbox/`（持久消息）、`notices/`（待读与处理记录）。
-**这些是 Markdown，你可以直接打开改**，不需要经过 PAOS 的工具。
+**这些是 Markdown，你可以直接打开改**，不需要经过 PAOE 的工具。
 
 **Runtime 可换**
-Agent 的思考与执行交给 Codex / OpenCode 等 Harness；PAOS 只保存能活过它们的状态。
+Agent 的思考与执行交给 Codex / OpenCode 等 Harness；PAOE 只保存能活过它们的状态。
 换会话、换模型、换电脑，**工位和责任不丢**。
 
 **唤醒与接续**
@@ -157,9 +157,9 @@ python portable.py serve
 
 PAOE 借鉴但不复制：
 
-- **AutoGen / CrewAI** 的多 Agent 消息协作 → CAT 圆桌，但 PAOS 把"讨论"与"正式事实"分开。
-- **LangGraph** 的状态思想 → 但 PAOS 更轻，不强制图结构，用文件合同代替编排。
-- **MetaGPT** 的角色 SOP → workflow 库，但 PAOS 是"软约束"（方法与范例），不是强制流程。
+- **AutoGen / CrewAI** 的多 Agent 消息协作 → CAT 圆桌，但 PAOE 把"讨论"与"正式事实"分开。
+- **LangGraph** 的状态思想 → 但 PAOE 更轻，不强制图结构，用文件合同代替编排。
+- **MetaGPT** 的角色 SOP → workflow 库，但 PAOE 是"软约束"（方法与范例），不是强制流程。
 
 最大的不同仍是：**那些框架优化"怎么让 Agent 干活"，PAOE 在意"工作本身能不能持续、可迁移、被人看懂"。**
 

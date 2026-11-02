@@ -107,7 +107,7 @@ Browser index.html -> HTTP JSON -> paos_front_server.py
 
 ## 6. 阅读与修改纪律
 
-- 先读根目录 ARCHITECTURE.md、AGENTS.md 和 DEVELOPMENT-PRINCIPLES.md，再读具体模块。
+- 先读根目录 ARCHITECTURE.md、AGENTS.md 和 code/personal-agent-os/docs/DEVELOPMENT-PRINCIPLES.md，再读具体模块。
 - 先沿调用链找到现有写者，不在 CLI、前端或新模块里复制第二套写入逻辑。
 - 普通读操作优先用临时 fixture；不要为了学习读取或改写真实生产 Home。
 - 修改核心合同、路径或持久写入时，先理解其调用者和测试；不要只看单个函数。
