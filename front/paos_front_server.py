@@ -1,4 +1,4 @@
-"""Optional board for Portable. Existing file readers and CLI own all facts.
+"""Optional PAOE board. Existing file readers and CLI own all facts.
 
 Run with ``python portable.py serve`` after initializing this checkout. No Core,
 WorkBuddy Python, fixed drive, background consumer or CAT data directory needed.
@@ -281,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
     except READ_ERRORS as exc:
         print(json.dumps(error_view(exc), ensure_ascii=False), file=sys.stderr)
         return 2
-    print(f"PAOS 画板：http://127.0.0.1:{server.server_port}/", flush=True)
+    print(f"PAOE 画板：http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PAOS Portable 的安装定位助手（仅标准库；不管理业务状态）。
+"""PAOE 的安装定位助手（仅标准库；沿用现有 PAOS 配置 schema，不管理业务状态）。
 
 plan/doctor 只读；init 只创建新配置和可重建目录，不覆盖现有安装。
 配置沿用核心的两个 v1 schema。没有新增 Project/Home/Runtime 状态库。
