@@ -24,7 +24,7 @@ PAOE（Personal Agent Operating Environment）是一套运行在自己电脑上�
 
 ## 命名与兼容边界
 
-产品名称统一为 **PAOE**。为避免无意义迁移，现有命令入口仍使用 `paos.py`，配置环境变量仍为 `PAOS_*`，数据 schema namespace 仍为 `paos-*`，仓库名仍为 `PAOS-portable`。这些是兼容性技术标识，不代表产品仍以 PAOE 为名称；本轮不改 CLI 命令、持久数据格式或目录路径。
+产品名称统一为 **PAOE**。为避免无意义迁移，现有命令入口仍使用 `paos.py`，配置环境变量仍为 `PAOS_*`，数据 schema namespace 仍为 `paos-*`，仓库名仍为 `PAOS-portable`。这些是兼容性技术标识，不代表产品仍以 PAOS 为名称；本轮不改 CLI 命令、持久数据格式或目录路径。
 
 ## 学习入口
 
