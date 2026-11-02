@@ -5,6 +5,7 @@ These tests do not establish that an LLM actually followed the work cycle.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -26,6 +27,10 @@ import paos
 from paos_todo import parse_todo
 
 
+def normalized_path(value):
+    return str(value).replace("\\", "/")
+
+
 class StageOneEntryTests(unittest.TestCase):
     def setUp(self):
         # Compose the existing fixture without importing its TestCase as another
@@ -33,6 +38,9 @@ class StageOneEntryTests(unittest.TestCase):
         self.f = test_headless.HeadlessTests(methodName="runTest")
         self.addCleanup(self.f.doCleanups)
         self.f.setUp()
+        (self.f.root / "numbers.json").write_text(json.dumps({
+            "3002-s001": "S001", "3002-s002": "S002"
+        }), encoding="utf-8")
         self.workflow = self.f.root / "workflow"
         self.skill = self.f.root / "skill"
         for relative in (
@@ -46,7 +54,6 @@ class StageOneEntryTests(unittest.TestCase):
             shutil.copyfile(ROOT / "libraries" / "workflow" / relative, target)
 
     def new_home(self):
-        import hashlib
         fingerprint = hashlib.sha256(self.f.record.read_bytes()).hexdigest()
         self.f.call("project", "home-add", "3002", "3002-s003",
                     "--expected-fingerprint", fingerprint)
@@ -56,13 +63,13 @@ class StageOneEntryTests(unittest.TestCase):
     def test_real_cli_entry_uses_explicit_installation_and_registered_resources(self):
         home = self.new_home()
         text = (home / "ENTRY.md").read_text(encoding="utf-8")
-        for expected in (str(self.f.install), str(SCRIPTS / "paos.py"),
-                         str(self.workflow / "Guides" / "ops-entry.md"),
-                         str(self.skill / "CATALOG.md"), str(self.f.tools)):
-            self.assertIn(expected, text)
+        for expected in (self.f.install, SCRIPTS / "paos.py",
+                         self.workflow / "Guides" / "ops-entry.md",
+                         self.skill / "CATALOG.md", self.f.tools):
+            self.assertIn(normalized_path(expected), normalized_path(text))
         self.assertIn("--installation-file", text)
         self.assertIn("#恢复", text)
-        self.assertNotIn("C:\\Users\\remo", text)
+        self.assertNotIn("C:/Users/remo", normalized_path(text))
         self.assertNotIn("/home/remo", text)
         self.assertNotIn("## 工作约定", text)
         self.assertIn("当前工作与项目", text)
@@ -96,10 +103,10 @@ class StageOneEntryTests(unittest.TestCase):
 
     def test_missing_project_notes_are_visible_not_created_for_navigation(self):
         home = self.new_home()
-        text = (home / "ENTRY.md").read_text(encoding="utf-8")
+        text = normalized_path((home / "ENTRY.md").read_text(encoding="utf-8"))
         for name in ("INDEX.md", "TEAM.md", "AGENTS.md"):
             self.assertFalse((self.f.vault / name).exists())
-            matching = [row for row in text.splitlines() if str(self.f.vault / name) in row]
+            matching = [row for row in text.splitlines() if normalized_path(self.f.vault / name) in row]
             self.assertTrue(matching, name)
             self.assertTrue(any("不可读" in row for row in matching), matching)
 
@@ -112,13 +119,19 @@ class StageOneEntryTests(unittest.TestCase):
 
     def test_resource_commands_use_registered_roots_not_sibling_assumptions(self):
         workflow = self.f.call("library", "search", "daily-intake", "--kind", "workflow")[1]
-        self.assertIn(str(self.workflow / "Workflows" / "intake.md"),
-                      json.dumps(workflow, ensure_ascii=False))
+        item = next(row for row in workflow["items"] if row["id"] == "daily-intake")
+        self.assertEqual(item["library_kind"], "workflow")
+        self.assertEqual(item["relative_path"], "Workflows/intake.md")
+        original = self.workflow / item["relative_path"]
+        self.assertEqual(item["source_sha256"], hashlib.sha256(original.read_bytes()).hexdigest())
         destination = self.skill / "clean-writing" / "SKILL.md"
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / "libraries" / "skill" / "clean-writing" / "SKILL.md", destination)
         skill = self.f.call("library", "search", "clean-writing", "--kind", "skill")[1]
-        self.assertIn(str(destination), json.dumps(skill, ensure_ascii=False))
+        item = next(row for row in skill["items"] if row["id"] == "clean-writing")
+        self.assertEqual(item["library_kind"], "skill")
+        self.assertEqual(self.skill / item["relative_path"], destination)
+        self.assertEqual(item["source_sha256"], hashlib.sha256(destination.read_bytes()).hexdigest())
         tools = self.f.call("library", "tools")[1]
         self.assertEqual(Path(tools["path"]), self.f.tools)
         self.assertEqual(tools["raw_markdown"], self.f.tools.read_text(encoding="utf-8"))
@@ -150,7 +163,8 @@ class StageOneEntryTests(unittest.TestCase):
             "Templates/workstation-todo.md")]
         for path in paths:
             text = path.read_text(encoding="utf-8")
-            # Templates' placeholder links describe layout, not live locators.
+            # Code examples describe generated documents, not links in this file.
+            text = re.sub(r"```.*?```", "", text, flags=re.S)
             for target in re.findall(r"\[[^\]\n]+\]\(([^)\n]+)\)", text):
                 if "<" in target or "://" in target:
                     continue
