@@ -1102,14 +1102,13 @@ def execute_workstation(
         workflow_library = str(getattr(args, "workflow_library", None) or "")
         skill_library = str(getattr(args, "skill_library", None) or "")
         try:
-            if not workflow_library or not skill_library:
-                installation = load_installation_descriptor(installation_path)
-                roots_path = resolve_library_roots_path(installation=installation)
-                roots = load_library_roots(roots_path)
-                if not workflow_library:
-                    workflow_library = str(roots.get("workflow_root") or "")
-                if not skill_library:
-                    skill_library = str(roots.get("skill_root") or "")
+            installation = load_installation_descriptor(installation_path)
+            roots_path = resolve_library_roots_path(installation=installation)
+            roots = load_library_roots(roots_path)
+            if not workflow_library:
+                workflow_library = str(roots.get("workflow_root") or "")
+            if not skill_library:
+                skill_library = str(roots.get("skill_root") or "")
             staff = _allocate_staff_number(args, installation_path)
             result = ensure_fixed_workstation(
                 root=root,
@@ -1118,6 +1117,9 @@ def execute_workstation(
                 objective=str(getattr(args, "objective", None) or ""),
                 workflow_library=workflow_library,
                 skill_library=skill_library,
+                tool_index_ref=str(roots.get("tool_catalog") or ""),
+                installation_file=str(installation_path),
+                source_root=str(installation.get("source_root") or ""),
                 staff_number=staff,
             )
         except (WorkstationProblem, LibraryProblem, InstallationProblem) as problem:
