@@ -5,6 +5,8 @@
 | 文件 | 性质 | 当前替代入口 |
 |---|---|---|
 | CODE-HEALTH-NOTES-PORTABLE-20261030.md | Portable 初期代码收敛快照 | 根 ARCHITECTURE.md、当前 CODE-MAP.md |
+| START-HERE-LEGACY.md | 旧 Session / Dashboard 上手说明 | 根 README.md、LEARNING-BASELINE.md |
+| CODE-MAP-LEGACY.md | 旧 Core / ProjectStore 代码地图 | 当前 CODE-MAP.md |
 | CODE-HEALTH-NOTES-S040-20261030.md | S040 的历史实现批注 | 当前 CODE-MAP.md |
 | MIGRATION-NOTES-S040-20261029.md | S040 的历史迁移记录 | 根 MIGRATION-NOTES.md |
 
