@@ -347,3 +347,41 @@ Human 从 System Vault 的 HOME.md 出发，能够找到：
 - Gate 结果与下一步。
 
 路径与状态以实施当时的本机读取为准。本文中的旧报告路径只作为调查线索，不作为可直接执行的命令或迁移目标。
+
+## 12. Shared Libraries 的 Obsidian Vault 元数据决策
+
+**批准：可以将现有 `PAOS-Libraries` 根目录作为一个 Obsidian Vault 打开，并允许 Obsidian 在该根目录新增自己的 `.obsidian/` 界面元数据。**
+
+这是为了让 Human 能从 Obsidian 直接阅读和编辑共享 Workflow / Skill 原件，不是把 Library 内容迁入 System Vault，也不是创建第二份资源库。
+
+### 允许范围
+
+- 仅在实际登记的 `PAOS-Libraries` 根目录创建 Obsidian 自己管理的 `.obsidian/` 元数据。
+- 首次由 Obsidian 的“打开文件夹作为 Vault”流程创建，使用默认核心功能即可。
+- 不修改 Workflow / Skill / Tool 正文、Catalog、文件名、目录结构或 Library roots 登记。
+- 不复制 Library 内容到 System Vault。
+- 不安装社区插件，不引入 Dataview、Templater 或同步服务。
+- 不把 `.obsidian/` 当作 PAOE 业务配置；它只保存 Obsidian 的界面与 Vault 设置。
+
+### 创建前置检查
+
+本机实施端必须先确认：
+
+1. 当前登记的 Library roots 确实位于该 `PAOS-Libraries` 根目录之下，且该根目录就是预期共享资源的共同父目录。
+2. 该根目录不存在既有 `.obsidian/`；若已存在，不覆盖、不重建，先检查并复用。
+3. 若根目录处于 Git 管理下，先检查 `.gitignore` 和当前工作区。`.obsidian/` 默认保持本机界面元数据，不自动 stage / commit；不得为了它改写现有 Git 忽略规则。
+4. 不将包含凭据、Token 或 Runtime 私密状态的配置放入 Vault 元数据。
+
+如果上述任一条件不成立，停止创建并保留文件系统/外部编辑器入口；把 Obsidian URI 标记为 `unverified`，不得通过创建第二个 Library 副本绕过问题。
+
+### 验收
+
+- Obsidian 能以 `PAOS-Libraries` 为 Vault 根正常打开。
+- 能从 Vault 内打开实际登记的 Workflow / Skill 原件；编辑仍然作用于原文件。
+- Catalog 与源文件内容、路径和 hash 未因创建 Vault 而改变。
+- Git 状态中若出现 `.obsidian/`，明确说明其本机元数据属性；不自动提交。
+- System Vault 仍只保存 Library 导航与说明，不复制正文。
+
+### 对本轮范围的影响
+
+这项元数据创建属于 S2“连接真实资源”的允许动作：它是**对既有共享 Library 根目录新增 Obsidian 界面元数据**，不属于 Project 迁移或 Library 内容迁移。它不改变“本轮先建立 System Vault、连接真实资源，不迁移现存 Project”的决策。
