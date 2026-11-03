@@ -13,6 +13,7 @@ import test_headless
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 import system_vault as sv
+from paos_registry import RegistryProblem
 
 
 class SystemVaultTests(unittest.TestCase):
@@ -144,6 +145,7 @@ class SystemVaultTests(unittest.TestCase):
             finally:
                 offline.rename(source)
         self.assertEqual(self.f.record.read_bytes(), original_record)
+
         # An accessible, initialized, genuinely empty Registry is different.
         offline = self.f.records.with_name('projects-saved')
         self.assertTrue(offline.resolve().is_relative_to(self.f.root))
@@ -159,6 +161,29 @@ class SystemVaultTests(unittest.TestCase):
             self.f.records.rmdir()  # Exactly the empty temporary fixture above.
             offline.rename(self.f.records)
         self.assertEqual(self.f.record.read_bytes(), original_record)
+
+    def test_unreadable_registry_entry_cannot_disappear_from_snapshot(self):
+        sv.write_vault(self.state(), self.output, apply=True)
+        pages = {p: p.read_bytes() for p in self.output.rglob('*') if p.is_file()}
+        original_record = self.f.record.read_bytes()
+        bad = self.f.records / '1001.json'
+        bad.mkdir()
+        arguments = ['--installation-file', str(self.f.install), '--output', str(self.output),
+                     '--apply', '--refresh-snapshots']
+        for kind in ('directory', 'invalid JSON'):
+            with self.subTest(kind=kind):
+                with self.assertRaises(RegistryProblem) as raised:
+                    self.state()
+                self.assertEqual(raised.exception.code, 'project_registry_unreadable')
+                error = io.StringIO()
+                with contextlib.redirect_stderr(error):
+                    self.assertEqual(sv.main(arguments), 1)
+                self.assertEqual(json.loads(error.getvalue())['error_code'], 'project_registry_unreadable')
+                self.assertEqual(pages, {p: p.read_bytes() for p in self.output.rglob('*') if p.is_file()})
+                self.assertEqual(self.f.record.read_bytes(), original_record)
+            if kind == 'directory':
+                bad.rmdir()  # Exactly the empty fixture created above.
+                bad.write_text('{invalid JSON', encoding='utf-8')
 
 
 if __name__ == '__main__':

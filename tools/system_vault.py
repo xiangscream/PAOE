@@ -82,7 +82,9 @@ def inspect_installation(installation_file, roots_file=None):
         raise SystemVaultProblem('registry_unavailable', f'Registry无法读取：{registry_root}（{type(exc).__name__}）') from exc
     registry = ProjectRegistry(path)
     records = []
-    for record in sorted(p for p in entries if p.is_file() and p.suffix.lower() == '.json'):
+    # Every JSON-shaped entry must be checked by the authoritative reader.
+    # is_file() would silently hide directories and some inaccessible records.
+    for record in sorted(p for p in entries if p.suffix.lower() == '.json'):
         project = registry.read_record(record.stem)
         root = disk(project['root_path'])
         project['available'] = root.is_dir()
