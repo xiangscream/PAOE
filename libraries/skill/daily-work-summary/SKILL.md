@@ -10,6 +10,17 @@ description: create structured end-of-day work summaries from mixed notes, agent
 
 # Daily Work Summary
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 把一天零散的笔记、进展和交付整理成清楚的日总结，让你看到完成了什么、卡在哪里。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 Turn fragmented work records into a conclusion-first daily summary that supports project control and next-day execution. Supports both single-workline and multi-workline (2-3 parallel work lines) outputs.
 
 ## Workflow

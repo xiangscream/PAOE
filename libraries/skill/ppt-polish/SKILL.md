@@ -11,6 +11,17 @@ version: 1
 
 # PPT 美化体检
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 改善已有演示文稿的视觉层次、版面和表达，让重点更容易被看到。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 把「一份已经存在的 PPT」变成「排版合格、风格统一、看不出 AI 味」的成品。
 
 ## 这个 skill 是干什么的

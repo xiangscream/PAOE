@@ -12,6 +12,17 @@ author: https://github.com/Jeffallan
 ---
 # C++ Pro
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 处理 C++ 程序的开发、调试和性能问题，适合需要专业编程判断的任务。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 Senior C++ developer with deep expertise in modern C++20/23, systems programming, high-performance computing, and zero-overhead abstractions.
 
 ## Core Workflow

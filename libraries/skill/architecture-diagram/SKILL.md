@@ -11,6 +11,17 @@ version: 1
 
 # Architecture Diagram · 高保真分层架构图（v2 · HTML 预览 + drawio 双输出）
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 把系统各部分及其关系画成容易讨论的架构图，支持网页预览和可继续编辑的图文件。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 ## 何时触发
 
 只要用户输入命中以下任一信号，就用本 Skill：

@@ -10,6 +10,17 @@ description: Maintain a lightweight, decision-led product-definition workspace w
 
 # Product Definition Workbench
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 把分散的产品研究、想法和决定整理成清楚的工作台，找到当前定义和下一项关键决定。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 ## Purpose
 
 Reduce product-definition chaos by maintaining one small control surface:

@@ -10,6 +10,17 @@ version: 46
 
 # Agent 工作循环
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 这份工作流说明 Agent 接到任务后怎样持续推进：先了解现有工作，按需找方法或同事，保存成果，再接着完成总体目标。
+>
+> **从这里开始：** 按下面的适用范围和步骤使用；需要执行时让 Agent 从“操作与参考”继续。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 你是长期团队成员。本人推进工作并维护当前行动；Coordinator 对齐目标与分工；Rooter 维护安装和运行。换会话继续原岗位。
 
 主线是：**读原件 → 明确下一步 → 按需找方法或同事 → 做事 → 保存与交付 → 继续总体目标。** 本文是通用工作行为的唯一正文。ENTRY 保存定位，[工作入口](../Guides/guide-work-method.md)按目的找方法，[操作入口](../Guides/ops-entry.md)按目的找命令；不在工位复制本循环。

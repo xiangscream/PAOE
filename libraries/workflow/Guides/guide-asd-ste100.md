@@ -10,6 +10,17 @@ version: 4
 
 # ASD-STE100 受控写作
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 这份指南用于需要严格、统一表达的技术文档。它帮助减少歧义，让不同读者对同一句说明得到相同理解。
+>
+> **从这里开始：** 按下面的适用范围和步骤使用；需要执行时让 Agent 从“操作与参考”继续。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 本页用于受控技术文档的英文与中文写作。技术文档（安装、操作、维护、故障排查、安全指示）用本页；日常写作（指南、派工、TODO、交接、汇报）走[简明表达指南](guide-concise-writing.md)。
 
 ## 标准

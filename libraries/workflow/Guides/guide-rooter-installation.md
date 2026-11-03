@@ -10,6 +10,17 @@ version: 16
 
 # Rooter 安装与运行维护
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 这是系统维护者的工作说明。程序安装、共享库位置和成员运行入口出问题时，Rooter 按这份指南定位和处理。
+>
+> **从这里开始：** 按下面的适用范围和步骤使用；需要执行时让 Agent 从“操作与参考”继续。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 Rooter沿 Human 运行维护授权处理安装和跨项目机械问题。项目目标归 Coordinator，产品代码归原专业作者，成员维护自己的 Current。
 
 ## 原入口恢复

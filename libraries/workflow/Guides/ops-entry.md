@@ -10,6 +10,17 @@ version: 32
 
 # 操作入口
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 已经知道要做什么、只想找到操作入口时，查这张导航。具体命令和步骤会链接到对应说明。
+>
+> **从这里开始：** 按下面的适用范围和步骤使用；需要执行时让 Agent 从“操作与参考”继续。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 `paos` 代表本人 ENTRY 中的当前安装入口。先按目的选入口，只读必要章节；不从命令名称猜协议或手工拼消息文件。
 
 | 目的 | 入口 |

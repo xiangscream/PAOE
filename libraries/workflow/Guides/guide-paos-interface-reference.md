@@ -10,6 +10,17 @@ version: 27
 
 # PAOS 接口参考
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 这里是命令和字段的参考手册。已经知道要做什么、需要确认准确参数时，再查对应条目。
+>
+> **从这里开始：** 按下面的适用范围和步骤使用；需要执行时让 Agent 从“操作与参考”继续。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 本页对应 Portable 的文件直连 CLI。安装位置由 `--installation-file` 或
 `PAOS_INSTALLATION_FILE` 决定；参数以同版 `--help` 为准。无需启动旧 Core。
 

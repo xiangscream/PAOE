@@ -10,6 +10,17 @@ description: Use when the user explicitly requests subagents, delegation, parall
 
 # Dispatching Parallel Agents
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 在你明确需要多人并行时，判断哪些工作能独立分给不同 Agent，并把结果汇合。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 ## Overview
 
 You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.

@@ -10,6 +10,17 @@ description: Use when editing existing Word .docx reports, especially documents 
 
 # DOCX Safe Editing
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 修改已有 Word 报告时，照顾目录、标题、编号和版式，减少改正文时破坏文档结构的问题。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 Use this skill before modifying an existing `.docx` file when the document has a table of contents, numbered headings, captions, or a strict report template.
 
 ## Core Rule

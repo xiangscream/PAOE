@@ -10,6 +10,17 @@ version: 12
 
 # Project 文件与 Git
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 这份指南说明资料、成果和经验应该放在哪里，以及什么时候记录版本。它帮助你和 Agent 维护一份容易找到的项目资料。
+>
+> **从这里开始：** 按下面的适用范围和步骤使用；需要执行时让 Agent 从“操作与参考”继续。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 项目文件承载正文、输入、判断与成果；工位保存当前行动，PAOS 提供定位、读写和联络。文件整理服务下一位读者，不要求完整归档仪式。
 
 ## 放在哪里

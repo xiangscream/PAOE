@@ -11,6 +11,17 @@ version: 1
 
 # PPTX 动画注入器（PowerPoint 原生）
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 为已有 PowerPoint 文件添加或调整动画，配合演示顺序表达内容。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 ## 用途
 
 用 python-pptx 排版/插图后，给形状加上**标准、可被 PowerPoint 正常打开**的入场动画。核心思路：**绝不手写 `<p:timing>` XML**——那一定会因结构偏差被 PowerPoint 判为损坏。改为两段式：

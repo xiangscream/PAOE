@@ -10,6 +10,17 @@ version: 4
 
 # 夜间整理
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 一天工作结束后，可以按这份流程整理当天成果、修正当前入口，并留下第二天能够接着做的线索。
+>
+> **从这里开始：** 按下面的适用范围和步骤使用；需要执行时让 Agent 从“操作与参考”继续。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 把白天的成果整理成明天能直接接续的入口。日常维护先由产出者或采用者在实际交付中按[Project 文件与 Git 的日常顺手维护](../Guides/guide-project-work-world.md#日常顺手维护)完成；本流程主要补漏、解除旧等待并把有效经验并回唯一正文。执行者处理遗漏的文件归位、明显失效的入口和普通软修；业务 Owner 维护任务状态与业务判断；Rooter 分配范围、处理运行问题并复核结果。
 
 日间输入整理复用[日常输入整理](wf-meeting-audio-package.md#默认工作循环)：

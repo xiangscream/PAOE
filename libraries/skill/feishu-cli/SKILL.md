@@ -11,6 +11,17 @@ agent_created: true
 
 # 飞书 CLI 操作技能（跨 Harness 共享入口）
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 通过已配置的命令行入口读写飞书文档；执行前需要对应文档的访问权限。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 > 本册是拆分后的主入口；详细经验按任务读 `references/` 四分册（统一从本册「任务路由」表取册名）：
 > ① [读取与核对](references/reading-and-verification.md)（fetch 要点、双向比对、反向审计、验证清单）
 > ② [分块写入与块操作](references/writing-and-block-ops.md)（update/replace/move/delete、表格、媒体、批量编辑硬规矩 81–96）

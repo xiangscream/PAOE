@@ -10,6 +10,17 @@ description: Build, redesign, audit, package, and maintain browser-based teachin
 
 # Build Teaching Slides
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 把教学内容组织成有节奏的网页课件，同时照顾页面、讲稿和离线交付。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 Build the deck as a teaching system, not a collection of attractive pages. Preserve the chain:
 
 `learning objective → page sequence → visual explanation → speaker notes → validation → delivery`

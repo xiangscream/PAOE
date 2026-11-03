@@ -11,6 +11,17 @@ absorbed_tips: [{"tip_id":"tip-s010-d217-scoped-validation-adoption-20261020","s
 
 # 发布采用与回退
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 新版本通过测试后，还要决定本机怎样采用、出了问题怎样回退。这份指南把发布和本机更新的步骤分开讲清楚。
+>
+> **从这里开始：** 按下面的适用范围和步骤使用；需要执行时让 Agent 从“操作与参考”继续。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 受影响范围由本次授权和真实读写合同确定。记录 Source、Library、配置与运行版本，读 `health` 和 `install show` 核实际安装。文档小修直接修改、同步引用/Catalog并正常提交；不要给无关服务制造重启。
 
 ## 候选与正式入口

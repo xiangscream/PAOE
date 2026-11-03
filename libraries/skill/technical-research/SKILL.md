@@ -10,6 +10,17 @@ description: 技术调研方法论。适用场景：(1) 影像/网络/协议等�
 
 # 技术调研方法论
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 学习和调查专业技术时，梳理概念、来源和结论，分清已确认的事实与待验证的判断。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 > 从 B 线影像基础（2026-07-14 ~ 07-19）的 5 天密集学习 + GPT 审查反馈落地提炼。配套已存在的 `product-definition-research` skill：那个解决"做产品决策"的研究；本 skill 解决"建立可被审查的技术知识"。
 
 ## 核心问题
