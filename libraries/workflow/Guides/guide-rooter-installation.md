@@ -5,7 +5,7 @@ title: Rooter 安装与运行维护
 description: 按需读取：安装定位、原会话恢复、服务可达与成员运行例外。
 tags: rooter, installation, recovery
 status: active
-version: 15
+version: 16
 ---
 
 # Rooter 安装与运行维护
@@ -18,7 +18,7 @@ Rooter沿 Human 运行维护授权处理安装和跨项目机械问题。项目�
 
 Project员工用 `paos --json wake status <project> <agent>`，Rooter用本工位 `python contact.py status` 读取简洁的联系/配置/STOP/接收器状态；默认不读 TODO/Notice 历史，坏 TODO 不阻塞查询。需要完整 Current/Tasks/Notice 与恢复计数时用 `python contact.py status --full`。Source位置从 `paos install show` 读取。将这些正式读回值用于下方恢复步骤。
 
-新Codex工位或换Runtime时，Rooter组织正式配置登记；目标本人按登记准备自己的接收入口。登记与只读 prepare 的步骤只读[操作指南·Codex目标上线准备](guide-paos-cat-operations.md#codex-目标上线准备)，运行细节读已安装[CODEX-SELF-REMINDER说明](C:/Users/remo/Desktop/agent学习计划/PAOS-Projects/3002-Personal-Agent-OS/Source/personal-agent-os/docs/CODEX-SELF-REMINDER.md)。
+新Codex工位或换Runtime时，Rooter组织正式配置登记；目标本人按登记准备自己的接收入口。登记与只读 prepare 的步骤只读[操作指南·Codex目标上线准备](guide-paos-cat-operations.md#codex-目标上线准备)。运行细节读当前安装的 `source_root/docs/CODEX-SELF-REMINDER.md`；先用 `paos install show` 核对 `source_root`，不沿旧电脑绝对路径打开。
 
 分别记录接收入口与原生会话状态。接收入口未就绪或未登记时，未探测的原生Runtime状态仍为未知；ThreadID登记不等于树外可达。业务与入口准备分别记录；准备受限时沿已有正式联络接续业务。
 
