@@ -28,6 +28,12 @@ MARKER = 'PAOE System Vault / navigation only / v1\n'
 SIGNATURE = re.compile(r'\A<!-- PAOE SNAPSHOT sha256:([a-f0-9]{64}) -->\n')
 
 
+class SystemVaultProblem(ValueError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
 def disk(value):
     return Path(posix_windows_drive_locator(str(value))).expanduser().resolve()
 
@@ -64,9 +70,19 @@ def inspect_installation(installation_file, roots_file=None):
     roots_path = disk(roots_file or installation['library_roots_config'])
     roots = load_library_roots(roots_path, validate_roots=False)
     data = disk(effective_data_root(installation))
+    registry_root = data / 'project-registry/projects'
+    try:
+        if not data.is_dir():
+            raise SystemVaultProblem('registry_unavailable', f'data_root不可访问，不能判断项目数量：{data}')
+        if not registry_root.is_dir():
+            raise SystemVaultProblem('registry_uninitialized', f'Registry目录缺失或未初始化，不能解释为空名册：{registry_root}')
+        # iterdir surfaces access failures; a glob can silently look empty.
+        entries = list(registry_root.iterdir())
+    except OSError as exc:
+        raise SystemVaultProblem('registry_unavailable', f'Registry无法读取：{registry_root}（{type(exc).__name__}）') from exc
     registry = ProjectRegistry(path)
     records = []
-    for record in sorted((data / 'project-registry/projects').glob('*.json')):
+    for record in sorted(p for p in entries if p.is_file() and p.suffix.lower() == '.json'):
         project = registry.read_record(record.stem)
         root = disk(project['root_path'])
         project['available'] = root.is_dir()
@@ -79,6 +95,7 @@ def inspect_installation(installation_file, roots_file=None):
             'installation_file': str(path), 'roots_file': str(roots_path),
             'source_root': str(source), 'data_root': str(data),
             'rooter_home': installation.get('rooter_home') or '',
+            'registry_root': str(registry_root),
             'source_commit': git_value(source, 'rev-parse', 'HEAD'),
             'source_git_root': git_value(source, 'rev-parse', '--show-toplevel'),
             'python': sys.executable, 'roots': roots, 'projects': records}
@@ -114,7 +131,8 @@ def rendered_snapshots(state):
         machine += f'| {label} | {link(state[key])} · `{state[key]}` |\n'
     machine += f'\nCLI调用前缀（从任何目录追加子命令）：\n\n```{language}\n{command}\n```\n'
     machine += '\n原生接收器说明：' + link(disk(state['source_root']) / 'docs/CODEX-SELF-REMINDER.md', '当前安装的说明') + '\n'
-    projects = '| Project | Vault目录 | Registry原件 | Coordinator | Git根 |\n|---|---|---|---|---|\n'
+    projects = f'Registry根已确认可读：{link(state["registry_root"])}；本次读取 {len(state["projects"])} 条登记。\n\n'
+    projects += '| Project | Vault目录 | Registry原件 | Coordinator | Git根 |\n|---|---|---|---|---|\n'
     agents = '| Project / Home | ENTRY | TODO |\n|---|---|---|\n'
     for project in state['projects']:
         root = disk(project['root_path'])

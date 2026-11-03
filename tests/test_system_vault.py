@@ -75,7 +75,7 @@ class SystemVaultTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '重叠'):
             sv.write_vault(self.state(), self.f.vault / 'System', apply=True)
 
-    def test_two_mount_roots_and_missing_mount_preserve_registry_and_cli(self):
+    def test_two_absolute_roots_and_missing_project_root_preserve_registry_and_cli(self):
         other = self.f.root / 'E挂载根' / '项目1001'
         self.f.make_home(other / 'Workstations/1001-s001', '1001-s001', '1001')
         self.f.call('project', 'register', '1001', '--root', str(other), '--coordinator', '1001-s001')
@@ -122,6 +122,43 @@ class SystemVaultTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(error.getvalue())['error_code'], 'installation_descriptor_invalid')
         self.assertFalse(self.output.exists())
+
+    def test_unavailable_registry_cannot_replace_existing_snapshot_with_zero_projects(self):
+        sv.write_vault(self.state(), self.output, apply=True)
+        original_pages = {p: p.read_bytes() for p in self.output.rglob('*') if p.is_file()}
+        original_record = self.f.record.read_bytes()
+        arguments = ['--installation-file', str(self.f.install), '--output', str(self.output),
+                     '--apply', '--refresh-snapshots']
+        for source, expected_code in ((self.f.data, 'registry_unavailable'),
+                                       (self.f.records, 'registry_uninitialized')):
+            offline = source.with_name(source.name + '-offline')
+            self.assertTrue(source.resolve().is_relative_to(self.f.root))
+            self.assertTrue(offline.resolve().is_relative_to(self.f.root))
+            source.rename(offline)
+            try:
+                error = io.StringIO()
+                with contextlib.redirect_stderr(error):
+                    self.assertEqual(sv.main(arguments), 1)
+                self.assertEqual(json.loads(error.getvalue())['error_code'], expected_code)
+                self.assertEqual(original_pages, {p: p.read_bytes() for p in self.output.rglob('*') if p.is_file()})
+            finally:
+                offline.rename(source)
+        self.assertEqual(self.f.record.read_bytes(), original_record)
+        # An accessible, initialized, genuinely empty Registry is different.
+        offline = self.f.records.with_name('projects-saved')
+        self.assertTrue(offline.resolve().is_relative_to(self.f.root))
+        self.f.records.rename(offline)
+        self.f.records.mkdir()
+        try:
+            state = self.state()
+            self.assertEqual(state['projects'], [])
+            text = sv.rendered_snapshots(state)['Projects/PROJECT-INDEX.md']
+            self.assertIn('Registry根已确认可读', text)
+            self.assertIn('0 条登记', text)
+        finally:
+            self.f.records.rmdir()  # Exactly the empty temporary fixture above.
+            offline.rename(self.f.records)
+        self.assertEqual(self.f.record.read_bytes(), original_record)
 
 
 if __name__ == '__main__':

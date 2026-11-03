@@ -22,6 +22,7 @@ python tools/system_vault.py --installation-file <当前installation.json> --out
 - 四份带来源和时间的定位快照分别位于 Installation、Projects、Agents、Libraries，只有明确追加 `--refresh-snapshots --apply` 才刷新。
 - 快照若被人工修改，工具在写入前拒绝覆盖；把需要保留的补充移到普通说明页，审阅后再处理。没有 force 覆盖开关。
 - Registry 缺盘记录保留为 Unavailable，绝不从导航刷新触发创建/移动/注销项目。
+- data_root或Registry根目录不可读时明确报错，不生成“零项目”快照；只有已初始化、可读取且确实为空的Registry才显示零条登记。
 
 快照只提供定位和存在性。Obsidian URI 是候选，需在本机实际打开验证；跨库原件所属目录若未登记为 Vault，使用准确文件路径和外部编辑器。不能把“链接语法正确”当作“UI已打开”。
 
@@ -32,4 +33,4 @@ python -m unittest discover -s tests -p test_system_vault.py -v
 python code/personal-agent-os/scripts/verify.py
 ```
 
-隔离测试覆盖旧原件不变、人工修改保留、已有目录拒绝、两挂载根/缺盘保留、URI编码和导航目标。它不等于生产 Obsidian 采用，实际UI导航需单独观察。工具不修改既有CLI参数、schema、Runtime或业务流程。
+隔离测试覆盖旧原件不变、人工修改保留、已有目录拒绝、不同绝对项目根/缺盘保留、Registry根不可用、URI编码和导航目标。不同绝对根路径使用临时目录模拟，不是实际卸载Windows盘符或WSL挂载，不证明操作系统映射。它不等于生产 Obsidian 采用，实际UI导航需单独观察。工具不修改既有CLI参数、schema、Runtime或业务流程。
