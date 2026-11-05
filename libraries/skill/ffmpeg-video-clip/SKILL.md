@@ -14,6 +14,17 @@ metadata:
 
 # ffmpeg 视频切片与抽帧
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 对视频进行截取、拼接或转码，按所需片段和交付格式处理媒体文件。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 ## ffmpeg 在哪
 
 **系统版 9.0.2**，2026-09-22 用 `winget install Gyan.FFmpeg` 装的，比隔离 venv 里那份新两个大版本：

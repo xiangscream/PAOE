@@ -11,6 +11,17 @@ version: 1
 
 # Full-Stack Development Practices
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 处理网页应用前后端相连的开发任务，从界面到接口一起检查。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 ## MANDATORY WORKFLOW — Follow These Steps In Order
 
 **When this skill is triggered, you MUST follow this workflow before writing any code.**

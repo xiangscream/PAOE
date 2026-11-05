@@ -11,6 +11,17 @@ version: 1
 
 # Clean Writing
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 把文档写得清楚、自然，去掉空话和重复表达，同时保留事实、条件和必要说明。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 Produce writing that is easy to understand because its information architecture, semantic content, and sentence form fit the reader's job.
 
 Do not treat "clean" as "short" or "confident." Preserve necessary uncertainty, evidence, exceptions, safety constraints, and technical detail. Remove only what does not help the intended reader understand, decide, or act.

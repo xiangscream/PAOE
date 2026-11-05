@@ -1,5 +1,16 @@
 # Workflow 库
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 这里收集日常工作的方法、操作指南和格式模板。可以按要做的事情找入口，再让 Agent 使用对应正文。
+>
+> **从这里开始：** 在下面的用途表中选择当前需要的方法。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 恢复必读[Agent工作循环](Workflows/wf-agent-work-cycle.md)和固定ENTRY中的本人角色规则。其他内容按任务打开。
 
 | 用途 | 入口 |

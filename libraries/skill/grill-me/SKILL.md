@@ -10,6 +10,17 @@ description: Use this skill when the user asks to be challenged, grilled, questi
 
 # Grill Me
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 通过连续追问检验一个想法或方案，把隐藏的假设和还没想清楚的问题找出来。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 ## Overview
 
 Use skeptical but useful questioning to sharpen a draft, idea, plan, or reflection. Do not perform a generic critique first; identify the central claim, ask high-leverage questions, then revise or summarize only after enough answers exist.

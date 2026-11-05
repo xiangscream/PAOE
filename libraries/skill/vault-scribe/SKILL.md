@@ -10,6 +10,17 @@ description: 将访谈转录、会议记录、头脑风暴、策略材料和粗�
 
 # Vault Scribe — Obsidian + GitHub Markdown Skill
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 把访谈、会议、想法和零散笔记整理成符合现有 Obsidian 库习惯的文章或记录。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 Creates and edits structured Markdown for Obsidian while preserving compatibility with the requested destination. Standard Markdown (headings, bold, italic, lists, quotes, code blocks, tables) is assumed knowledge.
 
 > **Default rule:** Inspect nearby notes before writing. In an Obsidian-only vault, follow its existing wikilink, frontmatter, tag, and callout conventions. Use standard Markdown links for external URLs. Prefer GFM-only output when the user explicitly requests GitHub or cross-platform compatibility.

@@ -10,6 +10,17 @@ description: 面向尚未冻结的新产品方向探索、品类定义与早期�
 
 # 产品定义研究方法论
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 围绕产品定义查资料、比较方案，帮助判断目标用户、场景和产品方向。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 ## Overview
 
 从 LRC101 轮足影像机器人项目的前三周研究中提炼的、经过 GPT Codex 审查和纠偏的产品定义工作方法。核心解决五个问题：

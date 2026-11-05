@@ -16,6 +16,7 @@ import subprocess
 import sys
 from urllib.parse import quote
 import uuid
+from document_reading import system_page
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'code/personal-agent-os/scripts'))
@@ -111,11 +112,12 @@ def protected_roots(state):
     return [disk(v) for v in values if v and v != 'unverified']
 
 
-def snapshot(title, state, body):
+def snapshot(title, state, body, *, page):
     text = (f'# {title}\n\n> 只读导航快照 · {state["at"]}\n'
             f'> 来源：{state["installation_file"]}；{state["roots_file"]}；Project Registry。\n'
             '> 权威原件在链接目标；此处不是配置或业务状态写者。文件存在性已核，Obsidian候选链接仍需实际打开验证。\n\n'
             + body.rstrip() + '\n')
+    text = system_page(text, page)
     return f'<!-- PAOE SNAPSHOT sha256:{digest(text.encode())} -->\n' + text
 
 
@@ -174,14 +176,15 @@ def rendered_snapshots(state):
         if kind == 'Skill' and root.is_dir():
             resources += '\n'.join('- ' + link(p, p.parent.name, True) for p in sorted(root.glob('*/SKILL.md'))) + '\n'
         resources += '\n'
-    return {'Installation/CURRENT-MACHINE.md': snapshot('当前安装', state, machine),
-            'Projects/PROJECT-INDEX.md': snapshot('项目定位', state, projects),
-            'Agents/AGENT-DIRECTORY.md': snapshot('工位导航', state, agents),
-            'Libraries/RESOURCES.md': snapshot('实际登记资源', state, resources)}
+    return {name: snapshot(title, state, body, page=name) for name, title, body in (
+        ('Installation/CURRENT-MACHINE.md', '当前安装', machine),
+        ('Projects/PROJECT-INDEX.md', '项目定位', projects),
+        ('Agents/AGENT-DIRECTORY.md', '工位导航', agents),
+        ('Libraries/RESOURCES.md', '实际登记资源', resources))}
 
 
 def human_pages():
-    return {
+    pages = {
         'HOME.md': '''# PAOE · 系统总入口
 
 打开原件，理解它属于谁，再在原处维护。此库是系统说明与导航；项目、方法和当前行动继续留在各自原件。
@@ -316,6 +319,7 @@ System Vault的解释页和学习笔记是本库内容，可独立备份；定�
 ''',
         'Learning/NOTES/README.md': '# 我的学习笔记\n\n在此创建普通Markdown，记录自己的理解、问题与实验链接。笔记不成为共享方法或机器配置的第二份原件。\n',
     }
+    return {name: system_page(text, name) for name, text in pages.items()}
 
 
 def write_vault(state, output, *, apply=False, refresh=False):

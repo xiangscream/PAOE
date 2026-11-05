@@ -18,6 +18,8 @@ python tools/system_vault.py --installation-file <当前installation.json> --out
 
 ## 人工页与快照
 
+每页标题下方有“给使用者”说明，先用白话解释用途和使用入口；后面的“操作与参考”保留精简的定位、命令和规则。Agent可跳过 `paoe:human-intro:start` 至 `paoe:human-intro:end`，从 `paoe:agent-reference` 继续。人类说明只帮助理解，执行条件和必要事实仍在后文。Frontmatter仍位于文件最前面。
+
 - HOME、架构/操作解释、学习笔记可以正常手改；再次运行不覆盖已有人工页。
 - 四份带来源和时间的定位快照分别位于 Installation、Projects、Agents、Libraries，只有明确追加 `--refresh-snapshots --apply` 才刷新。
 - 快照若被人工修改，工具在写入前拒绝覆盖；把需要保留的补充移到普通说明页，审阅后再处理。没有 force 覆盖开关。

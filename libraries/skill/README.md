@@ -1,5 +1,16 @@
 # Skill Library
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 这里收集不同专业任务的技能，每个技能有自己的说明、步骤和配套材料。
+>
+> **从这里开始：** 从技能目录找到相关主题，打开其中的 SKILL.md。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 共享 Agent Skill 库。每个 Skill 使用稳定目录名，并以 `SKILL.md` 作为入口；动态使用统计不写进文件名。
 
 ```text

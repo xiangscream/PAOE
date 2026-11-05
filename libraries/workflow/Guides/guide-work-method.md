@@ -10,6 +10,17 @@ version: 16
 
 # 工作入口
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 不确定该用哪种方法做事时，从这里开始。它按任务用途带你找到合适的工作流、技能和工具说明。
+>
+> **从这里开始：** 按下面的适用范围和步骤使用；需要执行时让 Agent 从“操作与参考”继续。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 从固定 ENTRY 进入 [Agent 工作循环](../Workflows/wf-agent-work-cycle.md)、本人角色规则、TODO 和当前输入。恢复、TODO 职责、主动求助与收口只在工作循环维护；本页提供导航，不要求通读所有指南或 Catalog。
 
 | 要做什么 | 直接打开 |

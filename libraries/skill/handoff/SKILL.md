@@ -11,6 +11,17 @@ version: 1
 
 # Handoff
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 把当前任务交给下一位执行者时，说明现状、已有成果、未决问题和下一步。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 ## What to do
 
 Write a handoff document summarising the current conversation so a fresh agent can continue the work.

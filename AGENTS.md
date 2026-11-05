@@ -6,6 +6,7 @@
 - 共享工作规则的唯一正文是 [Agent 工作循环](libraries/workflow/Workflows/wf-agent-work-cycle.md)；工作入口和操作入口只做导航。
 - ENTRY 只生成身份、安装定位和源文件入口。TODO v4、项目正文、Mail/Notice、Contact 各沿现有职责维护；不复制规则或新增任务状态库。
 - 只修改当前任务范围内的代码与方法资产。候选测试不得改真实工位、凭据或生产 Runtime；重复初始化不得覆盖已有 ENTRY/TODO。
+- 文档若有 `paoe:human-intro:start` 说明块，Agent可跳过它，从 `paoe:agent-reference` 后的“操作与参考”读取正文。执行所需的事实、约束和授权仍须保留在正文，不能只放在人类说明中。
 
 在仓库根验证：
 

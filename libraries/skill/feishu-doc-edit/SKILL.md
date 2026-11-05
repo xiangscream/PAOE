@@ -11,6 +11,17 @@ agent_created: true
 
 # 飞书文档编辑技巧（lark-cli docs +update）
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 处理飞书文档中的具体编辑任务，让内容修改和实际文档结构保持一致。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 编辑飞书云文档的**写入操作**手册。聚焦"怎么改"——指令选择、格式规则、写后验证、常见坑。读取操作见 `feishu-cli` 技能。
 
 ## 环境（与 feishu-cli 相同）

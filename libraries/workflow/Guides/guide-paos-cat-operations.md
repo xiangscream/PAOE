@@ -10,6 +10,17 @@ version: 84
 
 # PAOS 操作指南
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 这是一份日常操作手册。需要给成员发工作、查看处理情况或排查联系问题时，可以在这里找到具体步骤。
+>
+> **从这里开始：** 按下面的适用范围和步骤使用；需要执行时让 Agent 从“操作与参考”继续。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 从本人固定 ENTRY 的代码块取得**当前机器实际的 CLI 调用前缀**（包括显式安装文件和方法库配置）；以下 `paos` 只是这个前缀的简写，不应假定当前系统已有同名全局别名。Portable 的 `health` 检查本地安装，`status` 读取工位与联系结果，`install show` 定位安装；不依赖旧 Core HTTP。参数不清楚时直接查对应子命令的 `--help`。
 
 ## 查看当前事实

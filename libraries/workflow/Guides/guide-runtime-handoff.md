@@ -10,6 +10,17 @@ version: 10
 
 # Runtime 接班与在途外部写入
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 当一个 Agent 需要换会话或交给另一位执行者时，这份指南帮助保留已有成果，并交清楚下一步。
+>
+> **从这里开始：** 按下面的适用范围和步骤使用；需要执行时让 Agent 从“操作与参考”继续。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 消息唤醒后恢复的是员工已有责任，不是只完成一次收件动作。Runtime 提示应引导读取固定 ENTRY/TODO、处理消息、继续未完成且可执行的主线；只有没有后续责任、真实等待或阻碍才结束。不得用“只处理本次消息”把已经授权的原任务变成无关任务。
 
 同一会话压缩后，按[工作循环·恢复](../Workflows/wf-agent-work-cycle.md#恢复)从固定ENTRY实际读取指南、Current与当前原件。orient用于定位。

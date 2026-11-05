@@ -11,6 +11,17 @@ version: 1
 
 # Playwright Browser Automation
 
+<!-- paoe:human-intro:start -->
+> [!info] 给使用者
+> 用浏览器自动化完成或验证网页操作，适合需要重复执行的页面任务。
+>
+> **从这里开始：** 说明你想完成的事，并提供相关材料；具体要求和操作步骤见后文。
+<!-- paoe:human-intro:end -->
+
+<!-- paoe:agent-reference -->
+## 操作与参考
+<!-- paoe:reading-header:end -->
+
 Direct Playwright API for reliable browser automation without MCP complexity.
 
 ## Installation
