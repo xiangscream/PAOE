@@ -1,182 +1,79 @@
 # PAOE
 
-> **给 Agent 一份不会随对话消失的工作。**
+> **让 Agent 的工作，持续跨越对话。**
 
-大多数多 Agent 框架关心的是"**让几个 Agent 协作把活干完**"。
-PAOE 关心的是另一件事：**对话关了、模型换了、电脑重启了，那份工作还在不在。**
+**Personal Agent Operating Environment · 个人 Agent 工作环境**
 
-PAOE（Personal Agent Operating Environment）是一套运行在自己电脑上的 **CLI 与文件约定**：
-它把跨会话的工作事实——项目、工位、当前责任、消息、决策、证据——保存成 JSON 和 Markdown，
-让 Agent 可以被替换、暂停、接力、唤醒，而**工作本身一直连续**。
+PAOE 把长期工作放在你自己的电脑上：项目有独立资料库，Agent 有固定工位，方法可以共享，成果可以积累。关闭对话、换一个模型或重开电脑后，Agent 能沿原来的入口找回责任，继续推进。
 
-## 它跟别的多 Agent 系统有什么不同
+[了解整体结构](#一张图看懂-paoe) · [开始使用](docs/setup/QUICKSTART.md) · [查看架构](ARCHITECTURE.md) · [学习路线](LEARNING-BASELINE.md)
 
-| 维度 | 常见多 Agent 框架 | PAOE |
+## 一张图看懂 PAOE
+
+![PAOE 体系总览：人通过 Obsidian、Agent 应用或画板使用系统；独立项目库保存业务与工位，共享方法库提供方法，系统说明库负责导航；PAOE 本体连接这些资产与外部运行环境。](docs/images/paoe-overview.svg)
+
+**系统集中维护，项目独立保存。** PAOE 本体、共享方法库、系统说明库各有自己的位置；每个项目拥有自己的目录和资料边界，通过登记连接起来，可以放在不同磁盘。
+
+## 各部分分别放什么
+
+| 部分 | 你会在这里找到 | 它负责什么 |
 | --- | --- | --- |
-| 关注点 | Agent 怎么协作干活（对话、编排、角色分工） | **工作怎么活过对话、活过运行时更换** |
-| 状态在哪 | 内存、数据库、某个服务的会话里 | **你电脑上的 JSON / Markdown 文件**，人和 Agent 都能直接读改 |
-| Runtime | 通常绑定某个模型或框架 | **可换**：Codex、OpenCode、Claude…换 Runtime，工位与责任不变 |
-| Agent 是什么 | 一次性的任务执行者 | **长期员工**：固定工位、持续责任、可被唤醒接续 |
-| 部署形态 | 给开发者用的库或平台 | **本机单用户**，Python 标准库，无重型依赖 |
-| 前端 | 需要专门的服务与界面 | **一张画板**（节点 + 连线），直接反映工位与联系表 |
+| **项目库 · Project Vault** | 项目入口、需求与材料、决策与成果、团队和 Agent 工位 | 保存“这件事在做什么、做到哪里、产出了什么”。一个项目可以作为独立 Obsidian 库打开；需要版本管理时使用自己的 Git 仓库。 |
+| **共享方法库 · Library** | Workflow 流程与指南、Skill 专业方法、Tool 工具目录 | 保存“事情可以怎么做”，供不同项目按需复用。 |
+| **系统说明库 · System Vault** | 人类可读的首页、体系说明、资源导航、维护手册 | 帮你理解整套环境，并打开实际的项目、方法和维护入口。 |
+| **PAOE 本体 · Core & Installation** | 程序、本机配置、项目位置登记、联系入口、Rooter 工位 | 连接各个独立部分，提供稳定的读写与接续能力。 |
+| **执行环境 · Runtime** | Codex、OpenCode 等原生 Agent 应用与会话 | 让 Agent 实际思考、使用工具和执行工作；具体登录与唤醒能力按本机配置。 |
 
-一句话：**别的框架让 Agent 更像一个团队，PAOE 让工作更像一份资产。**
+项目正文留在项目库，方法正文留在共享库，系统说明库提供解释与导航。**每份内容有明确的原件，入口指向它。**
 
-## 命名与兼容边界
+## 谁负责什么
 
-产品名称统一为 **PAOE**。为避免无意义迁移，现有命令入口仍使用 `paos.py`，配置环境变量仍为 `PAOS_*`，数据 schema namespace 仍为 `paos-*`，仓库名仍为 `PAOS-portable`。这些是兼容性技术标识，不代表产品仍以 PAOS 为名称；本轮不改 CLI 命令、持久数据格式或目录路径。
+| 角色 | 责任范围 |
+| --- | --- |
+| **你 · Human** | 确定目标、优先级与授权，判断成果是否满足需要。 |
+| **Coordinator · 项目协调者** | 对齐本项目的目标、分工与交付，协调项目成员。 |
+| **Agent · 项目成员** | 在自己的固定工位接收输入、维护当前行动、完成工作，把成果写回项目。 |
+| **Rooter · 环境维护者** | 维护本机安装、共享入口与运行连接；它拥有独立的安装级工位。 |
 
-## 学习入口
+工位是 Agent 长期工作的落脚点：入口说明身份与资源位置，TODO 保存当前行动，邮件与通知保存输入和处理记录。**会话是一次运行，工位让工作延续。**
 
-- [学习基线与路线](LEARNING-BASELINE.md)
-- [当前系统架构](ARCHITECTURE.md)
-- [当前代码地图](code/personal-agent-os/docs/CODE-MAP.md)
+## 一件工作怎样持续推进
 
-## 为什么这件事值得做
+**提出目标 → 回到工位 → 查方法或找同事 → 执行并保存成果 → 交付 → 继续主线**
 
-多 Agent 协作最容易出问题的不是"Agent 不够聪明"，而是**状态断裂**：
+例如，让 Agent 整理一份长期研究：研究材料和结论保存在项目库；Agent 从共享库寻找合适的方法，在自己的工位记录下一步。下次打开原生应用时，它沿入口读回当前行动，继续处理同一份研究。
 
-- 派了一个活，Agent 干到一半，对话关了——下次它不记得自己是谁、在做什么。
-- 换了个 Runtime，之前的任务上下文、责任边界全没了。
-- 消息"发出去了"，但没人真正消费——你却以为已经交接完成。
+成员之间可以留信；配置好运行入口后，还可以请求原生提醒。**消息已保存、提醒已受理、Agent 已读取、任务已完成，是分别需要确认的事实。**
 
-PAOE 把这些问题拆成几件可验证的事：**留信（Mail）→ 登记（Notice）→ 唤醒（Wake）→ 消费（Handle）→ 归档**。
-每一步独立成立，**"发出去了"永远不等于"做完了"**。
+## 你可以怎样使用它
 
-## 核心概念
+- **Obsidian / Markdown 编辑器**：阅读和维护项目资料、成果与共享方法，从系统说明库进入各部分。
+- **Agent 原生应用**：直接与 Codex、OpenCode 等应用里的成员一起工作，让它从自己的工位接续。
+- **可选画板**：浏览项目与成员，查看工位和项目入口；连接独立 CAT 后，可围绕主题开展圆桌讨论。
 
-**硬基座 · 项目事实与工作流**
-项目资料按库组织（可复用的方法、流程、工具目录），稳定、可迁移。
+这些入口围绕同一批原件工作。画板关闭后，项目资料与工位仍然保留；讨论形成的结论应写回项目正文。
 
-**软约束 · 工位与协作**
-每个长期 Agent 有一个固定工位（`Workstations/<agent>/`）：
-`ENTRY.md`（身份入口）、`TODO.md`（当前责任）、`mailbox/`（持久消息）、`notices/`（待读与处理记录）。
-这些是 Markdown，可以直接阅读；普通项目正文可用 Obsidian / 文件工具维护，TODO 的结构化区域以及 Mail、Notice 等状态原件应沿各自写入合同更新。
+<details>
+<summary>看看画板原型</summary>
 
-**Runtime 可换**
-Agent 的思考与执行交给 Codex / OpenCode 等 Harness；PAOE 只保存能活过它们的状态。
-换会话、换模型、换电脑，**工位和责任不丢**。
+![PAOE 画板原型：项目成员节点与工位详情](front/board-polished.png)
 
-**唤醒与接续**
-原生会话可以关，Agent 可以离线。目标 Runtime 在线且本机接收入口就绪时，可以请求原生提醒；
-离线时消息仍持久保存，下次从自己的 ENTRY / TODO 恢复身份与当前责任，接着干。
+图片来自 WorkBuddy 原型，用于说明交互形态。当前接入版读取 Portable 的真实登记和工位，具体界面与 CAT 操作以目标电脑验证为准。见[画板说明](front/README.md)。
 
-**CAT 圆桌**
-Agent 之间（以及人和 Agent）围绕主题的临时讨论空间。
-讨论是自由的，但只有显式登记的结论才进入项目正式事实——**CAT 可以自由，PAOE 必须清楚。**
+</details>
 
-## 画板前端
+## 从哪里开始
 
-一个轻量网页画板（原生 JS + SVG，无框架）：
+先在本机准备安装，再选择一个真实项目和它的成员。**取得代码包与方法资产后，还需要配置本机项目、工位和运行入口。**
 
-- 从本机五字段项目登记读取成员和 Coordinator，节点显示 TODO v4 当前行动、待处理与邮件数。
-- **Ctrl 多选**后点击“围绕主题沟通”，使用已配置的独立 CAT 建立圆桌。
-- **右键节点**：从 workflow / skill / tool 库里选范例，提示该 Agent 按范例参考。
-- 点进工位看 TODO 全文、邮件、成果；点进 CAT 房间看完整对话、发言。
-- **项目口径**直接展示项目库的 `INDEX.md`（唯一映射指南）。
+| 你现在想做什么 | 从这里进入 |
+| --- | --- |
+| 第一次安装、检查环境 | [快速开始](docs/setup/QUICKSTART.md) |
+| 理解各层关系和事实归属 | [系统架构](ARCHITECTURE.md) |
+| 配置独立系统说明库、连接分散项目 | [本机配置指导](docs/setup/PAOE-CENTRAL-CORE-DISTRIBUTED-PROJECTS.md) · [System Vault 工具](docs/setup/SYSTEM-VAULT-TOOL.md) |
+| 阅读共享流程与专业方法 | [Workflow](libraries/workflow/README.md) · [Skill](libraries/skill/README.md) |
+| 打开可选画板 | [画板使用说明](front/README.md) |
+| 学习或参与开发 | [学习路线](LEARNING-BASELINE.md) · [代码地图](code/personal-agent-os/docs/CODE-MAP.md) |
+| 换电脑或选择迁入资料 | [迁移说明](MIGRATION-NOTES.md) |
 
-![PAOE 画板](front/board-polished.png)
-
-上图为 WorkBuddy 原型。当前接入版读取 Portable 的登记和工位原件；界面与 CAT 的现场操作仍需在目标电脑验收。
-
-## 快速开始
-
-克隆本仓库后，在仓库根目录（Python 3.10+）：
-
-```bash
-# 查看将生成的配置（只读，不写文件）
-python portable.py plan
-
-# 生成本机安装配置（config/local/），并建好必要空目录
-python portable.py init
-
-# 只读核对配置与路径是否一致
-python portable.py doctor
-```
-
-`init` 不覆盖已有配置、不导入项目、不创建工位、不启动服务；`doctor` 只读检查，**配置通过 ≠ 业务/唤醒已验证**。
-
-然后按你的系统设置环境变量，验证 CLI：
-
-```powershell
-# Windows PowerShell
-$env:PAOS_INSTALLATION_FILE = (Resolve-Path .\config\local\installation.json).Path
-$env:PAOS_LIBRARY_ROOTS_CONFIG = (Resolve-Path .\config\local\library-roots.json).Path
-$env:PYTHONIOENCODING = "utf-8"
-python .\code\personal-agent-os\scripts\paos.py health
-```
-
-```sh
-# Linux / WSL
-export PAOS_INSTALLATION_FILE="$PWD/config/local/installation.json"
-export PAOS_LIBRARY_ROOTS_CONFIG="$PWD/config/local/library-roots.json"
-export PYTHONIOENCODING=utf-8
-python code/personal-agent-os/scripts/paos.py health
-```
-
-**说明**：克隆本仓库得到的是**代码与共享方法资产**，不是某台电脑的已运行安装——项目、工位、登录态、接收器都需要在你自己的机器上另行准备或登记。
-
-准备好一个现有的项目根后，显式登记其位置和现任 Coordinator：
-
-```powershell
-python .\code\personal-agent-os\scripts\paos.py project register 3002 --root "D:\OB\3002-Personal-Agent-OS" --coordinator 3002-s010
-python .\code\personal-agent-os\scripts\paos.py project show 3002
-```
-
-登记只保存 `schema/id/root_path/homes/coordinator_home_id`，不创建或覆盖真实工位。
-Rooter 是独立的安装级入口，不算项目成员。项目当前口径由 `INDEX.md` 导航，行动保存在工位 TODO v4。
-迁移边界见 [MIGRATION-NOTES.md](MIGRATION-NOTES.md)，组件职责见 [ARCHITECTURE.md](ARCHITECTURE.md)。
-
-启动画板前端：
-
-```bash
-python portable.py serve
-# 浏览器打开 http://127.0.0.1:8780/
-```
-
-画板是可选进程，关闭后 CLI 文件操作照常可用。默认读取此 checkout 的 `config/local/installation.json`，
-不依赖原机器盘符或 WorkBuddy 自带 Python。CAT 需显式连接：
-`python portable.py serve --cat-url http://127.0.0.1:8870`。
-未配置 CAT 时工位与共享方法仍可读，页面不会自动启动 Runtime 或接收器。详见[画板说明](front/README.md)。
-
-## 这套系统怎么组成
-
-```
-硬侧（代码，可重建）
-  PAOE CLI + 本地文件读写模块 · 可选独立 CAT
-软侧（Markdown，人与 Agent 共改）
-  PAOE 方法库：workflow / skill / tool 方法资产
-  项目库：工位 + INDEX + TEAM + 材料与成果
-运行状态（机器读写）
-  data/（项目定位登记） + config/local/（本机安装配置）
-```
-
-一句话：**硬侧给机器，软侧给人；代码管"能跑"，库管"怎么跑"，项目库管"在跑什么"。**
-
-## 它站在哪些项目的肩膀上
-
-PAOE 借鉴但不复制：
-
-- **AutoGen / CrewAI** 的多 Agent 消息协作 → CAT 圆桌，但 PAOE 把"讨论"与"正式事实"分开。
-- **LangGraph** 的状态思想 → 但 PAOE 更轻，不强制图结构，用文件合同代替编排。
-- **MetaGPT** 的角色 SOP → workflow 库，但 PAOE 是"软约束"（方法与范例），不是强制流程。
-
-最大的不同仍是：**那些框架优化"怎么让 Agent 干活"，PAOE 在意"工作本身能不能持续、可迁移、被人看懂"。**
-
-## 适合谁
-
-- 你在用多个 Agent（Codex / OpenCode / Claude 等）做**长期、有连续性的事**，而不是一次性问答。
-- 你希望**工作状态不寄生在某段对话、某个模型、某次运行上**。
-- 你偏好**轻量、可读、可自己掌控**的本机工具，而不是又一个重型平台。
-
-## 当前状态
-
-本仓库 PAOS-portable 是 PAOE 的**可迁移代码与随包方法资产**：
-代码与业务资料分离、数据根从代码里抽出、历史依赖与可重建物剔除。
-画板是可选的 Python 标准库后端与原生 JS；工位与库为 Markdown / JSON。
-正常文件接续不要求旧 Core、Work/Session 状态机、Dashboard 或画板在线。
-
-开发检查：`python code/personal-agent-os/scripts/verify.py`。
-画板显示辅助测试使用 `node --test tests/board-ui.test.mjs`；运行产品不需要 Node。
-
-它不是一个"功能大而全"的框架，而是一个**正在持续收敛、追求简单与可解释**的个人工作内核。
+PAOE 当前面向个人电脑上的长期 Agent 工作。基础文件操作可独立使用；原生提醒、画板和 CAT 按需要配置。现有 CLI 与配置中保留的 `paos` / `PAOS_*` 是兼容性标识，使用方法见[快速开始](docs/setup/QUICKSTART.md#名称与开发入口)。

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="796" viewBox="0 0 1200 796" role="img" aria-labelledby="title desc">
+  <title id="title">PAOE 体系总览</title>
+  <desc id="desc">使用者通过 Obsidian、Agent 应用和可选画板进入。独立项目库保存项目与成员工位，共享方法库提供方法，系统说明库负责解释导航。PAOE 本体连接这些资产；外部 Runtime 执行工作。Rooter 维护本机环境，Coordinator 协调项目。</desc>
+  <defs>
+    <style>
+      text{font-family:"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;fill:#173042}
+      .eyebrow{font-size:15px;font-weight:700;letter-spacing:2px;fill:#42756d}
+      .heading{font-size:34px;font-weight:700}
+      .label{font-size:24px;font-weight:700}
+      .body{font-size:20px;fill:#456070}
+      .small{font-size:17px;fill:#55707d}
+      .tag{font-size:18px;font-weight:700;fill:#286458}
+      .line{fill:none;stroke:#93abae;stroke-width:2}
+    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8" fill="none" stroke="#93abae" stroke-width="1.5"/></marker>
+  </defs>
+  <rect width="1200" height="796" rx="24" fill="#f7f9f8"/>
+  <text x="48" y="44" class="eyebrow">PAOE / PERSONAL AGENT OPERATING ENVIRONMENT</text>
+  <text x="48" y="93" class="heading">集中维护系统与方法，独立保存每个项目。</text>
+  <text x="48" y="127" class="body">人确定方向 · Agent 执行工作 · 项目与工位保存连续性</text>
+  <rect x="48" y="161" width="1104" height="88" rx="14" fill="#fff" stroke="#d5dfdf"/>
+  <text x="72" y="198" class="label">使用入口</text>
+  <text x="72" y="229" class="body">Obsidian / 文档编辑器</text>
+  <text x="427" y="229" class="body">Agent 原生应用</text>
+  <text x="805" y="229" class="body">可选画板 / CAT 圆桌</text>
+  <path d="M400 249 V278" class="line" marker-end="url(#arrow)"/>
+  <path d="M964 249 V278" class="line" marker-end="url(#arrow)"/>
+  <rect x="48" y="285" width="704" height="255" rx="16" fill="#edf3fb" stroke="#bbcfe3"/>
+  <text x="72" y="326" class="label">独立项目库</text>
+  <text x="72" y="357" class="body">项目入口 · 需求与材料 · 决策与成果</text>
+  <rect x="72" y="383" width="656" height="95" rx="10" fill="#fff" stroke="#c9d9e9"/>
+  <text x="94" y="418" class="label">项目团队与固定工位</text>
+  <text x="94" y="451" class="body">Coordinator 协调 · Agent 执行 · TODO / 输入留存</text>
+  <text x="72" y="515" class="small">每个项目独立目录，可独立打开、备份与迁移。</text>
+  <rect x="776" y="285" width="376" height="119" rx="16" fill="#eaf4ef" stroke="#b9d8ca"/>
+  <text x="800" y="326" class="label">共享方法库</text>
+  <text x="800" y="358" class="body">Workflow · Skill · Tool</text>
+  <text x="800" y="386" class="small">不同项目按需使用同一份方法原件。</text>
+  <rect x="776" y="421" width="376" height="119" rx="16" fill="#fff7e9" stroke="#e4d3ae"/>
+  <text x="800" y="462" class="label">系统说明库</text>
+  <text x="800" y="494" class="body">体系说明 · 资源导航 · 维护手册</text>
+  <text x="800" y="522" class="small">帮助人理解系统，找到各处原件。</text>
+  <path d="M400 574 V548" class="line" marker-end="url(#arrow)"/>
+  <path d="M964 574 V548" class="line" marker-end="url(#arrow)"/>
+  <text x="592" y="565" text-anchor="middle" class="small">定位、读写与联系</text>
+  <rect x="48" y="580" width="1104" height="89" rx="14" fill="#173b40"/>
+  <text x="72" y="617" class="label" style="fill:#fff">PAOE 本体</text>
+  <text x="72" y="647" class="body" style="fill:#d7e8e7">程序 · 本机配置 · 项目登记 · 联系入口</text>
+  <text x="800" y="617" class="label" style="fill:#fff">Rooter</text>
+  <text x="800" y="647" class="body" style="fill:#d7e8e7">维护安装与运行连接</text>
+  <path d="M400 675 V703" class="line" marker-end="url(#arrow)"/>
+  <text x="424" y="695" class="small">按本机配置连接</text>
+  <rect x="48" y="712" width="1104" height="52" rx="12" fill="#fff" stroke="#d5dfdf"/>
+  <text x="72" y="746" class="tag">外部执行环境</text>
+  <text x="298" y="746" class="body">Codex · OpenCode 等原生应用与会话</text>
+</svg>
