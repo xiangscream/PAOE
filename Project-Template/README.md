@@ -64,7 +64,7 @@ paos workstation init '<project-id>' '<home-id>' --root '<已登记项目根>' -
 ```
 
 4. 将本母版的 `notices/README.md`、`codex.py`、`opencode.py`、`wake_entry.py` 带入新工位，在本人 TODO 合并 `ONBOARD` 入职任务：了解 PAOE、继承业务理解、更新 TEAM、按实际 Harness 配置并验证唤醒器。当前 CLI 初始化不会自动复制这些文件或导入母版任务，创建者须补齐这一步；已有 ENTRY/TODO/说明和脚本保留人工编辑，已完成入职不重置。任务由本人沿 TODO v4 写入入口维护，不用母版整份覆盖。
-5. 从实际 Home 打开生效 AGENTS/INDEX/ENTRY/TODO 与必要业务原件，验证 Guide、Library、Tool 定位，检查旧工作循环路径已退出；已有项目普通文件只在批准范围内修改。TEAM/ENTRY 改动后运行 System 的 `PROJECTS --check`，不手改派生成员表。
+5. 从实际 Home 打开生效 AGENTS/INDEX/ENTRY/TODO 与必要业务原件，验证 Guide、Library、Tool 定位，检查旧工作循环路径已退出；已有项目普通文件只在批准范围内修改。TEAM/ENTRY 改动后，Rooter沿现有 `paos_team_overview.py` 更新PROJECTS聚合，并执行本页“修改后检查”；不手改派生成员表。
 
 通用行为写入 AGENTS 公共母本；专题操作在 [Guide](../Guide/README.md)，专业方法在独立 Libraries。代码仓库自身的 AGENTS 保持独立的工程约定，不被项目公共区同步器覆盖。
 
