@@ -41,7 +41,7 @@ describe('document link resolution', () => {
   })
 
   it('treats absolute and external paths without pretending the page can open them', () => {
-    expect(resolveDocPath('INDEX.md', 'C:/Users/remo/Doc.md').kind).toBe('absolute')
+    expect(resolveDocPath('INDEX.md', 'C:/example/Doc.md').kind).toBe('absolute')
     expect(resolveDocPath('INDEX.md', '/mnt/c/notes.md').kind).toBe('absolute')
     expect(resolveDocPath('INDEX.md', 'https://example.com').kind).toBe('external')
     expect(resolveDocPath('INDEX.md', '#section').kind).toBe('anchor')

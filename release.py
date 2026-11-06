@@ -38,6 +38,7 @@ def validate_path(name: str) -> None:
 # Exact, reviewed examples only; no directory-wide Core exception.
 # Split drive literals keep this table from being mistaken for deployed paths.
 EXAMPLE_PATHS = {
+    'Core/front/ui/tests/markdown.test.ts': {'C:' + '/example/Doc.md'},
     'Core/code/personal-agent-os/docs/RUNTIME-INJECTION.md': {
         'C:' + '/path/to/product-authorized-extension/.runtime.json',
         'C:' + '/原目标的STOP路径', 'C:' + '/实际Python/python.exe',
