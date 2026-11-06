@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 88
+version: 89
 ---
 
 # PAOS 操作指南
@@ -151,7 +151,7 @@ Notice 的 Markdown 文件只是输入登记；当前 `state`、`read`、`archiv
 
 ### 已处理输入的库外归档
 
-System 0.2.1 提供 Project 工位的物理归档操作。Owner 先核官方读面中的已读和 handled 状态，选定没有当前依赖的输入，再执行：
+System 0.2.2 提供 Project 工位与安装级 Rooter 的物理归档操作，历史 Mail 的处理状态与关联 Notice 一致。Owner 先核官方读面中的已读和 handled 状态，选定没有当前依赖的输入，再执行：
 
 ```text
 paos attention archive-input <project> <agent> --message-id <原消息ID> --history-root <库外绝对批次>
@@ -159,9 +159,18 @@ paos attention archive-input <project> <agent> --notice-id <独立Notice的ID> -
 paos attention history-read --history-root <同批次> --agent-id <agent> --message-id <原消息ID>
 ```
 
+安装级 Rooter 使用本人入口，默认沿 installation 定位 `rooter-001`，无需 Project：
+
+```text
+paos attention rooter-archive-input --message-id <原消息ID> --history-root <库外绝对批次>
+paos attention rooter-history-read --history-root <同批次> --message-id <原消息ID>
+```
+
+Rooter 的独立 Notice 同样用 `--notice-id`；沿原 Home 与原标记定位，不创建临时 Project 或新身份。
+
 Mail 与关联 Notice 一起归档；独立 Notice 用 `--notice-id`，历史读回时也用同一参数。批次保留原目录结构和处理事实，项目 HISTORY 链接该批次。`history-read` 必须给准确批次，不会按 ID 全局搜索历史；展示归档仍只改变当前视图。
 
-成功归档后，同一 message-id 不重建历史件或重复提醒；从未送达的目标仍可按原投递合同补齐。文件移动与归档标记分步完成：中断时先核错误中的进度、源路径和原批次，完成收尾前不要重放发送。完成后读回历史正文与处理状态，并确认对应原件已退出活跃目录。当前命令为 Project 工位入口，Rooter 不以虚构 Project 调用。
+成功归档后，同一 message-id 不重建历史件或重复提醒；从未送达的目标仍可按原投递合同补齐。文件移动与归档标记分步完成：中断时先核错误中的进度、源路径和原批次，完成收尾前不要重放发送。完成后读回历史正文与 Mail/Notice 处理状态，并确认对应原件已退出活跃目录。
 
 Rooter Current 使用 `paos attention rooter-todo-update --set objective=... --set next_action=...`，沿登记 Home 复用同一字段合同；`--home-id` 默认 `rooter-001`。
 
