@@ -155,5 +155,79 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(failure["error_code"], "cat_not_configured")
 
 
+    def test_team_fields_paused_registered_and_team_only_are_visible(self):
+        root = self.roots["1001"]
+        (root / "TEAM.md").write_text(
+            "# TEAM\n\n## 当前成员\n\n### 1001-s001\n"
+            "- 成员状态：在队\n- 职责：协调\n- 名称：一号\n\n"
+            "### 1001-s002\n- 成员状态：暂停保留，不是当前执行者\n- 职责：暂停岗位\n\n"
+            "### 9999-s999\n- 成员状态：在队\n- 职责：未登记同事\n- 名称：外部同事\n",
+            encoding="utf-8")
+        dashboard = self.board.dashboard("1001")
+        self.assertTrue(dashboard["team"]["path"].endswith("TEAM.md"))
+        self.assertIn("当前成员", dashboard["team"]["body"])
+        rows = {item["id"]: item for item in dashboard["agents"]}
+        self.assertEqual(rows["1001-s001"]["name"], "一号")
+        self.assertTrue(rows["1001-s001"]["can_contact"])
+        self.assertFalse(rows["1001-s002"]["can_contact"])
+        self.assertTrue(rows["1001-s002"]["registered"])
+        self.assertFalse(rows["9999-s999"]["registered"])
+        self.assertFalse(rows["9999-s999"]["can_contact"])
+        self.assertEqual(self.board.agent("1001-s001")["role"], "协调")
+
+    def test_layout_is_ui_only_and_does_not_touch_team_or_todo(self):
+        root = self.roots["1001"]
+        team_before = (root / "Workstations/1001-s001/TODO.md").read_bytes()
+        empty = self.board.layout("1001")
+        self.assertEqual(empty["layout"]["nodes"], {})
+        with self.assertRaises(BoardProblem):
+            self.board.save_layout("1001", {"nodes": {"1001-s001": {"x": "bad", "y": 1}}})
+        saved = self.board.save_layout("1001", {"nodes": {"1001-s001": {"x": 10, "y": 20}},
+                                                "viewport": {"x": 1, "y": 2, "zoom": 0.8}})
+        self.assertEqual(saved["layout"]["nodes"]["1001-s001"]["x"], 10)
+        self.assertEqual(self.board.layout("1001")["layout"]["viewport"]["zoom"], 0.8)
+        self.assertEqual(team_before, (root / "Workstations/1001-s001/TODO.md").read_bytes())
+        self.assertFalse((root / "TEAM.md").exists())
+
+    def test_document_and_resource_are_read_only_and_bounded(self):
+        root = self.roots["1001"]
+        doc = self.board.document("1001", "INDEX.md")
+        self.assertIn("唯一口径", doc["body"])
+        with self.assertRaises(BoardProblem):
+            self.board.document("1001", "../2001/INDEX.md")
+        resource = self.board.resource("workflow", "guide-working")
+        self.assertEqual(resource["resource"]["id"], "guide-working")
+        with self.assertRaises(BoardProblem):
+            self.board.resource("workflow", "not-registered")
+
+    def test_mail_collaboration_uses_human_sender_stable_id_and_remind_flag(self):
+        with patch.object(self.board, "run_paos", return_value={"ok": True, "activation": {"state": "accepted"}}) as run:
+            result = self.board.collaboration({
+                "project": "1001", "mode": "mail", "members": ["1001-s002"],
+                "topic": "补充资料", "body": "请查看参考", "message_id": "ui-fixed-001",
+                "remind": True,
+            })
+        self.assertEqual(result["state"], "saved")
+        args = run.call_args.args[0]
+        self.assertIn("--sender-kind", args)
+        self.assertIn("human", args)
+        self.assertIn("--remind", args)
+        self.assertIn("ui-fixed-001", args)
+
+    def test_chat_collaboration_partial_join_returns_room_id(self):
+        with patch.object(self.board, "cat", side_effect=[
+            {"ok": True, "room": {"id": "room-x"}},
+            {"ok": True},
+            {"ok": False, "error": "join failed", "error_code": "join_failed"},
+        ]):
+            result = self.board.collaboration({
+                "project": "1001", "mode": "chat", "members": ["1001-s001", "1001-s002"],
+                "topic": "主题", "body": "正文", "message_id": "ui-chat-001",
+            })
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["state"], "partial")
+        self.assertEqual(result["room_id"], "room-x")
+
+
 if __name__ == "__main__":
     unittest.main()

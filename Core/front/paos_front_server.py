@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -123,13 +125,16 @@ class Board:
         home = Path(ref["home_path"])
         mails = sorted((home / "mailbox").glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
         current = todo["current"]
-        return {"ok": True, "id": home_id, "home_path": str(home), "project": ref["project_id"],
-                **current, "tasks": todo["counts"], "task_items": todo["tasks"],
-                "pending_notices": state["notices"]["pending_count"], "mail_total": len(mails),
-                "todo": (home / "TODO.md").read_text(encoding="utf-8"),
-                "entry": (home / "ENTRY.md").read_text(encoding="utf-8") if (home / "ENTRY.md").is_file() else "",
-                "mails": [{"name": p.name, "preview": p.read_text(encoding="utf-8")[:600]} for p in mails[:6]],
-                "docs": [p.name for p in home.glob("*.md") if p.name not in {"TODO.md", "ENTRY.md", "CONTACT.md", "STATUS.md"}]}
+        row = {"ok": True, "id": home_id, "home_path": str(home), "project": ref["project_id"],
+               **current, "tasks": todo["counts"], "task_items": todo["tasks"],
+               "pending_notices": state["notices"]["pending_count"], "mail_total": len(mails),
+               "todo": (home / "TODO.md").read_text(encoding="utf-8"),
+               "entry": (home / "ENTRY.md").read_text(encoding="utf-8") if (home / "ENTRY.md").is_file() else "",
+               "mails": [{"name": p.name, "preview": p.read_text(encoding="utf-8")[:600]} for p in mails[:6]],
+               "docs": [p.name for p in home.glob("*.md") if p.name not in {"TODO.md", "ENTRY.md", "CONTACT.md", "STATUS.md"}]}
+        if ref["home_kind"] == "project_agent":
+            row.update(self._team_fields(ref["project_id"], home_id))
+        return row
 
     def examples(self) -> dict:
         roots = load_library_roots(runtime_path(self.installation["library_roots_config"]))
@@ -144,6 +149,232 @@ class Board:
             result["tool"].append({"id": "tool-catalog", "title": "本机工具目录（使用前核实实际入口）",
                                    "kind": "tool", "path": roots["tool_catalog"]})
         return result
+
+
+    def team_info(self, project_id: str) -> dict:
+        record = self.registry.read_record(project_id)
+        root = runtime_path(record["root_path"])
+        path = root / "TEAM.md"
+        try:
+            body = path.read_text(encoding="utf-8") if path.is_file() else ""
+        except (OSError, UnicodeError) as exc:
+            raise BoardProblem("team_unreadable", f"TEAM.md 无法读取：{path}") from exc
+        members: dict[str, dict] = {}
+        active = False
+        current = None
+        for line in body.splitlines():
+            if line.startswith("## "):
+                active = line.strip() == "## 当前成员"
+                current = None
+                continue
+            if not active:
+                continue
+            if line.startswith("### "):
+                candidate = line[4:].strip()
+                current = candidate
+                members[candidate] = {}
+                continue
+            if current is None:
+                continue
+            match = re.match(r"^\s*-\s*([^：:]+)[：:]\s*(.*)$", line)
+            if not match:
+                continue
+            key, value = match.group(1).strip(), match.group(2).strip()
+            for label in ("成员状态", "职责", "职责/专长", "名称", "员工号", "个人介绍/专长"):
+                if key == label:
+                    members[current][key] = value
+        return {"path": str(path), "body": body, "members": members}
+
+    def _team_fields(self, project_id: str, home_id: str) -> dict:
+        info = self.team_info(project_id)
+        member = info["members"].get(home_id, {})
+        status = member.get("成员状态") or "资料未补齐"
+        paused = "暂停" in status or "不是当前执行者" in status
+        number = staff_number(home_id, installation_path=self.installation_file, installation=self.installation) or ""
+        return {
+            "number": number,
+            "name": member.get("名称") or number or home_id,
+            "role": member.get("职责") or member.get("职责/专长") or "",
+            "member_status": status,
+            "registered": True,
+            "can_contact": not paused,
+            "team_path": info["path"],
+        }
+
+    def layout(self, project_id: str) -> dict:
+        record = self.registry.read_record(project_id)
+        path = runtime_path(record["root_path"]) / ".paos" / "ui" / "board.json"
+        if not path.is_file():
+            return {"ok": True, "project": record["id"],
+                    "layout": {"nodes": {}, "viewport": {"x": 0, "y": 0, "zoom": 1}}}
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise BoardProblem("layout_invalid", f"布局文件无法读取：{path}") from exc
+        return {"ok": True, "project": record["id"], "layout": self._clean_layout(value)}
+
+    def _clean_layout(self, value) -> dict:
+        if not isinstance(value, dict):
+            raise BoardProblem("layout_invalid", "布局必须是 JSON 对象。")
+        raw_nodes = value.get("nodes", {})
+        if not isinstance(raw_nodes, dict):
+            raise BoardProblem("layout_invalid", "布局 nodes 必须是对象。")
+        nodes = {}
+        for home_id, point in raw_nodes.items():
+            if not isinstance(home_id, str) or not isinstance(point, dict):
+                raise BoardProblem("layout_invalid", "布局节点必须是 id→坐标对象。")
+            x, y = point.get("x"), point.get("y")
+            if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (x, y)):
+                raise BoardProblem("layout_invalid", "布局坐标必须是有限数字。")
+            nodes[home_id] = {"x": x, "y": y}
+        raw_view = value.get("viewport", {})
+        if not isinstance(raw_view, dict):
+            raise BoardProblem("layout_invalid", "布局 viewport 必须是对象。")
+        view = {"x": 0, "y": 0, "zoom": 1}
+        for key in view:
+            if key in raw_view:
+                item = raw_view[key]
+                if not isinstance(item, (int, float)) or isinstance(item, bool) or not math.isfinite(item):
+                    raise BoardProblem("layout_invalid", "布局视口必须是有限数字。")
+                view[key] = item
+        if view["zoom"] <= 0:
+            raise BoardProblem("layout_invalid", "布局 zoom 必须大于 0。")
+        return {"nodes": nodes, "viewport": view}
+
+    def save_layout(self, project_id: str, value) -> dict:
+        record = self.registry.read_record(project_id)
+        layout = self._clean_layout(value)
+        root = runtime_path(record["root_path"])
+        path = root / ".paos" / "ui" / "board.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temp.write_text(json.dumps(layout, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            os.replace(temp, path)
+        except OSError as exc:
+            raise BoardProblem("layout_write_failed", f"布局无法保存：{path}") from exc
+        finally:
+            if temp.exists():
+                temp.unlink()
+        return {"ok": True, "project": record["id"], "layout": layout}
+
+    def resource(self, kind: str, resource_id: str) -> dict:
+        for item in self.examples().get(kind, []):
+            if str(item.get("id")) != resource_id:
+                continue
+            path = Path(str(item.get("path") or ""))
+            try:
+                body = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                raise BoardProblem("resource_unreadable", f"资源原件无法读取：{path}") from exc
+            return {"ok": True, "resource": {
+                "id": resource_id, "kind": kind, "title": item.get("title", ""),
+                "path": str(path), "body": body,
+            }}
+        raise BoardProblem("resource_not_found", "资源不在当前已登记 Libraries 中。")
+
+    def document(self, project_id: str, relative: str) -> dict:
+        record = self.registry.read_record(project_id)
+        root = runtime_path(record["root_path"]).resolve()
+        relative = str(relative or "").strip()
+        if not relative or Path(relative).is_absolute():
+            raise BoardProblem("document_path_invalid", "文档路径必须是项目内相对路径。")
+        path = (root / relative).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise BoardProblem("document_path_escape", "文档路径不能离开项目根。") from exc
+        if not path.is_file():
+            raise BoardProblem("document_missing", "文档不存在。")
+        if path.suffix.lower() not in {".md", ".txt", ".json"}:
+            raise BoardProblem("document_type_invalid", "只支持 Markdown、文本或 JSON 原件。")
+        try:
+            body = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise BoardProblem("document_unreadable", "文档无法读取。") from exc
+        return {"ok": True, "path": relative, "body": body}
+
+    def collaboration(self, payload: dict) -> dict:
+        project_id = str(payload.get("project") or "")
+        mode = str(payload.get("mode") or "")
+        members = payload.get("members")
+        topic = str(payload.get("topic") or "").strip()
+        body = str(payload.get("body") or "").strip()
+        message_id = str(payload.get("message_id") or f"ui-{uuid.uuid4().hex}")
+        remind = bool(payload.get("remind", False))
+        if mode not in {"chat", "mail"}:
+            raise BoardProblem("collaboration_mode_invalid", "mode 必须是 chat 或 mail。")
+        if not isinstance(members, list) or not all(isinstance(x, str) and x for x in members):
+            raise BoardProblem("collaboration_members_invalid", "members 必须是成员 id 列表。")
+        if mode == "chat" and len(members) < 2:
+            raise BoardProblem("collaboration_members_invalid", "chat 至少需要两位成员。")
+        if mode == "mail" and len(members) < 1:
+            raise BoardProblem("collaboration_members_invalid", "mail 至少需要一位成员。")
+        if not topic:
+            raise BoardProblem("collaboration_topic_missing", "主题不能为空。")
+        if not body:
+            raise BoardProblem("collaboration_body_missing", "正文不能为空。")
+        for member in members:
+            self.home(member)
+        if mode == "mail":
+            args = ["agent", "send", project_id]
+            for member in members:
+                args += ["--to", member]
+            args += ["--sender-kind", "human", "--sender-id", "human", "--subject", topic,
+                     "--body", body, "--message-id", message_id]
+            if remind:
+                args.append("--remind")
+            result = self.run_paos(args)
+            state = "unknown" if result.get("error_code") == "cli_result_unknown" else (
+                "saved" if result.get("ok") else "failed")
+            return {"ok": bool(result.get("ok")), "state": state, "mode": mode,
+                    "phase": "send", "message_id": message_id,
+                    "notification": result.get("activation") or result.get("reminders") or {},
+                    "detail": result.get("error", ""), "error_code": result.get("error_code", ""),
+                    "result": result}
+        created = self.cat(["create", "--title", topic])
+        if not created.get("ok"):
+            state = "unknown" if created.get("error_code") in {"cli_result_unknown", "cat_stream_unavailable"} else "failed"
+            return {"ok": False, "state": state, "mode": mode, "phase": "create",
+                    "message_id": message_id, "notification": {}, "detail": created.get("error", ""),
+                    "error_code": created.get("error_code", ""), "result": created}
+        room_id = str((created.get("room") or {}).get("id") or "")
+        labels = {person["id"]: person["name"] for person in self.people()}
+        for member in members:
+            joined = self.cat(["join", room_id, "--home", member, "--label", labels.get(member, member)])
+            if not joined.get("ok"):
+                return {"ok": False, "state": "partial", "mode": mode, "phase": "join",
+                        "message_id": message_id, "room_id": room_id,
+                        "notification": {}, "detail": joined.get("error", ""),
+                        "error_code": joined.get("error_code", ""), "result": joined}
+        sent = self.send_message(room_id, "human", body, message_id, notify=remind)
+        state = "unknown" if sent.get("error_code") in {"cli_result_unknown", "cat_stream_unavailable"} else (
+            "saved" if sent.get("ok") else "partial")
+        return {"ok": bool(sent.get("ok")), "state": state, "mode": mode, "phase": "send",
+                "message_id": message_id, "room_id": room_id,
+                "notification": sent.get("notification") or sent.get("reminders") or {},
+                "detail": sent.get("error", ""), "error_code": sent.get("error_code", ""),
+                "result": sent}
+
+    def collaboration_status(self, project_id: str, mode: str, message_id: str, room_id: str = "") -> dict:
+        if mode == "mail":
+            result = self.run_paos(["mail", "read", project_id, message_id])
+            return {"ok": bool(result.get("ok")), "state": "saved" if result.get("ok") else (
+                "not_found" if result.get("error_code") in {"mail_message_missing", "mail_missing"} else "unknown"),
+                "mode": mode, "message_id": message_id, "detail": result.get("error", ""), "result": result}
+        if not room_id:
+            return {"ok": False, "state": "unknown", "mode": mode, "message_id": message_id,
+                    "detail": "chat 需要已知 room_id 才能核对。", "result": {}}
+        result = self.cat(["read", room_id, "--after", "0"])
+        found = False
+        for item in (result.get("messages") or []):
+            if isinstance(item, dict) and str(item.get("id") or "") == message_id:
+                found = True
+                break
+        state = "saved" if found else ("not_found" if result.get("ok") else "unknown")
+        return {"ok": bool(result.get("ok")), "state": state, "mode": mode,
+                "message_id": message_id, "room_id": room_id,
+                "detail": result.get("error", ""), "result": result}
 
     def cat(self, args: list[str]) -> dict:
         if not self.cat_url:
@@ -164,8 +395,20 @@ class Board:
         rooms = rooms_result["rooms"] if rooms_result.get("ok") else []
         root = runtime_path(selected["root_path"]) if selected else None
         index = root / "INDEX.md" if root else None
+        team = self.team_info(selected["id"]) if selected else {"path": "", "body": "", "members": {}}
+        known = {str(item.get("id")) for item in agents}
+        for home_id, member in team["members"].items():
+            if home_id in known:
+                continue
+            status = member.get("成员状态") or "资料未补齐"
+            agents.append({"ok": True, "id": home_id, "registered": False,
+                           "number": member.get("员工号", ""), "name": member.get("名称") or home_id,
+                           "role": member.get("职责") or member.get("职责/专长") or "",
+                           "member_status": status, "can_contact": False,
+                           "team_path": team["path"]})
         return {"ok": True, "project": selected["id"] if selected else "",
                 "coordinator": selected["coordinator_home_id"] if selected else "", "agents": agents,
+                "team": {"path": team["path"], "body": team["body"]},
                 "projects": [{"id": p["id"], "name": runtime_path(p["root_path"]).name} for p in projects],
                 "index": index.read_text(encoding="utf-8") if index and index.is_file() else "",
                 "examples": self.examples(), "rooms": rooms,
@@ -208,13 +451,15 @@ class Board:
         return {"ok": True, **result["room"]} if result.get("ok") else result
 
     def send_message(self, room_id: str, sender: str, body: str, message_id: str,
-                     reply_to: str = "") -> dict:
+                     reply_to: str = "", notify: bool = True) -> dict:
         joined = self.cat(["join", room_id, "--home", sender, "--label", "Human" if sender == "human" else sender])
         if not joined.get("ok"):
             return {**joined, "message_submitted": False}
         args = ["send", room_id, "--from", sender, "--body", body, "--message-id", message_id]
         if reply_to:
             args += ["--reply-to", reply_to]
+        if not notify:
+            args.append("--no-notify")
         return self.cat(args)
 
     def hint(self, home_id: str, example: dict) -> dict:
@@ -309,6 +554,21 @@ class Handler(BaseHTTPRequestHandler):
                 value = self.server.board.cat(["read", unquote(parts[2]), "--after", str(after)])
             elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "members":
                 value = self.server.board.cat(["members", unquote(parts[2])])
+            elif url.path == "/api/layout":
+                value = self.server.board.layout(parse_qs(url.query).get("project", [""])[0])
+            elif url.path == "/api/library/resource":
+                query = parse_qs(url.query)
+                value = self.server.board.resource(query.get("kind", [""])[0],
+                                                  query.get("id", [""])[0])
+            elif url.path == "/api/document":
+                query = parse_qs(url.query)
+                value = self.server.board.document(query.get("project", [""])[0],
+                                                   query.get("path", [""])[0])
+            elif url.path == "/api/collaboration":
+                query = parse_qs(url.query)
+                value = self.server.board.collaboration_status(
+                    query.get("project", [""])[0], query.get("mode", [""])[0],
+                    query.get("message_id", [""])[0], query.get("room_id", [""])[0])
             elif url.path == "/api/dashboard":
                 value = self.server.board.dashboard(parse_qs(url.query).get("project", [""])[0])
             elif url.path.startswith("/api/agent/"):
@@ -347,10 +607,32 @@ class Handler(BaseHTTPRequestHandler):
                 value = self.server.board.send_message(unquote(self.path.rsplit("/", 2)[-2]),
                                                       "human", body,
                                                       str(payload.get("message_id") or f"board-{uuid.uuid4().hex}"),
-                                                      str(payload.get("reply_to") or ""))
+                                                      str(payload.get("reply_to") or ""),
+                                                      bool(payload.get("notify", True)))
+            elif self.path == "/api/collaboration":
+                value = self.server.board.collaboration(payload)
             else:
                 self._json({"ok": False, "error": "未找到此入口。", "error_code": "not_found"}, 404)
                 return
+            self._json(value)
+        except READ_ERRORS as exc:
+            self._json(error_view(exc), 422)
+
+    def do_PUT(self):
+        try:
+            payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            if not isinstance(payload, dict):
+                raise ValueError("请求必须为 JSON 对象。")
+        except (ValueError, UnicodeError) as exc:
+            self._json({"ok": False, "error": str(exc), "error_code": "bad_json"}, 400)
+            return
+        try:
+            url = urlsplit(self.path)
+            if url.path != "/api/layout":
+                self._json({"ok": False, "error": "未找到此入口。", "error_code": "not_found"}, 404)
+                return
+            value = self.server.board.save_layout(
+                str(payload.get("project") or ""), payload.get("layout"))
             self._json(value)
         except READ_ERRORS as exc:
             self._json(error_view(exc), 422)
