@@ -109,8 +109,8 @@ class SystemReleaseTests(unittest.TestCase):
     def test_fresh_install_has_no_fake_home_and_reinit_preserves_bytes(self):
         system,core,config,env,prefix,portable,external = self.installation()
         data = json.loads(config.read_text('utf-8'))
-        self.assertEqual(Path(data['source_root']),core/'code/personal-agent-os')
-        self.assertEqual(Path(data['data_root']),core/'data')
+        self.assertEqual(Path(data['source_root']).resolve(),(core/'code/personal-agent-os').resolve())
+        self.assertEqual(Path(data['data_root']).resolve(),(core/'data').resolve())
         self.assertEqual(data['rooter_home'],'')
         self.assertFalse((core/'data/project-registry').exists())
         self.assertFalse((system/'rooter/ENTRY.md').exists())

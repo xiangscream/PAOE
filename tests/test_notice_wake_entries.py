@@ -71,7 +71,7 @@ class WakeEntryTests(unittest.TestCase):
             run.return_value.returncode = 0
             self.assertEqual(self.call('opencode','bind','--session-id','real-session','--driver-config',str(config)),0)
             command = run.call_args.args[0]
-            self.assertEqual(command[-2:], ['--driver-config',str(config)])
+            self.assertEqual(command[-2:], ['--driver-config',str(config.resolve())])
             self.assertEqual(command[command.index('--driver')+1], 'opencode')
         self.assertEqual(before, self.snapshot())
 
