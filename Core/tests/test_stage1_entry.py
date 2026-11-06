@@ -76,8 +76,9 @@ class StageOneEntryTests(unittest.TestCase):
         self.assertIn("# Fixture", text)
         self.assertIn(normalized_path(self.guide / "README.md"), normalized_path(text))
         self.assertNotIn("wf-agent-work-cycle.md", text)
-        self.assertNotIn("C:/Users/remo", normalized_path(text))
-        self.assertNotIn("/home/remo", text)
+        # The actual interpreter location is legitimate and must be the one
+        # rendered from this test's runtime, not a guessed/hard-coded host.
+        self.assertIn(normalized_path(sys.executable), normalized_path(text))
         self.assertNotIn("## 工作约定", text)
         self.assertIn("当前工作与项目", text)
 
