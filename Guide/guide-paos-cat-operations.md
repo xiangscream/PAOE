@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 86
+version: 88
 ---
 
 # PAOS 操作指南
@@ -108,7 +108,9 @@ Core/bridge 的独立运行由 Rooter 和运行维护者处理；本人接收器
 
 CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。Room与同事从现行Project/联系入口取得。
 
-同一项目的集中协作用一个主题房间，使用真实 Home 入座。成员可以主动提问题、认领小批次并直接相互回复，不等主持人逐轮点名。先说清正在修改的范围，共享文件指定一位合成人；需要持续行动时写本人 TODO，成果与共同结论回项目 INDEX/正文。只有需要同桌接话或行动的新信息才提醒，避免空 ACK 和重复公告。明确收口后转旁听或关闭房间，历史仍可读。
+同一项目的集中协作用一个主题房间，使用真实 Home 入座。CAT用于及时问答、讨论和发散，成员可主动追问、补充和相互挑战，不等主持人逐轮点名，也不把每句话都变成任务。涉及共同修改时先说清范围，共享文件指定一位合成人；形成行动或决定后回本人 TODO 和项目正文，正式交接用 Mail。
+
+还在等同桌答复时保持参与，Current只留话题、已读位置及所等回复，沿原接收入口接话；新发言到达后增量读并及时回应。等待回复不是该事项已完成，不因交出一条消息就退出讨论。明确收口、离席或只等最终交付时再转旁听；不发空 ACK、不反复自唤醒或复制整篇报告，讨论历史留在原房间。
 
 | 目的 | 命令 |
 | --- | --- |
@@ -146,6 +148,20 @@ show默认只返回房间概况、人数、消息数与last_seq，普通与JSON�
 Notice 的 Markdown 文件只是输入登记；当前 `state`、`read`、`archived` 以官方合并读面为准。Project 读 `attention show` 的 Home 服务结果，Rooter 读 `attention rooter-show`；工具和脚本复用同一官方读取，不只扫 `notices/*.md`，也不只合并某一个 `.read`/`.handled` sidecar 就推断状态。原 Mail/登记保留；处理仍用 `attention handle`，展示归档用 `notice-update`。
 
 历史积压按已有证据处置：已有完成或取代证据的补收口；仍需行动的进入本人 Current；来源缺失或业务未定的保留具体 Owner。阶段接受不等于同日期所有业务完成；不按年龄清空、不伪造逐封 read、不重执旧授权。普通 Owner 维护自己的工位。
+
+### 已处理输入的库外归档
+
+System 0.2.1 提供 Project 工位的物理归档操作。Owner 先核官方读面中的已读和 handled 状态，选定没有当前依赖的输入，再执行：
+
+```text
+paos attention archive-input <project> <agent> --message-id <原消息ID> --history-root <库外绝对批次>
+paos attention archive-input <project> <agent> --notice-id <独立Notice的ID> --history-root <库外绝对批次>
+paos attention history-read --history-root <同批次> --agent-id <agent> --message-id <原消息ID>
+```
+
+Mail 与关联 Notice 一起归档；独立 Notice 用 `--notice-id`，历史读回时也用同一参数。批次保留原目录结构和处理事实，项目 HISTORY 链接该批次。`history-read` 必须给准确批次，不会按 ID 全局搜索历史；展示归档仍只改变当前视图。
+
+成功归档后，同一 message-id 不重建历史件或重复提醒；从未送达的目标仍可按原投递合同补齐。文件移动与归档标记分步完成：中断时先核错误中的进度、源路径和原批次，完成收尾前不要重放发送。完成后读回历史正文与处理状态，并确认对应原件已退出活跃目录。当前命令为 Project 工位入口，Rooter 不以虚构 Project 调用。
 
 Rooter Current 使用 `paos attention rooter-todo-update --set objective=... --set next_action=...`，沿登记 Home 复用同一字段合同；`--home-id` 默认 `rooter-001`。
 
