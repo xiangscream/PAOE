@@ -13,11 +13,11 @@ Rooter 维护本机安装、共享入口和运行连接，不属于任何 Projec
 
 ## 本机操作
 
-在 System 根目录执行，先核准确安装：
+先用[本机已安装入口](../README.md#已安装机器上的首次使用)核准确安装；`paos`代表该完整调用前缀：
 
 ```text
-python -X utf8 -B Core/code/personal-agent-os/scripts/paos.py --installation-file Core/config/local/installation.json install show
-python -X utf8 -B Core/code/personal-agent-os/scripts/paos.py --installation-file Core/config/local/installation.json health
+paos install show
+paos health
 ```
 
 已有机器继续使用自己的权威安装描述；不要把示例路径当成第二套配置。进入 `rooter_home` 后用 `python contact.py status` 查本人的联系状态；TODO 由 `attention rooter-todo-update` / `rooter-todo-write` 和指纹守卫维护。
