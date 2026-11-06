@@ -60,6 +60,7 @@ from paos_attention_service import (  # noqa: E402
     takeover_input as attention_takeover_input,
     mark_input_read as attention_mark_input_read,
     archive_input as attention_archive_input,
+    archive_rooter_input as attention_archive_rooter_input,
     read_history_input as attention_read_history_input,
     organize_input as attention_organize_input,
     handle_mail_input as attention_handle_mail_input,
@@ -1771,6 +1772,22 @@ def execute_attention(
     """V1.3 Home service; public paths persist facts but never submit native turns."""
     _resolve_staff_number_recipients(args)
     try:
+        if args.attention_command == "rooter-history-read":
+            try:
+                history = attention_read_history_input(
+                    history_root=str(args.history_root),
+                    agent_id=str(getattr(args, "home_id", "rooter-001") or "rooter-001"),
+                    message_id=str(args.message_id or ""),
+                    notice_id=str(args.notice_id or ""),
+                )
+            except (MailProblem, NoticeProblem) as problem:
+                raise AttentionServiceProblem(
+                    str(getattr(problem, "code", "attention_history_read_failed")),
+                    str(problem),
+                    dict(getattr(problem, "details", {}) or {}),
+                ) from problem
+            return {"ok": True, **history}
+
         if args.attention_command.startswith("rooter-"):
             home_ref = _registered_rooter_home(
                 installation_path,
@@ -1779,6 +1796,16 @@ def execute_attention(
             )
             if args.attention_command == "rooter-show":
                 return {"ok": True, **attention_read_home_state(home_ref)}
+            if args.attention_command == "rooter-archive-input":
+                return {
+                    "ok": True,
+                    **attention_archive_rooter_input(
+                        home_ref=home_ref,
+                        history_root=str(args.history_root),
+                        message_id=str(args.message_id or ""),
+                        notice_id=str(args.notice_id or ""),
+                    ),
+                }
             if args.attention_command == "rooter-read":
                 return {
                     "ok": True,
@@ -3007,6 +3034,26 @@ def build_parser() -> argparse.ArgumentParser:
         "rooter-show",
         help="Read the registered Rooter Home without creating a Project Session",
     )
+    x.add_argument("--home-id", default="rooter-001")
+
+    x = attention_sub.add_parser(
+        "rooter-archive-input",
+        help="Move one already-read, handled Rooter Mail/Notice to an external history batch",
+    )
+    target = x.add_mutually_exclusive_group(required=True)
+    target.add_argument("--message-id")
+    target.add_argument("--notice-id")
+    x.add_argument("--history-root", required=True, help="Absolute external batch directory")
+    x.add_argument("--home-id", default="rooter-001")
+
+    x = attention_sub.add_parser(
+        "rooter-history-read",
+        help="Read moved Rooter input from the explicit external history batch",
+    )
+    x.add_argument("--history-root", required=True)
+    target = x.add_mutually_exclusive_group(required=True)
+    target.add_argument("--message-id")
+    target.add_argument("--notice-id")
     x.add_argument("--home-id", default="rooter-001")
 
     x = attention_sub.add_parser(

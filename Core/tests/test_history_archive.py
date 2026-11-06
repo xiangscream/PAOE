@@ -18,7 +18,12 @@ sys.path.insert(0, str(SCRIPTS))
 import paos
 from paos_installation import write_installation_descriptor
 from paos_mail import list_mail
-from paos_notice import list_notices
+from paos_notice import (
+    create_notice,
+    handle_notice,
+    list_notices,
+    mark_notice_read,
+)
 from paos_orient import render_orient
 from paos_contact import parse_team_payload
 from paos_todo import render_todo
@@ -151,6 +156,10 @@ class HistoryArchiveTests(unittest.TestCase):
         self.assertIn('这条输入已处理', read['mail']['markdown'])
         self.assertEqual(read['notice']['state'], 'handled')
         self.assertTrue(read['notice']['read'])
+        self.assertTrue(read['mail']['handling']['handled'])
+        self.assertEqual(read['mail']['handling']['state'], 'handled')
+        self.assertEqual(read['mail']['handling']['reason'], '已处理')
+        self.assertEqual(read['mail']['handling']['action_ref'], 'Works/test.md')
         self.assertEqual(list_mail(self.vault, '3002-s002')['count'], 0)
 
     def test_same_message_id_reentry_does_not_recreate_archived_mail_or_notice(self):
@@ -291,6 +300,85 @@ class HistoryArchiveTests(unittest.TestCase):
             '--agent-id', '2001-s009', '--message-id', 'msg-cross-001',
         )[1]
         self.assertEqual(read['notice']['state'], 'handled')
+
+    def test_rooter_home_archive_reentry_and_history_read(self):
+        args = (
+            'attention', 'send', '3002', '--to', 'rooter-001',
+            '--sender-kind', 'agent', '--sender-id', '3002-s001',
+            '--subject', 'Rooter 历史', '--body', 'Rooter 正文。',
+            '--message-id', 'msg-rooter-history-001',
+        )
+        self.call(*args)
+        notice_id = list_notices(self.rooter)['items'][0]['notice_id']
+        self.call('attention', 'rooter-read', notice_id)
+        self.call(
+            'attention', 'rooter-handle', notice_id,
+            '--resolution', 'Rooter 已处理', '--action-ref', 'Works/rooter.md',
+        )
+        history = self.root / 'rooter-history'
+        self.call(
+            'attention', 'rooter-archive-input', '--message-id',
+            'msg-rooter-history-001', '--history-root', str(history),
+        )
+        self.assertFalse((self.rooter / 'mailbox/msg-rooter-history-001.md').exists())
+        self.assertTrue(
+            (self.rooter / 'mailbox/.archived/msg-rooter-history-001.json').is_file()
+        )
+        replay = self.call(*args)[1]
+        self.assertFalse((self.rooter / 'mailbox/msg-rooter-history-001.md').exists())
+        self.assertEqual(list_notices(self.rooter)['count'], 0)
+        self.assertEqual(
+            replay['notices']['external_routes'][0]['mail_state'], 'archived'
+        )
+        read = self.call(
+            'attention', 'rooter-history-read', '--history-root', str(history),
+            '--message-id', 'msg-rooter-history-001',
+        )[1]
+        self.assertEqual(read['notice']['state'], 'handled')
+        self.assertEqual(list_notices(self.rooter)['count'], 0)
+
+    def test_history_read_legacy_mail_alias_projects_notice_handling(self):
+        history = self.root / 'legacy-history'
+        home = history / 'Workstations/2001-s009'
+        (home / 'mailbox').mkdir(parents=True)
+        (home / 'notices').mkdir()
+        (home / 'mailbox/legacy-001.md').write_text(
+            '---\nschema: paos-workstation-mail/v1\n'
+            'recipient_agent_id: 2001-s009\n'
+            'subject: Legacy\n---\n\n旧信正文\n',
+            encoding='utf-8',
+        )
+        notice = create_notice(
+            home_path=home,
+            home_kind='project_agent',
+            home_id='2001-s009',
+            project_id='2001',
+            source_kind='mail',
+            source_ref='legacy-mail-file:legacy-001.md',
+            summary='Legacy',
+        )
+        notice_id = notice['notice_id']
+        mark_notice_read(
+            home_path=home,
+            notice_id=notice_id,
+            reader_home_kind='project_agent',
+            reader_home_id='2001-s009',
+            reader_project_id='2001',
+        )
+        handle_notice(
+            home_path=home,
+            notice_id=notice_id,
+            resolution='legacy 已处理',
+            action_ref='Works/legacy.md',
+        )
+        read = self.call(
+            'attention', 'history-read', '--history-root', str(history),
+            '--agent-id', '2001-s009', '--message-id', 'legacy-001',
+        )[1]
+        self.assertEqual(read['notice']['state'], 'handled')
+        self.assertEqual(read['notice']['source_ref'], 'legacy-mail-file:legacy-001.md')
+        self.assertTrue(read['mail']['handling']['handled'])
+        self.assertEqual(read['mail']['handling']['reason'], 'legacy 已处理')
 
     def test_direct_notice_can_move_and_be_read_by_notice_id(self):
         source = self.root / 'incoming-direct.md'
