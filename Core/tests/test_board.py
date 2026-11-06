@@ -191,7 +191,8 @@ class BoardTests(unittest.TestCase):
             })
         self.assertTrue(result["ok"])
         self.assertEqual(result["room_id"], "room-existing")
-        self.assertNotIn("create", [args[0] for args in call.call_args_list])
+        commands = [item.args[0][0] for item in call.call_args_list]
+        self.assertNotIn("create", commands)
         self.assertEqual(call.call_count, 5)
 
     def test_paused_member_is_rejected_before_any_cli_call(self):
@@ -217,16 +218,50 @@ class BoardTests(unittest.TestCase):
             })
         self.assertEqual(result["state"], "unknown")
 
-    def test_notification_maps_cat_dispatch_and_mail_reminders(self):
+    def test_notification_maps_real_mail_activation_and_cat_dispatch(self):
         with patch.object(self.board, "run_paos", return_value={
-                "ok": True, "reminders": [{"state": "accepted"}]}):
+                "ok": True, "activation": {"state": "native_accepted", "accepted": True}}):
             mail = self.board.collaboration({
                 "project": "1001", "mode": "mail", "members": ["1001-s002"],
                 "topic": "通知", "body": "正文", "message_id": "ui-notify-001", "remind": True,
             })
         self.assertEqual(mail["notification"], "accepted")
-        with patch.object(self.board, "run_paos", return_value={"ok": True, "dispatch": "queued"}):
-            pass
+        with patch.object(self.board, "run_paos", return_value={
+                "ok": True, "activation": {"accepted": True}}):
+            no_remind = self.board.collaboration({
+                "project": "1001", "mode": "mail", "members": ["1001-s002"],
+                "topic": "不提醒", "body": "正文", "message_id": "ui-notify-002", "remind": False,
+            })
+        self.assertEqual(no_remind["notification"], "not_requested")
+
+    def test_cat_http_error_without_status_is_unknown(self):
+        with patch.object(self.board, "cat", return_value={
+                "ok": False, "error_code": "http_error", "error": "500"}):
+            result = self.board.collaboration({
+                "project": "1001", "mode": "chat", "members": ["1001-s001", "1001-s002"],
+                "topic": "主题", "body": "正文", "message_id": "ui-http-001",
+            })
+        self.assertEqual(result["state"], "unknown")
+        self.assertEqual(result["phase"], "create")
+
+    def test_existing_room_with_unrelated_member_is_rejected(self):
+        with patch.object(self.board, "cat", return_value={
+                "ok": True, "room": {"id": "room-a", "members": [
+                    {"home_id": "1001-s001"}, {"home_id": "2001-s009"}]}}) as call:
+            with self.assertRaises(BoardProblem) as raised:
+                self.board.collaboration({
+                    "project": "1001", "mode": "chat",
+                    "members": ["1001-s001", "1001-s002"], "room_id": "room-a",
+                    "topic": "不匹配", "body": "正文", "message_id": "ui-room-mismatch",
+                })
+        self.assertEqual(raised.exception.code, "collaboration_room_mismatch")
+        self.assertFalse(any(item.args[0][0] == "create" for item in call.call_args_list))
+
+    def test_missing_mail_dispatch_is_not_found(self):
+        with patch.object(self.board, "run_paos", return_value={
+                "ok": False, "error_code": "mail_dispatch_missing", "error": "missing"}):
+            result = self.board.collaboration_status("1001", "mail", "missing-id")
+        self.assertEqual(result["state"], "not_found")
 
     def test_dashboard_is_summary_and_agent_detail_has_full_text(self):
         dashboard = self.board.dashboard("1001")

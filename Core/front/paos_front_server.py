@@ -295,12 +295,20 @@ class Board:
         return {"ok": True, "path": relative, "body": body}
 
     UNKNOWN_CODES = {"cli_result_unknown", "cli_output_invalid", "cat_stream_unavailable",
-                     "cat_timeout", "cat_unknown"}
+                     "unreachable", "invalid_response"}
     NOTIFICATION_VALUES = {"queued", "accepted", "partial", "not_requested", "unknown"}
 
-    def _result_state(self, result: dict, *, saved: bool | None = None) -> str:
+    def _unknown_result(self, result: dict) -> bool:
         code = str(result.get("error_code") or "")
         if code in self.UNKNOWN_CODES:
+            return True
+        if code == "http_error":
+            status = result.get("status") or (result.get("details") or {}).get("status")
+            return status not in {400, 404, 409, 422}
+        return False
+
+    def _result_state(self, result: dict, *, saved: bool | None = None) -> str:
+        if self._unknown_result(result):
             return "unknown"
         if saved is not None:
             return "saved" if saved else "failed"
@@ -317,22 +325,34 @@ class Board:
             return dispatch
         if dispatch == "skipped":
             return "not_requested"
+        activation = result.get("activation")
+        if isinstance(activation, dict):
+            accepted = activation.get("accepted")
+            state = str(activation.get("state") or "")
+            if accepted is True or state in {"native_accepted", "accepted"}:
+                return "accepted"
+            if accepted is False or state in {"native_rejected", "rejected"}:
+                return "partial"
+            if state in self.NOTIFICATION_VALUES:
+                return state
+            activations = activation.get("activations")
+            if isinstance(activations, list):
+                states = [str(item.get("state") or "") for item in activations if isinstance(item, dict)]
+                flags = [item.get("accepted") for item in activations if isinstance(item, dict)]
+                if "native_accepted" in states or "accepted" in states:
+                    return "accepted" if all(flag is not False for flag in flags) else "partial"
+                if "native_rejected" in states or "rejected" in states:
+                    return "partial"
         reminders = result.get("reminders")
         if isinstance(reminders, list):
             states = {str(item.get("state") or "") for item in reminders if isinstance(item, dict)}
-            if "accepted" in states:
-                return "accepted"
+            accepted = {item.get("accepted") for item in reminders if isinstance(item, dict)}
+            if "native_accepted" in states or "accepted" in states or True in accepted:
+                return "accepted" if False not in accepted else "partial"
+            if "native_rejected" in states or "rejected" in states or False in accepted:
+                return "partial"
             if "queued" in states:
                 return "queued"
-            if "partial" in states or (states and states <= {"queued", "accepted", "not_requested"} and len(states) > 1):
-                return "partial"
-            if states == {"not_requested"} or not states:
-                return "not_requested"
-        activation = result.get("activation")
-        if isinstance(activation, dict):
-            state = str(activation.get("state") or "")
-            if state in self.NOTIFICATION_VALUES:
-                return state
         return "unknown"
 
     def _validate_members(self, members: list[str]) -> None:
@@ -399,12 +419,15 @@ class Board:
                         "detail": shown.get("error", ""), "error_code": shown.get("error_code", ""),
                         "result": shown}
             room = shown.get("room") or {}
+            room_state = str(room.get("state") or room.get("status") or "")
+            if room_state in {"closed", "ended", "archived"}:
+                raise BoardProblem("collaboration_room_closed", "已有房间已结束，不能继续发起协作。")
             room_members = room.get("members") or []
             if isinstance(room_members, list):
                 ids = {str(item.get("home_id") or item) if isinstance(item, dict) else str(item)
                        for item in room_members}
-                if ids and not (ids & set(members)):
-                    raise BoardProblem("collaboration_room_mismatch", "已有房间与提交成员不匹配。")
+                if ids and not ids <= set(members):
+                    raise BoardProblem("collaboration_room_mismatch", "已有房间包含本次未选择的成员。")
         else:
             created = self.cat(["create", "--title", topic])
             if not created.get("ok"):
@@ -418,7 +441,7 @@ class Board:
         for member in members:
             joined = self.cat(["join", room_id, "--home", member, "--label", labels.get(member, member)])
             if not joined.get("ok"):
-                join_state = "unknown" if str(joined.get("error_code") or "") in self.UNKNOWN_CODES else "partial"
+                join_state = "unknown" if self._unknown_result(joined) else "partial"
                 return {"ok": False, "state": join_state,
                         "mode": mode, "phase": "join", "message_id": message_id, "room_id": room_id,
                         "notification": self._notification_view(joined, remind),
@@ -427,7 +450,7 @@ class Board:
         sent = self.send_message(room_id, "human", body, message_id, notify=remind)
         if sent.get("ok"):
             state = "saved"
-        elif str(sent.get("error_code") or "") in self.UNKNOWN_CODES:
+        elif self._unknown_result(sent):
             state = "unknown"
         else:
             state = "partial"
@@ -441,7 +464,7 @@ class Board:
         if mode == "mail":
             result = self.run_paos(["mail", "status", project_id, message_id])
             return {"ok": bool(result.get("ok")), "state": "saved" if result.get("ok") else (
-                "not_found" if result.get("error_code") in {"mail_message_missing", "mail_missing"} else "unknown"),
+                "not_found" if result.get("error_code") in {"mail_message_missing", "mail_missing", "mail_dispatch_missing"} else "unknown"),
                 "mode": mode, "message_id": message_id, "detail": result.get("error", ""), "result": result}
         if not room_id:
             return {"ok": False, "state": "unknown", "mode": mode, "message_id": message_id,
