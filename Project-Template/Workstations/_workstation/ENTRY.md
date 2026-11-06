@@ -5,14 +5,14 @@ title: Workstation ENTRY 母本
 description: 本人运行定位与业务入口；规则引用项目公共正文，机器配置引用本机登记。
 tags: template, workstation, entry
 status: active
-version: 20
+version: 21
 ---
 
 # {{home_id}} · 个人工位入口
 
 ## 流程约束
 
-共同运行规则在[项目 AGENTS](../../AGENTS.md)。新会话或压缩后，先用下方 CLI 前缀加 `orient {{project_id}} {{home_id}} --read` 一次读取恢复原件，再按 TODO 接续。
+共同运行规则在[项目 AGENTS](../../AGENTS.md)。新会话或压缩后，直接用下方 CLI 前缀加 `orient {{project_id}} {{home_id}} --read`，完整阅读返回原文后按 TODO 接续。
 
 | 要找什么 | 入口 |
 | --- | --- |

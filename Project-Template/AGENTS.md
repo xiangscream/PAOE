@@ -5,7 +5,7 @@ title: Project AGENTS 入口模板
 description: 项目公共工作指南的唯一编辑母本；项目副本承载派生公共区与本项目约定。
 tags: template, harness, entry
 status: active
-version: 15
+version: 16
 ---
 
 # 项目 <project-id> · Agent 工作入口
@@ -15,7 +15,7 @@ version: 15
 
 ### 1. 从当前任务恢复
 
-新会话、接班或压缩后，从本人 ENTRY 取得 CLI 前缀，运行 `orient <project> <home> --read`，一次实读当前 AGENTS、项目 INDEX、本人 ENTRY/TODO；再读本轮输入与所需成果原文，继续行动。摘要只帮助定位。Rooter 直接读本人工位和 System 入口，不虚构项目。
+新会话、接班或压缩后，从本人 ENTRY 取得 CLI 前缀，直接执行 `orient <project> <home> --read`，将当前 AGENTS、项目 INDEX、本人 ENTRY/TODO 的完整输出读入本轮上下文；再读当前任务需要的输入与成果，继续行动。摘要只帮助定位。Rooter 直接读本人工位和 System 入口，不虚构项目。
 
 从本人 TODO 和发给本人的输入确定下一动作，同事记录用于补事实。新消息未明确替换原任务时，处理后回到原主线；已完成的旧议题只按需查结果。
 
