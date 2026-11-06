@@ -16,6 +16,8 @@ __pycache__/
 node_modules/
 build/
 dist/
+!front/dist/
+!front/dist/**
 *.log
 
 # ---- 系统文件 ----

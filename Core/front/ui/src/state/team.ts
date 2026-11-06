@@ -10,8 +10,8 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 export function statusLabel(agent: AgentSummary): string {
-  if (agent.ok === false) return '工位不可读'
   if (agent.registered === false) return '尚未接入'
+  if (agent.ok === false) return '工位不可读'
   const raw = (agent.member_status || '').toLowerCase()
   if (raw && STATUS_LABELS[raw]) return STATUS_LABELS[raw]
   if (raw) return agent.member_status as string
@@ -19,7 +19,7 @@ export function statusLabel(agent: AgentSummary): string {
 }
 
 export function displayNumber(agent: AgentSummary): string {
-  return agent.number || agent.id
+  return agent.number || agent.id.match(/s\d+$/i)?.[0].toUpperCase() || agent.id
 }
 
 export function displayName(agent: AgentSummary): string {
@@ -33,7 +33,7 @@ export function displayRole(agent: AgentSummary): string {
 
 export function isPaused(agent: AgentSummary): boolean {
   const raw = (agent.member_status || '').toLowerCase()
-  return raw === 'paused' || raw === 'retired' || agent.can_contact === false
+  return raw === 'paused' || raw === 'retired' || raw.includes('暂停') || raw.includes('不是当前执行者')
 }
 
 export function canStartCollaboration(agent: AgentSummary): boolean {
@@ -41,6 +41,7 @@ export function canStartCollaboration(agent: AgentSummary): boolean {
 }
 
 export function actionText(agent: AgentSummary): string {
+  if (agent.registered === false) return '尚未接入工位，可以查看团队介绍'
   if (agent.ok === false) return '无法读取工位，请检查路径或权限'
   if (isPaused(agent)) return '该成员当前暂停，旧 TODO 不代表可执行任务'
   return agent.next_action || agent.objective || '暂无当前行动'

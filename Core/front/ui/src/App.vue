@@ -10,6 +10,7 @@ import ChatView from './components/ChatView.vue'
 import ProjectOverview from './components/ProjectOverview.vue'
 import { DEFAULT_VIEWPORT, mergeLayout } from './state/layout'
 import type { CollaborationDraft } from './state/collab'
+import { canStartCollaboration, displayNumber } from './state/team'
 
 type Tab = 'board' | 'chat' | 'project'
 const THEMES = ['light', 'dark', 'corporate', 'retro'] as const
@@ -25,9 +26,11 @@ const tab = ref<Tab>('board')
 const theme = ref<Theme>((localStorage.getItem('poe.theme') as Theme) || 'light')
 const layout = ref<BoardLayout>({ nodes: {}, viewport: { ...DEFAULT_VIEWPORT } })
 const layoutSupported = ref(true)
+const hasSavedLayout = ref(false)
 const saving = ref('')
 const saveError = ref('')
 let pendingSave: { project: string; layout: BoardLayout } | null = null
+let failedSave: { project: string; layout: BoardLayout } | null = null
 const selectedIds = ref<string[]>([])
 const drawerId = ref('')
 const libraryOpen = ref(false)
@@ -39,9 +42,13 @@ const collabInitial = ref<CollaborationDraft>({
 const lastCompleted = ref<CollabResult | null>(null)
 const boardRef = ref<InstanceType<typeof BoardCanvas> | null>(null)
 const chatRef = ref<InstanceType<typeof ChatView> | null>(null)
+const collabRef = ref<InstanceType<typeof CollaborationDialog> | null>(null)
+const attachingReference = ref(false)
+const resetDialog = ref<HTMLDialogElement | null>(null)
 const initialChatRoom = ref('')
 const locate = ref('')
-let saveTimer: ReturnType<typeof setTimeout> | null = null
+let savingQueue=Promise.resolve()
+let loadGeneration = 0
 
 const agents = computed<AgentSummary[]>(() => {
   const list = dashboard.value?.agents || []
@@ -49,13 +56,13 @@ const agents = computed<AgentSummary[]>(() => {
   return [...list].sort((a, b) => {
     if (a.id === coordinator) return -1
     if (b.id === coordinator) return 1
-    return String(a.number || a.id).localeCompare(String(b.number || b.id))
+    return displayNumber(a).localeCompare(displayNumber(b))
   })
 })
 const drawerAgent = computed(() => agents.value.find(agent => agent.id === drawerId.value) || null)
 const libraryAgentSummary = computed(() => agents.value.find(agent => agent.id === libraryAgent.value) || null)
 const selectedAgents = computed(() => agents.value.filter(agent => selectedIds.value.includes(agent.id)))
-const canCollaborate = computed(() => selectedAgents.value.filter(a => a.can_contact !== false).length >= 2)
+const canCollaborate = computed(() => selectedAgents.value.length >= 2 && selectedAgents.value.every(canStartCollaboration))
 const examples = computed(() => dashboard.value?.examples || { workflow: [], skill: [], tool: [] })
 
 function onThemeChange(event: Event) {
@@ -75,24 +82,33 @@ async function loadProjects() {
 }
 
 async function load(target = project.value) {
+  const generation=++loadGeneration
   loading.value = true
   error.value = ''
   notice.value = ''
   try {
-    if (!projects.value.length) await loadProjects()
-    const data = await api.dashboard(target)
+    const initial = !projects.value.length ? await loadProjects() : null
+    if(initial && !initial.projects.some(item=>item.id===target))target=initial.project
+    const data = initial && initial.project===target ? initial : await api.dashboard(target)
+    if(generation!==loadGeneration)return
+    projects.value=data.projects
     dashboard.value = data
     project.value = data.project || target
     localStorage.setItem('poe.project', project.value)
+    if(!project.value) {
+      selectedIds.value=[]
+      layout.value={nodes:{},viewport:{...DEFAULT_VIEWPORT}}
+      hasSavedLayout.value=false
+      notice.value='尚未登记项目。接入项目后，刷新即可开始使用。'
+      return
+    }
     let saved: BoardLayout | null = null
     let hasLayout = false
     try {
       const response = await api.getLayout(project.value)
+      if(generation!==loadGeneration)return
       saved = response.layout || null
-      hasLayout = !!saved && (
-        Object.keys(saved.nodes || {}).length > 0 ||
-        saved.viewport.x !== 0 || saved.viewport.y !== 0 || Math.abs(saved.viewport.zoom - 0.9) > 0.001
-      )
+      hasLayout = !!saved && Object.keys(saved.nodes).length > 0
       layoutSupported.value = true
     } catch (problem) {
       if (problem instanceof ApiError && problem.status === 404) {
@@ -103,9 +119,9 @@ async function load(target = project.value) {
       }
     }
     const merged = mergeLayout(agents.value, saved || { nodes: {}, viewport: { ...DEFAULT_VIEWPORT } })
-    layout.value = hasLayout ? merged : { nodes: merged.nodes, viewport: { x: 0, y: 0, zoom: 0 } }
+    layout.value = merged
+    hasSavedLayout.value = hasLayout
     await nextTick()
-    if (!hasLayout) boardRef.value?.fit()
     try {
       const cached = localStorage.getItem('poe.selection.' + project.value)
       if (cached) {
@@ -120,9 +136,10 @@ async function load(target = project.value) {
     boardRef.value?.select(selectedIds.value)
     if (drawerId.value && !agents.value.some(agent => agent.id === drawerId.value)) drawerId.value = ''
   } catch (problem) {
+    if(generation!==loadGeneration)return
     error.value = problem instanceof ApiError ? problem.message : String(problem)
   } finally {
-    loading.value = false
+    if(generation===loadGeneration)loading.value = false
   }
 }
 
@@ -133,43 +150,46 @@ function queueSave(next: BoardLayout) {
     return
   }
   const owner = project.value
-  pendingSave = { project: owner, layout: next }
+  const job = { project: owner, layout: next }
+  pendingSave = job
   saving.value = '保存中…'
-  saveError.value = ''
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => void flushSave(), 500)
+  if(failedSave?.project===owner){failedSave=null;saveError.value=''}
+  savingQueue=savingQueue.then(()=>flushSave(job))
 }
 
-async function flushSave() {
-  const job = pendingSave
+async function flushSave(job=pendingSave) {
   if (!job) return
   try {
     await api.saveLayout(job.project, job.layout)
-    if (pendingSave === job) pendingSave = null
-    if (project.value === job.project) saving.value = '已保存布局'
+    if (pendingSave === job) {
+      pendingSave = null
+      if (project.value === job.project) saving.value = '已保存布局'
+    }
+    if(failedSave===job){failedSave=null;saveError.value=''}
   } catch (problem) {
     const message = problem instanceof ApiError ? problem.message : String(problem)
     if (project.value === job.project) saving.value = '未保存'
-    saveError.value = '布局保存失败：' + message
+    failedSave=job
+    saveError.value = '项目 '+job.project+' 的布局未保存：' + message
   }
 }
 
 function retrySave() {
-  if (!pendingSave) return
-  saveError.value = ''
+  const job=failedSave
+  if (!job) return
   saving.value = '保存中…'
-  void flushSave()
+  pendingSave=job
+  savingQueue=savingQueue.then(()=>flushSave(job))
 }
 
 function openChatRoomFromQuery() {
-  const room = new URLSearchParams(location.search).get('room')
-  if (!room) return false
-  initialChatRoom.value = room
-  tab.value = 'chat'
-  return true
+  const query=new URLSearchParams(location.search)
+  const room=query.get('room')
+  if (room)initialChatRoom.value=room
+  tab.value=room || location.pathname.startsWith('/cat')?'chat':query.get('view')==='project'?'project':'board'
 }
 
-function onNodeContext(payload: { id: string; event: MouseEvent }) {
+function onNodeContext(payload: { id: string }) {
   openLibrary(payload.id)
 }
 
@@ -188,11 +208,18 @@ function openAgent(id: string) {
 }
 
 function openLibrary(id: string) {
+  attachingReference.value = false
   libraryAgent.value = id
   libraryOpen.value = true
 }
 
+function chooseCollaborationReference(id: string) {
+  openLibrary(id)
+  attachingReference.value = true
+}
+
 function openCollab(draft: Partial<CollaborationDraft> = {}) {
+  if(!project.value){notice.value='请先接入一个项目，再邀请同事协作。';return}
   collabInitial.value = {
     provider: 'human',
     receiver: '',
@@ -213,7 +240,7 @@ function fromConnection(payload: { source: string; target: string }) {
 function fromSelection() {
   const chosen = selectedAgents.value.filter(a => a.can_contact !== false)
   if (chosen.length < 2) return
-  openCollab({ provider: chosen[0].id, receiver: chosen[1].id, mode: 'chat', remind: true })
+  openCollab({ provider: chosen[0].id, receiver: chosen[1].id, participants:chosen.map(agent=>agent.id), mode: 'chat', remind: true })
 }
 
 function fromDrawer(id: string) {
@@ -222,6 +249,10 @@ function fromDrawer(id: string) {
 
 function attachReference(item: LibraryItem) {
   libraryOpen.value = false
+  if (attachingReference.value) {
+    collabRef.value?.attachReference({title:item.title || item.id,path:item.path || '',kind:item.kind,id:item.id})
+    return
+  }
   openCollab({
     provider: 'human',
     receiver: libraryAgent.value,
@@ -247,6 +278,7 @@ function sendReference(item: LibraryItem) {
 }
 
 async function completed(result: CollabResult) {
+  boardRef.value?.clearEdges()
   lastCompleted.value = result
   if (result.mode === 'chat' && result.room_id) {
     initialChatRoom.value = result.room_id
@@ -277,15 +309,33 @@ function locatePerson() {
 }
 
 function resetBoard() {
-  if (!confirm('恢复默认布局？只影响坐标与视口，不改团队关系。')) return
-  boardRef.value?.resetLayout()
+  resetDialog.value?.showModal()
+}
+
+async function restoreLayout() {
+  await boardRef.value?.resetLayout()
+  resetDialog.value?.close()
 }
 
 function clearSelection() {
   selectedIds.value = []
+  boardRef.value?.select([])
 }
 
 watch(theme, value => applyTheme(value))
+watch(tab, value=>{
+  const url=new URL(location.href)
+  url.pathname=value==='chat'?'/cat':'/'
+  url.searchParams.delete('view')
+  if(value==='chat') {
+    if(initialChatRoom.value)url.searchParams.set('room',initialChatRoom.value)
+  } else {
+    url.searchParams.delete('room')
+    if(value==='project')url.searchParams.set('view','project')
+    document.title=(value==='board'?'团队画板':'项目概览')+' · POE'
+  }
+  history.replaceState(null,'',url)
+})
 
 onMounted(() => {
   applyTheme(theme.value)
@@ -297,14 +347,14 @@ onMounted(() => {
 <template>
   <div class="app-shell">
     <header class="topbar">
-      <div class="brand">PAOE 工作台<small>项目原件映射</small></div>
-      <select v-model="project" class="btn" aria-label="选择项目" @change="load(project)">
+      <div class="brand"><span class="brand-symbol">P</span><span>POE<small>本地协作空间</small></span></div>
+      <select v-model="project" class="btn project-select" :disabled="collabOpen || libraryOpen" aria-label="选择项目" @change="load(project)">
         <option v-for="item in projects" :key="item.id" :value="item.id">{{ item.id }} {{ item.name || '' }}</option>
       </select>
       <nav class="nav-tabs" aria-label="主导航">
         <button :class="{ on: tab === 'board' }" @click="tab = 'board'">团队画板</button>
         <button :class="{ on: tab === 'chat' }" @click="tab = 'chat'">讨论</button>
-        <button :class="{ on: tab === 'project' }" @click="tab = 'project'">项目概览</button>
+        <button :class="{ on: tab === 'project' }" :disabled="!project" @click="tab = 'project'">项目概览</button>
       </nav>
       <span class="spacer"></span>
       <span class="hint">{{ saving || (loading ? '加载中…' : `${agents.length} 位同事`) }}</span>
@@ -334,25 +384,32 @@ onMounted(() => {
       <template v-if="tab === 'board'">
         <div class="board-wrap">
           <div class="board-surface">
-            <div class="row" style="position: absolute; top: 12px; left: 12px; z-index: 6">
-              <input v-model="locate" class="btn" style="width: 220px" placeholder="搜索成员或员工号" @keyup.enter="locatePerson" />
-              <button class="btn" @click="locatePerson">定位</button>
-              <button class="btn ghost" @click="boardRef?.fit()">适应画布</button>
-              <button class="btn ghost" @click="resetBoard">恢复默认</button>
+            <div class="board-toolbar">
+              <div class="board-title"><span>TEAM / {{ project }}</span><h1>团队画板<small>{{ agents.length }} 位同事</small></h1></div>
+              <div class="board-tools">
+                <form class="member-search" @submit.prevent="locatePerson"><input v-model="locate" aria-label="搜索成员或员工号" placeholder="搜索成员、职责…" /><button title="定位成员" aria-label="定位成员" type="submit">⌕</button></form>
+                <button class="btn ghost" @click="boardRef?.fit()">适应画布</button>
+                <button class="btn ghost" :disabled="loading || !agents.length" @click="resetBoard">恢复布局</button>
+              </div>
             </div>
+            <div class="canvas-area">
             <BoardCanvas
-              v-if="!loading"
+              v-if="!loading && agents.length"
               ref="boardRef"
               :agents="agents"
               :layout="layout"
               :project="project"
+              :fit-on-load="!hasSavedLayout"
+              :selected-ids="selectedIds"
               @node-click="openAgent"
               @node-context="onNodeContext"
               @connect="fromConnection"
               @save="queueSave"
               @selection-change="onSelectionChange"
             />
-            <div v-else class="hint" style="padding: 40px">读取项目团队…</div>
+            <div v-else-if="loading" class="hint" style="padding: 40px">读取项目团队…</div>
+            <div v-else class="empty-board"><h2>团队还没有成员</h2><p>准备好项目与同事的原件后，刷新工作台即可查看。</p><button class="btn" @click="load(project)">刷新团队</button></div>
+            </div>
 
             <div v-if="selectedIds.length" class="action-bar">
               <strong>{{ selectedIds.length }} 位已选</strong>
@@ -362,8 +419,8 @@ onMounted(() => {
               <button class="btn ghost" @click="clearSelection">清除选择</button>
             </div>
 
-            <p class="hint" style="position: absolute; left: 14px; bottom: 10px; z-index: 4">
-              拖动连线 = 发起一次主题 Chat 或 Mail；位置只保存布局，不改团队关系。右键或卡片右上角可打开 Libraries。
+            <p class="board-help">
+              拖动同事之间的连线，围绕一个主题开始协作。<span>Ctrl / ⌘ 多选 · 右键选参考</span>
             </p>
           </div>
         </div>
@@ -376,23 +433,24 @@ onMounted(() => {
         :initial-room="initialChatRoom"
         @new-discussion="openCollab({ provider: '', receiver: '', mode: 'chat', remind: true })"
         @board="tab = 'board'"
+        @room-selected="initialChatRoom = $event"
       />
 
       <ProjectOverview
         v-else
         :project="project"
-        :fallback-index="dashboard?.index"
-        :fallback-team="dashboard?.team?.body"
       />
 
       <PersonDrawer
         :agent="drawerAgent"
+        :project="project"
         @close="drawerId = ''"
         @library="openLibrary"
         @collaborate="fromDrawer"
       />
 
       <LibraryPanel
+        class="library-overlay"
         :open="libraryOpen"
         :agent-id="libraryAgent"
         :agent-name="libraryAgentSummary?.name || libraryAgent || ''"
@@ -403,14 +461,27 @@ onMounted(() => {
       />
 
       <CollaborationDialog
+        ref="collabRef"
         :open="collabOpen"
         :initial="collabInitial"
         :agents="agents"
         :project="project"
-        @close="collabOpen = false"
+        @close="collabOpen = false; boardRef?.clearEdges()"
+        @choose-reference="chooseCollaborationReference"
         @completed="completed"
         @open-room="openRoom"
       />
+      <dialog ref="resetDialog" class="modal reset-layout-dialog" aria-labelledby="reset-layout-title">
+        <section class="modal-box">
+          <h2 id="reset-layout-title">恢复默认布局</h2>
+          <p>恢复本项目的默认卡片位置与缩放。</p>
+          <div class="modal-action">
+            <button class="btn" @click="resetDialog?.close()">取消</button>
+            <button class="btn primary" @click="restoreLayout">确认恢复</button>
+          </div>
+        </section>
+        <form method="dialog" class="modal-backdrop"><button aria-label="关闭布局确认">关闭</button></form>
+      </dialog>
     </main>
   </div>
 </template>

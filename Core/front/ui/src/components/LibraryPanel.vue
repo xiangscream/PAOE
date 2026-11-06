@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { api, ApiError } from '../api'
 import type { LibraryItem } from '../types'
 import DocView from './DocView.vue'
+import { resolveDocPath } from '../lib/markdown'
 
 const props = defineProps<{
   open: boolean
@@ -23,6 +24,7 @@ const body = ref('')
 const loading = ref(false)
 const error = ref('')
 const copied = ref('')
+const linkedPath = ref('')
 let token = 0
 
 const all = computed(() => props.examples?.[kind.value] || [])
@@ -40,6 +42,7 @@ async function preview(item: LibraryItem) {
   body.value = ''
   error.value = ''
   loading.value = true
+  linkedPath.value = ''
   try {
     const data = await api.resource(item.kind, item.id)
     if (request !== token) return
@@ -73,6 +76,10 @@ async function copy(path: string) {
   }
 }
 
+function navigateReference(href:string) {
+  linkedPath.value=resolveDocPath((selected.value?.path || '').replace(/\\/g,'/'),href).path
+}
+
 watch(() => props.open, (open) => {
   if (open) {
     query.value = ''
@@ -90,7 +97,7 @@ watch(() => props.open, (open) => {
     <header>
       <div>
         <strong>选择参考</strong>
-        <div class="hint">给 {{ props.agentName }} · 浏览与预览不会发送，也不改变长期能力</div>
+        <div class="hint">{{ props.agentName ? '为 ' + props.agentName + ' 选择方法与范例' : '为这次协作选择方法与范例' }}</div>
       </div>
       <span class="spacer"></span>
       <button class="btn ghost" @click="emit('close')">关闭</button>
@@ -118,7 +125,7 @@ watch(() => props.open, (open) => {
             @click="preview(item)"
           >
             <strong>{{ item.title || item.id }}</strong>
-            <div class="hint">{{ item.kind }} · {{ item.path }}</div>
+            <div class="hint">{{ item.description || item.id }}</div>
           </button>
         </div>
 
@@ -128,10 +135,8 @@ watch(() => props.open, (open) => {
             <div class="row">
               <div style="min-width: 0">
                 <strong>{{ selected.title || selected.id }}</strong>
-                <div class="hint">{{ selected.path }}</div>
               </div>
               <span class="spacer"></span>
-              <button class="btn ghost" @click="copy(selected.path || selected.id)">复制路径</button>
             </div>
             <p v-if="copied" class="hint">{{ copied }}</p>
             <p v-if="selected.description" class="hint">{{ selected.description }}</p>
@@ -139,12 +144,14 @@ watch(() => props.open, (open) => {
             <div v-else-if="error" class="card">
               <p class="muted">预览失败：{{ error }}</p>
               <p class="hint">尚未读到正文；原件位置：{{ selected.path }}</p>
+              <button class="btn ghost" @click="copy(selected.path || selected.id)">复制路径</button>
               <button class="btn" @click="preview(selected)">重试</button>
             </div>
-            <DocView v-else :body="body" :path="selected.path" @copy="copy" />
+            <DocView v-else :body="body" :path="selected.path" @copy="copy" @navigate="navigateReference" />
+            <p v-if="linkedPath" class="hint">本地原件：{{ linkedPath }} <button class="btn ghost" @click="copy(linkedPath)">复制路径</button></p>
             <div class="row" style="margin-top: 8px">
-              <button class="btn primary" @click="emit('attach', selected)">附到本次协作</button>
-              <button class="btn" @click="emit('send', selected)">单独发参考信</button>
+              <button class="btn primary" :disabled="loading || !!error" @click="emit('attach', selected)">附到本次协作</button>
+              <button class="btn" :disabled="loading || !!error" @click="emit('send', selected)">单独发参考信</button>
             </div>
           </template>
         </div>
@@ -178,6 +185,7 @@ watch(() => props.open, (open) => {
 }
 
 .library-preview {
+  min-width: 0;
   overflow: auto;
   min-height: 0;
   display: grid;
@@ -187,13 +195,12 @@ watch(() => props.open, (open) => {
 
 @media (max-width: 720px) {
   .library-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0,1fr);
+    align-content: start;
     overflow: auto;
   }
 
-  .library-list,
-  .library-preview {
-    max-height: none;
-  }
+  .library-list {max-height:200px}
+  .library-preview {overflow:visible}
 }
 </style>

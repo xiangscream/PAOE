@@ -4,8 +4,9 @@ import { api, ApiError } from '../api'
 import type { AgentDetail, AgentSummary } from '../types'
 import { actionText, displayName, displayNumber, displayRole, isPaused, statusLabel } from '../state/team'
 import DocView from './DocView.vue'
+import { resolveDocPath } from '../lib/markdown'
 
-const props = defineProps<{ agent: AgentSummary | null }>()
+const props = defineProps<{ agent: AgentSummary | null; project:string }>()
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'library', id: string): void
@@ -42,6 +43,7 @@ function stateLabel(state: unknown): string {
 
 async function load(id: string) {
   const request = ++token
+  docToken++
   loading.value = true
   error.value = ''
   detail.value = null
@@ -67,10 +69,11 @@ async function load(id: string) {
 
 watch(() => props.agent?.id, (id) => {
   if (id) void load(id)
+  else {token++;docToken++}
 }, { immediate: true })
 
 async function openDoc(path: string) {
-  const project = detail.value?.project
+  const project = props.project
   if (!project) return
   const request = ++docToken
   docLoading.value = true
@@ -91,9 +94,16 @@ async function openDoc(path: string) {
 }
 
 function closeDoc() {
+  docToken++
   docPath.value = ''
   docBody.value = ''
   docError.value = ''
+}
+
+function navigateDoc(href:string) {
+  const target=resolveDocPath(docPath.value,href)
+  if(target.kind==='doc')void openDoc(target.path)
+  else if(target.kind==='absolute') {docError.value='此原件在项目外，可复制路径后打开。';docPath.value=target.path}
 }
 
 async function copy(path: string) {
@@ -136,12 +146,12 @@ function artifactOf(task: unknown): string {
           <p class="hint">原件位置：{{ docPath }}</p>
           <button class="btn" @click="copy(docPath)">复制路径</button>
         </div>
-        <DocView v-else :body="docBody" :path="docPath" @copy="copy" />
+        <DocView v-else :body="docBody" :path="docPath" @copy="copy" @navigate="navigateDoc" />
       </div>
 
       <template v-else>
         <div v-if="props.agent.registered === false" class="banner">
-          该成员尚未接入工位：展示 TEAM 登记信息，不请求不存在的工位文件，也不提供联系动作。
+          这位同事尚未接入工位，目前可以查看团队介绍和参考资料。
         </div>
         <div v-else-if="props.agent.ok === false" class="banner">
           工位不可读：{{ props.agent.error || '请检查登记路径或权限' }}。仍可查看 TEAM 说明和浏览参考。
@@ -153,12 +163,14 @@ function artifactOf(task: unknown): string {
         <div class="row">
           <button class="btn primary" :disabled="!contactable" @click="emit('collaborate', props.agent!.id)">发起协作</button>
           <button class="btn" @click="emit('library', props.agent!.id)">选择参考</button>
+          <button class="btn ghost" @click="openDoc('TEAM.md')">TEAM 原文</button>
           <button v-if="detail" class="btn ghost" @click="showRaw = !showRaw">{{ showRaw ? '收起 TODO 原文' : '查看 TODO 原文' }}</button>
         </div>
 
         <section class="card">
           <h3>职责</h3>
           <p>{{ displayRole(props.agent) }}</p>
+          <p v-if="props.agent.description">{{ props.agent.description }}</p>
           <p v-if="props.agent.member_status" class="hint">TEAM 状态：{{ props.agent.member_status }}</p>
         </section>
 
@@ -197,7 +209,7 @@ function artifactOf(task: unknown): string {
           <section v-if="detail.docs?.length" class="card">
             <h3>成果文档</h3>
             <div class="row">
-              <button v-for="doc in detail.docs.slice(0, 12)" :key="doc" class="btn ghost" @click="openDoc(doc)">{{ doc }}</button>
+              <button v-for="doc in detail.docs.slice(0, 12)" :key="doc" class="btn ghost" @click="openDoc('Workstations/' + props.agent!.id + '/' + doc)">{{ doc }}</button>
             </div>
             <p v-if="copied" class="hint">{{ copied }}</p>
           </section>
@@ -223,6 +235,7 @@ function artifactOf(task: unknown): string {
 </template>
 
 <style scoped>
+.body>section,.body>div,.body>p {margin-bottom:16px}
 .doc-panel {
   min-width: 0;
 }

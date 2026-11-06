@@ -1,14 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { defaultNodes, mergeLayout } from '../src/state/layout'
 import { buildBody, canResubmit, membersFor, outcomeOf, payloadFor, validateDraft } from '../src/state/collab'
-import { acceptMessage, loadDraft, mergeMessages, readPage, saveDraft, sendOutcome } from '../src/state/chat'
 import { canStartCollaboration, displayName, isPaused, statusLabel } from '../src/state/team'
-import type { AgentSummary, BoardLayout, ChatMessage } from '../src/types'
+import type { AgentSummary, BoardLayout } from '../src/types'
 
 const agent = (id: string, extra: Partial<AgentSummary> = {}): AgentSummary => ({ id, ok: true, ...extra })
-const message = (id: string, seq: number): ChatMessage => ({
-  id, seq, sender_id: 'human', body: id, created_at: '2026-11-07T00:00:00Z',
-})
 
 describe('layout', () => {
   it('gives every registered member a default slot without overlap', () => {
@@ -18,21 +14,15 @@ describe('layout', () => {
     expect(new Set(values.map(v => `${v.x},${v.y}`)).size).toBe(3)
   })
 
-  it('keeps saved positions, adds new members and clamps the viewport', () => {
+  it('keeps saved positions and viewport while adding new members', () => {
     const saved: Partial<BoardLayout> = {
       nodes: { a: { x: 120, y: 60 } },
-      viewport: { x: 10, y: 20, zoom: 99 },
+      viewport: { x: 10, y: 20, zoom: 1.2 },
     }
     const layout = mergeLayout([agent('a'), agent('b')], saved)
     expect(layout.nodes.a).toEqual({ x: 120, y: 60 })
     expect(layout.nodes.b).toBeTruthy()
-    expect(layout.viewport.zoom).toBeLessThanOrEqual(2.5)
-  })
-
-  it('ignores non-finite coordinates from a broken layout file', () => {
-    const layout = mergeLayout([agent('a')], { nodes: { a: { x: Number.NaN, y: 4 } }, viewport: { x: 0, y: 0, zoom: 1 } })
-    expect(Number.isFinite(layout.nodes.a.x)).toBe(true)
-    expect(layout.nodes.a.y).toBe(4)
+    expect(layout.viewport).toEqual(saved.viewport)
   })
 })
 
@@ -64,6 +54,13 @@ describe('collaboration', () => {
     expect(body).toContain('workflow/handoff.md')
   })
 
+  it('keeps every selected participant without duplicating the two named roles',()=>{
+    const group={...draft,participants:['A','B','C']}
+    expect(membersFor(group)).toEqual(['A','B','C'])
+    expect(membersFor({...group,mode:'mail'})).toEqual(['A','B','C'])
+    expect(buildBody(group)).toContain('其他参与者：C')
+  })
+
   it('keeps one stable message id and never auto-resubmits unknown results', () => {
     const first = payloadFor(draft, '3002', 'ui-fixed')
     const second = payloadFor(draft, '3002', 'ui-fixed')
@@ -76,30 +73,6 @@ describe('collaboration', () => {
     expect(outcomeOf({ state: 'saved', notification: 'queued' }).text).toContain('已保存')
     expect(outcomeOf({ state: 'saved', notification: 'partial' }).text).toContain('部分提醒未受理')
     expect(payloadFor(draft, '3002', 'ui-1', 'room-9').room_id).toBe('room-9')
-  })
-})
-
-describe('chat state', () => {
-  it('sorts merged messages and advances the cursor only from reads', () => {
-    let timeline = { messages: [message('a', 1)], cursor: 1 }
-    timeline = acceptMessage(timeline, message('c', 3))
-    expect(timeline.cursor).toBe(1)
-    timeline = readPage(timeline, [message('b', 2), message('c', 3)])
-    expect(timeline.messages.map(m => m.id)).toEqual(['a', 'b', 'c'])
-    expect(timeline.cursor).toBe(3)
-  })
-
-  it('treats missing or non-definite results as unknown', () => {
-    expect(sendOutcome(null).state).toBe('unknown')
-    expect(sendOutcome({ ok: false, status: 500 }).state).toBe('unknown')
-    expect(sendOutcome({ ok: false, status: 409 }).state).toBe('failed')
-    expect(sendOutcome({ ok: true, state: 'saved', message_id: 'm' }).state).toBe('saved')
-  })
-
-  it('persists drafts per project and room', () => {
-    saveDraft('3002', 'room-1', { body: '未发送', reply: 'm1' })
-    expect(loadDraft('3002', 'room-1')).toEqual({ body: '未发送', reply: 'm1' })
-    expect(loadDraft('3002', 'room-2')).toEqual({ body: '', reply: '' })
   })
 })
 

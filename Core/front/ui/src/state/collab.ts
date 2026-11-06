@@ -15,10 +15,11 @@ export interface CollaborationDraft {
   mode: CollabMode
   remind: boolean
   reference?: Reference | null
+  participants?: string[]
 }
 
 export function createMessageId(): string {
-  return 'ui-' + (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(16).slice(2))
+  return 'ui-' + crypto.randomUUID()
 }
 
 export function validateDraft(draft: CollaborationDraft): string {
@@ -35,11 +36,13 @@ export function validateDraft(draft: CollaborationDraft): string {
 export function buildBody(draft: CollaborationDraft): string {
   const lines = [
     `主题：${draft.topic.trim()}`,
-    `提供方：${draft.provider || 'Human'}`,
+    `提供方：${draft.provider === 'human' ? 'Human' : draft.provider || 'Human'}`,
     `接收方：${draft.receiver}`,
     '',
     draft.note.trim() || '（无补充说明）',
   ]
+  const others=(draft.participants || []).filter(id=>id!==draft.provider && id!==draft.receiver)
+  if(others.length)lines.push('', '其他参与者：'+others.join('、'))
   if (draft.reference) {
     lines.push('', `参考：${draft.reference.title}`, draft.reference.path)
   }
@@ -47,12 +50,9 @@ export function buildBody(draft: CollaborationDraft): string {
 }
 
 export function membersFor(draft: CollaborationDraft): string[] {
-  if (draft.mode === 'chat') return [draft.provider, draft.receiver]
   // Agent -> Agent Mail keeps both sides so the provider also receives the topic request.
   // A single reference Mail from Human only goes to the receiver.
-  return draft.provider && draft.provider !== 'human' && draft.provider !== draft.receiver
-    ? [draft.provider, draft.receiver]
-    : [draft.receiver]
+  return [...new Set([draft.provider,draft.receiver,...(draft.participants || [])].filter(id=>id && id!=='human'))]
 }
 
 export function payloadFor(

@@ -189,6 +189,7 @@ class Board:
             "number": number,
             "name": member.get("名称") or number or home_id,
             "role": member.get("职责") or member.get("职责/专长") or "",
+            "description": member.get("个人介绍/专长", ""),
             "member_status": status,
             "registered": True,
             "can_contact": not paused,
@@ -332,7 +333,7 @@ class Board:
                    "objective": row.get("objective", ""), "next_action": row.get("next_action", ""),
                    "tasks": row.get("tasks", {}), "pending_notices": row.get("pending_notices", 0),
                    "mail_total": row.get("mail_total", 0)}
-        for key in ("number", "name", "role", "member_status", "registered", "can_contact", "team_path"):
+        for key in ("number", "name", "role", "description", "member_status", "registered", "can_contact", "team_path"):
             summary[key] = row.get(key, "" if key not in {"registered", "can_contact"} else False)
         if not row.get("ok"):
             summary.update({"error": row.get("error", ""), "error_code": row.get("error_code", "")})
@@ -421,6 +422,9 @@ class Board:
                 "result": sent}
 
     def collaboration_status(self, project_id: str, mode: str, message_id: str, room_id: str = "") -> dict:
+        self.registry.read_record(project_id)
+        if mode not in {"mail", "chat"}:
+            raise BoardProblem("collaboration_mode_invalid", "协作方式须为 chat 或 mail。")
         if mode == "mail":
             result = self.run_paos(["mail", "status", project_id, message_id])
             return {"ok": bool(result.get("ok")), "state": "saved" if result.get("ok") else (
@@ -468,6 +472,7 @@ class Board:
             agents.append({"ok": True, "id": home_id, "registered": False,
                            "number": member.get("员工号", ""), "name": member.get("名称") or home_id,
                            "role": member.get("职责") or member.get("职责/专长") or "",
+                           "description": member.get("个人介绍/专长", ""),
                            "member_status": status, "can_contact": False,
                            "team_path": team["path"]})
         return {"ok": True, "project": selected["id"] if selected else "",
@@ -477,6 +482,20 @@ class Board:
                 "index": index.read_text(encoding="utf-8") if index and index.is_file() else "",
                 "examples": self.examples(), "rooms": rooms,
                 "cat": {"ok": True} if rooms_result.get("ok") else rooms_result}
+
+    def rooms(self, project_id: str = "") -> dict:
+        homes = set(self.registry.read_record(project_id)["homes"]) if project_id else None
+        result = self.cat(["list"])
+        if not result.get("ok") or homes is None:
+            return result
+        related = []
+        for room in result["rooms"]:
+            seats = self.cat(["members", room["id"]])
+            if not seats.get("ok"):
+                return seats
+            if any(member["home_id"] in homes for member in seats["members"]):
+                related.append(room)
+        return {**result, "rooms": related}
 
     def create_room(self, title: str, members: list[str]) -> dict:
         for member in members:
@@ -620,7 +639,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             parts = url.path.strip("/").split("/")
             if url.path == "/api/cat/rooms":
-                value = self.server.board.cat(["list"])
+                value = self.server.board.rooms(parse_qs(url.query).get("project", [""])[0])
             elif url.path == "/api/cat/people":
                 value = {"ok": True, "people": self.server.board.people()}
             elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "events":

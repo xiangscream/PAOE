@@ -112,7 +112,9 @@ library directory is created.
   independent processes. It does not start any external Runtime.
 
 Use `python code/personal-agent-os/scripts/verify.py` from Core and
-`node --test tests/board-ui.test.mjs` for the optional board. Tests run on
+`node --test tests/cat-ui.test.mjs tests/cat-content.test.mjs tests/cat-drafts.test.mjs`
+for CAT message invariants. The unified Vue workbench, component tests and local
+build instructions are in `Core/front/ui/README.md`. Tests run on
 synthetic Homes and mocked/local transports, not production credentials.
 
 **Reading rule:** Look at one function's inputs, returned value, mutations and

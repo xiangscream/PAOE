@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
 import type { AgentSummary, CollabMode, CollabResult, CollabState } from '../types'
-import type { CollaborationDraft } from '../state/collab'
+import type { CollaborationDraft, Reference } from '../state/collab'
 import { buildBody, canResubmit, createMessageId, outcomeOf, payloadFor, validateDraft } from '../state/collab'
 
 const props = defineProps<{
@@ -15,6 +15,7 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'completed', result: CollabResult): void
   (e: 'open-room', id: string): void
+  (e: 'choose-reference', id: string): void
 }>()
 
 interface SavedSession {
@@ -37,22 +38,31 @@ const storageError = ref('')
 const lastResult = ref<CollabResult | null>(null)
 const restored = ref(false)
 const resumedRoomId = ref('')
+const ownerProject = ref(props.project)
 
 const contactable = computed(() => props.agents.filter(agent => agent.can_contact !== false && agent.ok !== false))
-const locked = computed(() => submitting.value || state.value === 'unknown' || state.value === 'partial' || restored.value)
-const validation = computed(() => validateDraft(draft.value))
+const otherParticipants=computed(()=>(draft.value.participants || []).filter(id=>id!==draft.value.provider && id!==draft.value.receiver))
+const locked = computed(() => submitting.value || checking.value || ['saved', 'unknown', 'partial'].includes(state.value) || restored.value)
+const validation = computed(() => {
+  const invalid=validateDraft(draft.value)
+  if(invalid)return invalid
+  if(!contactable.value.some(agent=>agent.id===draft.value.receiver))return '请选择可联系的接收方。'
+  if(draft.value.provider && draft.value.provider!=='human' && !contactable.value.some(agent=>agent.id===draft.value.provider))return '请选择可联系的提供方。'
+  if(otherParticipants.value.some(id=>!contactable.value.some(agent=>agent.id===id)))return '其他参与者中有不可联系的同事，请移除后继续。'
+  return ''
+})
 const preview = computed(() => buildBody(draft.value))
-const canSubmit = computed(() => !validation.value && !submitting.value && canResubmit(state.value) && !restored.value)
+const canSubmit = computed(() => !validation.value && !storageError.value && !locked.value && canResubmit(state.value))
 const canContinuePartial = computed(
-  () => state.value === 'partial' && !!lastResult.value?.room_id && !!lastResult.value?.message_id && !submitting.value,
+  () => state.value === 'partial' && !!lastResult.value?.room_id && !submitting.value && !checking.value,
 )
-const storageKey = computed(() => 'poe.collab.' + props.project)
+const storageKey = computed(() => 'poe.collab.' + ownerProject.value)
 
 function saveSession(phase: SavedSession['phase']): boolean {
   try {
     const value: SavedSession = {
       phase,
-      project: props.project,
+      project: ownerProject.value,
       draft: draft.value,
       messageId: messageId.value,
       state: state.value,
@@ -68,15 +78,16 @@ function saveSession(phase: SavedSession['phase']): boolean {
   }
 }
 
-function loadSession(): SavedSession | null {
+function loadSession(): SavedSession | null | undefined {
   try {
     const raw = localStorage.getItem(storageKey.value)
     if (!raw) return null
     const value = JSON.parse(raw) as SavedSession
-    if (value.project !== props.project) return null
+    if (value.project !== ownerProject.value) throw new Error('请求所属项目与当前项目不一致')
     return value
-  } catch {
-    return null
+  } catch (problem) {
+    storageError.value = '未能恢复原请求：' + String(problem)
+    return undefined
   }
 }
 
@@ -96,13 +107,16 @@ function resetTo(value: CollaborationDraft) {
 }
 
 function restoreOrReset() {
+  if (submitting.value) return
+  ownerProject.value = props.project
   const saved = loadSession()
+  if (saved === undefined) return
   const unfinished = saved && saved.project === props.project &&
     (saved.phase === 'submitting' || saved.state === 'unknown' || saved.state === 'partial')
   if (unfinished) {
     draft.value = saved.draft
     messageId.value = saved.messageId
-    state.value = saved.state === 'partial' ? 'partial' : 'unknown'
+    state.value = saved.phase !== 'submitting' && saved.state === 'partial' ? 'partial' : 'unknown'
     text.value = saved.text || '上次提交的结果未确认。请先核对原记录；核对前不会自动重发。'
     lastResult.value = saved.result
     restored.value = true
@@ -134,18 +148,19 @@ function setMode(mode: CollabMode) {
 }
 
 function close() {
+  if (submitting.value || checking.value) return
   if (!submitting.value) saveSession(restored.value ? 'settled' : 'draft')
   emit('close')
 }
 
 async function submit(roomId = '') {
-  if (!canSubmit.value && !roomId) return
-  if (!saveSession('submitting')) return
+  if (roomId ? !canContinuePartial.value : !canSubmit.value) return
   if (state.value === 'failed') messageId.value = createMessageId()
+  const payload = payloadFor(draft.value, ownerProject.value, messageId.value, roomId)
+  if (!saveSession('submitting')) return
   submitting.value = true
   state.value = ''
-  text.value = ''
-  const payload = payloadFor(draft.value, props.project, messageId.value, roomId)
+  text.value = '正在发起协作…'
   try {
     const result = await api.collaborate(payload)
     lastResult.value = result
@@ -172,31 +187,35 @@ async function continuePartial() {
 async function check() {
   checking.value = true
   try {
-    const result = await api.collaborationFact(props.project, draft.value.mode, messageId.value, lastResult.value?.room_id)
-    lastResult.value = result
-    const outcome = outcomeOf(result)
-    if (outcome.state === 'saved') {
+    const result = await api.collaborationFact(ownerProject.value, draft.value.mode, messageId.value, lastResult.value?.room_id)
+    if (result.state === 'saved') {
+      lastResult.value = { ...lastResult.value, ...result, state: 'saved' }
       state.value = 'saved'
       text.value = '已核到原记录：请求已保存。提醒与接手仍以原回执为准。'
       restored.value = false
-      emit('completed', result)
+      emit('completed', lastResult.value)
     } else if (result.state === 'not_found') {
       text.value = '暂未读到原记录。保留本次请求，稍后再核对，不自动重发。'
     } else {
-      state.value = outcome.state
-      text.value = outcome.text
+      text.value = '核对尚未完成，请稍后再查。原请求继续保留。'
     }
   } catch (problem) {
     text.value = '核对未完成：' + String((problem as Error)?.message || problem)
   } finally {
     checking.value = false
-    saveSession(state.value === 'unknown' || state.value === 'partial' ? 'submitting' : 'settled')
+    saveSession('settled')
   }
 }
 
 function startNew() {
   resetTo({ ...draft.value, topic: '', note: '', reference: null })
 }
+
+function attachReference(reference: Reference) {
+  if (locked.value) return
+  draft.value.reference = reference
+}
+defineExpose({ attachReference })
 
 watch(() => props.open, (open) => {
   if (open) restoreOrReset()
@@ -230,9 +249,9 @@ onMounted(() => {
           <label for="provider">提供方</label>
           <select id="provider" v-model="draft.provider" :disabled="locked">
             <option value="" disabled>选择同事</option>
+            <option v-if="draft.mode === 'mail'" value="human">Human · 我提供</option>
             <option v-for="agent in contactable" :key="agent.id" :value="agent.id">{{ label(agent) }}</option>
           </select>
-          <span v-if="draft.mode === 'chat'" class="hint">Chat 由同事之间接续，Human 只作为发言人。</span>
         </div>
         <button class="btn" title="交换方向" :disabled="locked" @click="swap">⇄</button>
         <div class="field" style="flex: 1">
@@ -247,6 +266,13 @@ onMounted(() => {
       <div class="field">
         <label for="topic">主题（必填）</label>
         <input id="topic" v-model="draft.topic" maxlength="120" :disabled="locked" placeholder="这次补充什么？" />
+      </div>
+      <div v-if="otherParticipants.length" class="field">
+        <label>其他参与者</label>
+        <div class="row"><span v-for="id in otherParticipants" :key="id" class="participant-chip">
+          {{ label(props.agents.find(agent=>agent.id===id) || {id}) }}
+          <button type="button" :disabled="locked" :aria-label="'移除参与者 ' + id" @click="draft.participants=draft.participants?.filter(item=>item!==id)">×</button>
+        </span></div>
       </div>
 
       <div class="field">
@@ -278,6 +304,7 @@ onMounted(() => {
         <p class="hint">{{ draft.reference.path }}</p>
         <button v-if="!locked" class="btn ghost" @click="draft.reference = null">移除参考</button>
       </div>
+      <button v-if="!locked" class="btn ghost add-reference" @click="emit('choose-reference', draft.receiver)">＋ 从参考库添加资料</button>
 
       <div class="card">
         <h3>提交预览</h3>
@@ -285,19 +312,19 @@ onMounted(() => {
       </div>
 
       <p v-if="validation && !locked" class="hint">{{ validation }}</p>
-      <p v-if="text" class="card" :class="{ error: state === 'failed' }">{{ text }}</p>
+      <p v-if="text" class="card" role="status" aria-live="polite" :class="{ error: state === 'failed' }">{{ text }}</p>
 
       <div class="row" style="margin-top: 10px">
-        <button v-if="!locked" class="btn primary" :disabled="!canSubmit" @click="submit()">
+        <button v-if="!locked || submitting" class="btn primary" :disabled="!canSubmit" @click="submit()">
           {{ submitting ? '提交中…' : '发起协作' }}
         </button>
-        <button v-if="locked && !submitting" class="btn" :disabled="checking" @click="check">
+        <button v-if="['unknown','partial'].includes(state) && !submitting" class="btn" :disabled="checking" @click="check">
           {{ checking ? '核对中…' : '核对原记录' }}
         </button>
         <button v-if="canContinuePartial" class="btn primary" :disabled="submitting" @click="continuePartial">
           继续原房间
         </button>
-        <button v-if="lastResult?.room_id" class="btn ghost" @click="emit('open-room', lastResult!.room_id!)">打开房间</button>
+        <button v-if="lastResult?.room_id" class="btn ghost" :disabled="submitting || checking" @click="emit('open-room', lastResult!.room_id!)">打开房间</button>
         <button v-if="state === 'saved' || state === 'failed'" class="btn ghost" @click="startNew">新建另一个请求</button>
       </div>
 

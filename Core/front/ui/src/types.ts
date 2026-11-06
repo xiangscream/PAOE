@@ -10,6 +10,7 @@ export interface AgentSummary {
   number?: string
   name?: string
   role?: string
+  description?: string
   member_status?: string
   registered?: boolean
   can_contact?: boolean
@@ -122,6 +123,10 @@ export interface CollabResult {
   error_code?: string
   result?: unknown
   status?: number
+}
+
+export type CollaborationFact = Omit<CollabResult, 'state'> & {
+  state: 'saved' | 'not_found' | 'unknown'
 }
 
 export interface RoomDetail {

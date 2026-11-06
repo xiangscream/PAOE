@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { api, ApiError } from '../api'
 import DocView from './DocView.vue'
 import { resolveDocPath } from '../lib/markdown'
 
-const props = defineProps<{ project: string; fallbackIndex?: string; fallbackTeam?: string }>()
+const props = defineProps<{ project: string }>()
 
 const which = ref<'INDEX.md' | 'TEAM.md'>('INDEX.md')
 const currentPath = ref('INDEX.md')
@@ -17,8 +17,9 @@ const copied = ref('')
 const blockedPath = ref('')
 let token = 0
 
-async function load(path: string) {
+async function load(path: string, hash = '') {
   const request = ++token
+  currentPath.value = path
   loading.value = true
   error.value = ''
   body.value = ''
@@ -33,6 +34,8 @@ async function load(path: string) {
   } finally {
     if (request === token) loading.value = false
   }
+  await nextTick()
+  if(hash && request === token)document.getElementById(hash)?.scrollIntoView({block:'start'})
 }
 
 function openRoot(entry: 'INDEX.md' | 'TEAM.md') {
@@ -57,7 +60,7 @@ function navigate(href: string) {
   }
   history.value = [...history.value, currentPath.value]
   notice.value = ''
-  void load(target.path)
+  void load(target.path, target.hash)
 }
 
 function back() {

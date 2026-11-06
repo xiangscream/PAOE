@@ -27,11 +27,11 @@ function checked(value) { if (!value.ok) throw new Error(errorText(value)); retu
 
 export default {
   props:{project:{type:String,required:true},initialRoom:{type:String,default:''}},
-  emits:['new-discussion','board'],
+  emits:['new-discussion','board','room-selected'],
   components:{CatIcon, MessageContent},
   data() {
-    return {rooms:[],people:[],roomStates:{},roomId:'',filter:'',roomScope:'open',sidebar:false,roomsLoading:true,
-      seatLabels,selection:0,stream:null,storageError:'',
+    return {rooms:[],people:[],roomStates:{},roomId:'',filter:'',roomScope:'open',relatedOnly:true,sidebar:false,roomsLoading:true,roomListRequest:0,
+      seatLabels,selection:0,stream:null,storageError:'',active:true,
       connection:'正在连接',connectionError:false,unseen:0,highlight:'',checking:false,atLatest:true,
       searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false};
   },
@@ -63,6 +63,21 @@ export default {
   },
   watch: {
     initialRoom(id) {if(id)this.selectRoom(id);},
+    relatedOnly() {this.refresh();},
+    async project(value,previous) {
+      try {
+        await this.loadRooms();
+        if(!this.active)return;
+        if(!previous){if(!this.roomId)await this.openInitialRoom();return;}
+        const first=this.rooms.find(room=>room.status==='open') || this.rooms[0];
+        if(first)await this.selectRoom(first.id);
+        else {
+          this.stopStream();this.selection++;this.roomId='';this.connection='已连接';
+          const url=new URL(location.href);url.searchParams.delete('room');history.replaceState(null,'',url);
+          this.$emit('room-selected','');
+        }
+      }catch(error){this.connection=error.message;this.connectionError=true;}
+    },
     searchQuery() {this.searchIndex=0;this.highlight='';this.locateSearchResult();},
   },
   methods: {
@@ -105,6 +120,7 @@ export default {
     closeSidebarFromContent() { this.sidebar=false; },
     nearEnd() { const el=this.$refs.messages; return el.scrollHeight-el.scrollTop-el.clientHeight<100; },
     scrollBottom() {
+      if(!this.active)return;
       const el=this.$refs.messages;el.scrollTop=el.scrollHeight;this.unseen=0;this.atLatest=true;
       if(this.state)this.state.firstUnseen='';
     },
@@ -134,17 +150,18 @@ export default {
       const position=this.readingPosition(),expanding=!this.state.expanded[id];this.atLatest=false;
       this.state.expanded[id]=expanding;
       await this.$nextTick();
+      if(!this.active)return;
       if(expanding)this.restorePosition(position);
       else {this.messageElement(id).scrollIntoView({block:'start'});this.onScroll();}
     },
     openMembers() {this.sidebar=false;this.$refs.memberDialog.showModal();},
     async openSearch() {
       this.searchReturn=this.readingPosition();this.searchOpen=true;this.sidebar=false;
-      await this.$nextTick();this.$refs.messageSearch.focus();
+      await this.$nextTick();if(this.active)this.$refs.messageSearch.focus();
     },
     async closeSearch() {
       this.searchOpen=false;this.searchQuery='';this.highlight='';
-      await this.$nextTick();this.restorePosition(this.searchReturn);this.$refs.searchButton.focus();
+      await this.$nextTick();if(this.active){this.restorePosition(this.searchReturn);this.$refs.searchButton.focus();}
     },
     locateSearchResult() {
       if(this.searchQuery.trim()&&this.searchResults.length)this.jumpTo(this.searchResults[this.searchIndex].id);
@@ -177,12 +194,18 @@ export default {
       if(this.state===state)this.$nextTick(this.resizeComposer);
     },
     async loadRooms() {
+      const generation=++this.roomListRequest;
       this.roomsLoading=true;
-      try {this.rooms=checked(await request('/api/cat/rooms')).rooms;return this.rooms;}
-      finally {this.roomsLoading=false;}
+      try {
+        const query=this.relatedOnly && this.project?'?project='+encodeURIComponent(this.project):'';
+        const value=checked(await request('/api/cat/rooms'+query));
+        if(generation===this.roomListRequest)this.rooms=value.rooms;
+        return this.rooms;
+      }finally {if(generation===this.roomListRequest)this.roomsLoading=false;}
     },
     async loadPeople() { this.people=checked(await request('/api/cat/people')).people; },
     async selectRoom(id) {
+      if(!this.active)return;
       this.sidebar=false;
       if (this.roomId===id && this.state?.loaded) return;
       if(this.state){this.state.position=this.readingPosition();this.state.atLatest=this.atLatest;}
@@ -207,6 +230,7 @@ export default {
         this.confirmPending(state);
         if (generation!==this.selection) return;
         this.roomScope=room.status;document.title=(room.title||'圆桌')+' · CAT';
+        this.$emit('room-selected',id);
         await this.$nextTick();this.resizeComposer();
         if(state.atLatest)this.scrollBottom();else this.restorePosition(state.position);
         this.startStream(state);
@@ -218,7 +242,7 @@ export default {
     stopStream() { if(this.stream){this.stream.close();this.stream=null;} },
     startStream(state) {
       this.stopStream();
-      if(document.hidden || this.roomId!==state.id)return;
+      if(!this.active || document.hidden || this.roomId!==state.id)return;
       const stream=markRaw(new EventSource(endpoint(state.id,'/events?after='+state.cursor)));
       this.stream=stream;const generation=this.selection;
       this.connection='正在接入实时消息';this.connectionError=false;
@@ -247,6 +271,7 @@ export default {
       this.refreshing=true;
       try {
         await Promise.all([this.loadRooms(),this.loadPeople()]);
+        if(!this.active)return;
         if(this.state) {
           const state=this.state,room=checked(await request(endpoint(state.id)));
           Object.assign(state,{title:room.title,status:room.status,members:room.members,loaded:true},readPage(state,room.messages));
@@ -304,10 +329,12 @@ export default {
     this.resizeComposer();
     try {
       await Promise.all([this.loadRooms(),this.loadPeople()]);
+      if(!this.active)return;
       await this.openInitialRoom();
     }catch(error){this.connection='CAT暂不可用';this.connectionError=true;}
   },
   beforeUnmount() {
+    this.active=false;
     this.stopStream();this.selection++;this.roomId='';window.removeEventListener('resize',this.resizeComposer);
     document.removeEventListener('visibilitychange',this.onVisibility);
   },
@@ -325,6 +352,7 @@ export default {
       <button :class="{selected:roomScope==='open'}" @click="roomScope='open'" :aria-pressed="roomScope==='open'">进行中</button>
       <button :class="{selected:roomScope==='closed'}" @click="roomScope='closed'" :aria-pressed="roomScope==='closed'">已结束</button>
     </div>
+    <label class="room-scope"><input type="checkbox" v-model="relatedOnly">仅本项目相关讨论</label>
     <label class="search-field room-search"><cat-icon name="search"></cat-icon><input v-model="filter" type="search" placeholder="查找房间" aria-label="查找房间"></label>
     <nav class="room-list" aria-label="选择房间">
       <div v-if="!filteredRooms.length" class="empty-room-list">
@@ -404,7 +432,7 @@ button:disabled{cursor:default;opacity:.42}
 a{color:var(--color-primary)}
 button:focus-visible,a:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px}
 .icon{width:20px;height:20px;flex-shrink:0;vertical-align:middle}
-.cat-workspace{--color-primary:var(--accent);--color-primary-content:#fff;--color-base-100:var(--surface);--color-base-200:var(--paper);--color-base-300:var(--line);--color-base-content:var(--ink);--color-warning:#b47923;--color-error:#c34545;--color-success:var(--jade);height:100%;min-height:0;position:relative;display:grid;grid-template-columns:274px minmax(0,1fr);background:var(--color-base-100);color:var(--color-base-content);font-size:14px}
+.cat-workspace{--color-primary:var(--accent);--color-primary-content:var(--accent-content);--color-base-100:var(--surface);--color-base-200:var(--paper);--color-base-300:var(--line);--color-base-content:var(--ink);--color-warning:#b47923;--color-error:#c34545;--color-success:var(--jade);height:100%;min-height:0;position:relative;display:grid;grid-template-columns:274px minmax(0,1fr);background:var(--color-base-100);color:var(--color-base-content);font-size:14px}
 .primary-button,.secondary-button,.icon-button,.text-button,.members-button,.latest-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid transparent;line-height:1.3;white-space:nowrap;transition:background .15s,border-color .15s}
 .primary-button{background:var(--color-primary);color:var(--color-primary-content);border-color:var(--color-primary);border-radius:10px;min-height:40px;padding:9px 16px;font-size:13px;font-weight:600;box-shadow:0 1px 2px #0001}
 .primary-button:hover:not(:disabled){filter:brightness(1.06)}
@@ -438,6 +466,8 @@ button:focus-visible,a:focus-visible,select:focus-visible,[tabindex]:focus-visib
 .search-field input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:inherit;font-size:13px;line-height:20px}
 .search-field:focus-within{border-color:var(--color-primary);box-shadow:0 0 0 2px color-mix(in oklch,var(--color-primary) 10%,transparent)}
 .room-search{margin-bottom:14px}
+.room-scope{display:flex;align-items:center;gap:8px;margin:0 5px 13px;font-size:12px;opacity:.75}
+.room-scope input{accent-color:var(--color-primary)}
 .room-list{flex:1;min-height:0;overflow:auto;margin:0 -7px;padding:0 7px;scrollbar-width:thin}
 .room-item{width:100%;display:flex;align-items:flex-start;gap:10px;padding:13px 11px;margin-bottom:5px;border:1px solid transparent;border-radius:11px;background:transparent;color:inherit;text-align:left}
 .room-item:hover{background:color-mix(in oklch,var(--color-base-300) 65%,transparent)}

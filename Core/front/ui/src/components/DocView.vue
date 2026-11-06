@@ -32,12 +32,14 @@ function onClick(event: MouseEvent) {
 <style scoped>
 .doc-view {
   display: grid;
+  grid-template-columns: minmax(0,1fr);
   gap: 8px;
   min-width: 0;
 }
 
 .doc-toolbar {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
@@ -67,6 +69,7 @@ function onClick(event: MouseEvent) {
 }
 
 .markdown-body {
+  min-width: 0;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -93,6 +96,8 @@ function onClick(event: MouseEvent) {
 
 .markdown-body :deep(ul),
 .markdown-body :deep(ol) { padding-left: 22px; margin: 8px 0; }
+.markdown-body :deep(ul) {list-style-type:disc}
+.markdown-body :deep(ol) {list-style-type:decimal}
 
 .markdown-body :deep(li) { margin: 3px 0; }
 

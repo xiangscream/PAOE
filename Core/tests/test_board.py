@@ -327,7 +327,7 @@ class BoardTests(unittest.TestCase):
         root = self.roots["1001"]
         (root / "TEAM.md").write_text(
             "# TEAM\n\n## 当前成员\n\n### 1001-s001\n"
-            "- 成员状态：在队\n- 职责：协调\n- 名称：一号\n\n"
+            "- 成员状态：在队\n- 职责：协调\n- 名称：一号\n- 个人介绍/专长：擅长把资料交给需要的同事\n\n"
             "### 1001-s002\n- 成员状态：暂停保留，不是当前执行者\n- 职责：暂停岗位\n\n"
             "### 9999-s999\n- 成员状态：在队\n- 职责：未登记同事\n- 名称：外部同事\n",
             encoding="utf-8")
@@ -336,6 +336,7 @@ class BoardTests(unittest.TestCase):
         self.assertIn("当前成员", dashboard["team"]["body"])
         rows = {item["id"]: item for item in dashboard["agents"]}
         self.assertEqual(rows["1001-s001"]["name"], "一号")
+        self.assertEqual(rows["1001-s001"]["description"], "擅长把资料交给需要的同事")
         self.assertTrue(rows["1001-s001"]["can_contact"])
         self.assertFalse(rows["1001-s002"]["can_contact"])
         self.assertTrue(rows["1001-s002"]["registered"])

@@ -1,152 +1,90 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
-import { VueFlow, useVueFlow, type Connection, type Edge, type Node } from '@vue-flow/core'
+import { nextTick, onBeforeUnmount, onMounted, shallowRef, watch } from 'vue'
+import { VueFlow, useVueFlow, type Connection, type Edge, type Node, type NodeMouseEvent } from '@vue-flow/core'
 import PersonNode from './PersonNode.vue'
 import type { AgentSummary, BoardLayout } from '../types'
-import { clampNode } from '../state/layout'
+import { defaultNodes } from '../state/layout'
+import { canStartCollaboration } from '../state/team'
 
 const props = defineProps<{
   agents: AgentSummary[]
   layout: BoardLayout
   project: string
+  fitOnLoad: boolean
+  selectedIds: string[]
 }>()
-
 const emit = defineEmits<{
   (e: 'node-click', id: string): void
-  (e: 'node-context', payload: { id: string; event?: MouseEvent }): void
+  (e: 'node-context', payload: { id: string }): void
   (e: 'connect', payload: { source: string; target: string }): void
   (e: 'save', payload: BoardLayout): void
   (e: 'selection-change', ids: string[]): void
 }>()
+const nodes = shallowRef<Node[]>([])
+const edges = shallowRef<Edge[]>([])
+const { fitView, getNodes, getSelectedNodes, getViewport, setViewport, setCenter } = useVueFlow()
+let initializing = true
 
-const nodes = ref<Node[]>([])
-const edges = ref<Edge[]>([])
-const { fitView, getViewport, setViewport, screenToFlowCoordinate } = useVueFlow()
-
-function buildNodes() {
-  nodes.value = props.agents.map(agent => ({
-    id: agent.id,
-    type: 'person',
-    position: { ...(props.layout.nodes[agent.id] || { x: 80, y: 90 }) },
-    data: { agent, openLibrary: (id: string) => emit('node-context', { id }) },
-    selected: false,
-  }))
+async function initialize() {
+  if (props.fitOnLoad) await fitView({ padding: 0.05, maxZoom: 1 })
+  else await setViewport(props.layout.viewport)
+  initializing = false
+  emit('selection-change',getSelectedNodes.value.map(node=>node.id))
 }
-
-function applyViewport() {
-  const viewport = props.layout.viewport
-  if (viewport && Number.isFinite(viewport.zoom) && viewport.zoom > 0) {
-    void nextTick(() => setViewport({ x: viewport.x, y: viewport.y, zoom: viewport.zoom }))
-  } else {
-    void nextTick(() => fitView({ padding: 0.14 }))
-  }
-}
-
-function snapshot(): BoardLayout {
-  const positions: BoardLayout['nodes'] = {}
-  for (const node of nodes.value) positions[node.id] = { x: node.position.x, y: node.position.y }
-  const viewport = getViewport()
-  return {
-    nodes: positions,
-    viewport: { x: viewport.x, y: viewport.y, zoom: viewport.zoom },
-  }
-}
-
 function save() {
-  emit('save', snapshot())
+  if (initializing) return
+  const positions: BoardLayout['nodes'] = {}
+  for (const node of getNodes.value) positions[node.id] = { ...node.position }
+  emit('save', { nodes: positions, viewport: { ...getViewport() } })
 }
-
-function onNodeClick(event: { node: Node }) {
-  emit('node-click', event.node.id)
+function onNodeClick({event, node}: NodeMouseEvent) {
+  if (event.ctrlKey || event.metaKey || event.shiftKey) return
+  emit('node-click', node.id)
 }
-
-function onContextMenu(event: { event: MouseEvent; node: Node }) {
-  event.event.preventDefault()
-  emit('node-context', { id: event.node.id, event: event.event })
+function onContextMenu({event, node}: NodeMouseEvent) {
+  event.preventDefault()
+  emit('node-context', { id: node.id })
 }
-
-function onConnect(connection: Connection) {
-  if (!connection.source || !connection.target || connection.source === connection.target) return
-  edges.value = [
-    ...edges.value,
-    {
-      id: `draft-${connection.source}-${connection.target}-${Date.now()}`,
-      source: connection.source,
-      target: connection.target,
-      animated: false,
-      style: { stroke: 'var(--accent)', strokeDasharray: '6 4' },
-    },
-  ]
-  emit('connect', { source: connection.source, target: connection.target })
+watch(()=>getSelectedNodes.value.map(node=>node.id),ids=>{if(!initializing)emit('selection-change',ids)})
+function onConnect({source, target}: Connection) {
+  if (source === target) return
+  edges.value = [{id:'proposed-collaboration',source,target,style:{stroke:'var(--accent)',strokeDasharray:'6 4'}}]
+  emit('connect', {source,target})
 }
-
-function selectionChanged(event: { nodes: Node[] }) {
-  emit('selection-change', event.nodes.map(node => node.id))
-}
-
-function resetLayout() {
+async function resetLayout() {
+  const positions = defaultNodes(props.agents)
+  nodes.value = nodes.value.map(node => ({...node, position: positions[node.id]}))
   edges.value = []
-  emit('save', { nodes: {}, viewport: { x: 0, y: 0, zoom: 0.9 } })
+  await nextTick()
+  await fitView({padding:0.05,maxZoom:1})
+  save()
 }
-
-function clearEdges() {
-  edges.value = []
-}
-
-function locate(id: string) {
-  const node = nodes.value.find(item => item.id === id)
-  if (!node) return
-  void setViewport({ x: -node.position.x + 320, y: -node.position.y + 240, zoom: 1 })
-}
-
 function select(ids: string[]) {
-  const wanted = new Set(ids)
-  nodes.value = nodes.value.map(node => ({ ...node, selected: wanted.has(node.id) }))
+  const selected = new Set(ids)
+  nodes.value = nodes.value.map(node => ({...node, selected:selected.has(node.id)}))
 }
-
-defineExpose({ resetLayout, clearEdges, locate, select, fit: () => fitView({ padding: 0.14 }) })
-
-watch(() => props.agents, () => {
-  buildNodes()
-  applyViewport()
-}, { deep: true })
-
-watch(() => props.layout, (value) => {
-  for (const node of nodes.value) {
-    const saved = value?.nodes?.[node.id]
-    if (saved) node.position = { ...saved }
-  }
-}, { deep: true })
-
+async function locate(id: string) {
+  const node = getNodes.value.find(item => item.id === id)
+  if (node) await setCenter(node.position.x + node.dimensions.width / 2, node.position.y + node.dimensions.height / 2, {zoom:1})
+}
+defineExpose({resetLayout,locate,select,clearEdges:()=>{edges.value=[]},fit:()=>fitView({padding:0.05,maxZoom:1})})
+onBeforeUnmount(()=>{initializing=true})
 onMounted(() => {
-  buildNodes()
-  applyViewport()
+  nodes.value = props.agents.map(agent => ({
+    id:agent.id,type:'person',position:{...props.layout.nodes[agent.id]},
+    data:{agent,openLibrary:(id:string)=>emit('node-context',{id})},
+    connectable:canStartCollaboration(agent),selected:props.selectedIds.includes(agent.id),
+  }))
 })
 </script>
 
 <template>
-  <VueFlow
-    v-model:nodes="nodes"
-    v-model:edges="edges"
-    :min-zoom="0.25"
-    :max-zoom="1.8"
-    :nodes-draggable="true"
-    :nodes-connectable="true"
-    :elements-selectable="true"
-    :selection-on-drag="true"
-    :pan-on-drag="true"
-    :zoom-on-double-click="false"
-    :fit-view-on-init="false"
-    :node-drag-threshold="4"
-    @node-click="onNodeClick"
-    @node-context-menu="onContextMenu"
-    @connect="onConnect"
-    @node-drag-stop="save"
-    @viewport-change-end="save"
-    @selection-change="selectionChanged"
-  >
-    <template #node-person="nodeProps">
-      <PersonNode v-bind="nodeProps" />
-    </template>
+  <VueFlow v-model:nodes="nodes" v-model:edges="edges" :min-zoom="0.25" :max-zoom="2.5"
+    :nodes-draggable="true" :elements-selectable="true" :pan-on-drag="true"
+    :multi-selection-key-code="['Control','Meta']" :selection-key-code="'Shift'"
+    :zoom-on-double-click="false" :node-drag-threshold="4"
+    @nodes-initialized="initialize" @node-click="onNodeClick" @node-context-menu="onContextMenu"
+    @connect="onConnect" @node-drag-stop="save" @viewport-change-end="save">
+    <template #node-person="nodeProps"><PersonNode v-bind="nodeProps" /></template>
   </VueFlow>
 </template>

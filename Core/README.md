@@ -63,9 +63,10 @@ Windows PowerShell 使用 `$env:PAOS_INSTALLATION_FILE` 和
 
 ```sh
 python code/personal-agent-os/scripts/verify.py
-node --test tests/board-ui.test.mjs
+node --test tests/cat-ui.test.mjs tests/cat-content.test.mjs tests/cat-drafts.test.mjs
 ```
 
-浏览器画板为可选功能，用 `python portable.py serve` 启动。
+统一工作台为可选功能，用 `python portable.py serve` 启动；发行包已含静态资源。
+前端开发、构建和组件测试见 [工作台说明](front/README.md)与[前端工程](front/ui/README.md)。
 日常文件操作可直接使用 CLI，无需启动画板或旧 HTTP Dashboard。
 Windows 安装、原生唤醒、CAT 接入和项目采用，由 Rooter 分别在实际机器上验证。

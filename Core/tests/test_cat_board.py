@@ -65,6 +65,29 @@ class CatBoardTests(unittest.TestCase):
             self.call("/api/room/room-one/members")
             call.assert_called_once_with(["members", "room-one"])
 
+    def test_related_rooms_use_registered_members_and_never_load_or_write_messages(self):
+        rooms = [{"id": "one"}, {"id": "two"}]
+        replies = [{"ok": True, "rooms": rooms},
+                   {"ok": True, "members": [{"home_id": "1001-s001"}, {"home_id": "human"}]},
+                   {"ok": True, "members": [{"home_id": "2001-s009"}]}]
+        with patch.object(self.board, "cat", side_effect=replies) as call:
+            status, value = self.call("/api/cat/rooms?project=1001")
+        self.assertEqual(status, 200)
+        self.assertEqual(value["rooms"], [rooms[0]])
+        self.assertEqual([c.args[0] for c in call.call_args_list],
+                         [["list"], ["members", "one"], ["members", "two"]])
+        with patch.object(self.board, "cat", side_effect=[replies[0], {"ok": False, "error_code": "unreachable"}]):
+            self.assertFalse(self.call("/api/cat/rooms?project=1001")[1]["ok"])
+
+    def test_invalid_collaboration_status_input_does_not_call_cli(self):
+        with patch.object(self.board, "cat") as cat, patch.object(self.board, "run_paos") as cli:
+            status, value = self.call("/api/collaboration?project=1001&mode=invalid&message_id=original")
+            self.assertEqual(status, 422)
+            self.assertEqual(value["error_code"], "collaboration_mode_invalid")
+            self.assertEqual(self.call("/api/collaboration?project=3002&mode=chat&message_id=original")[0], 422)
+        cat.assert_not_called()
+        cli.assert_not_called()
+
     def test_human_reply_uses_one_existing_join_and_one_original_send(self):
         replies = [
             {"ok": True, "member": {"home_id": "human", "state": "participant"}},

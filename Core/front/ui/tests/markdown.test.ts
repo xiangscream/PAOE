@@ -4,11 +4,12 @@ import { renderMarkdown, resolveDocPath } from '../src/lib/markdown'
 describe('markdown rendering', () => {
   it('renders headings, lists, tables and fenced code', () => {
     const html = renderMarkdown('# 标题\n\n- 一\n- 二\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n```ts\nconst x = 1\n```')
-    expect(html).toContain('<h1>标题</h1>')
-    expect(html).toContain('<ul><li>一</li><li>二</li></ul>')
-    expect(html).toContain('<table>')
-    expect(html).toContain('<th>A</th>')
-    expect(html).toContain('<pre><code>const x = 1</code></pre>')
+    const article=document.createElement('article')
+    article.innerHTML=html
+    expect(article.querySelector('h1')?.textContent).toBe('标题')
+    expect([...article.querySelectorAll('li')].map(node=>node.textContent)).toEqual(['一','二'])
+    expect(article.querySelector('th')?.textContent).toBe('A')
+    expect(article.querySelector('pre code')?.textContent?.trim()).toBe('const x = 1')
   })
 
   it('escapes raw HTML and blocks javascript links', () => {

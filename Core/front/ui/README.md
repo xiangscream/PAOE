@@ -1,41 +1,29 @@
-# POE 统一工作台（Vue）
+# POE 统一工作台前端
 
-本目录是统一工作台的前端工程：团队画板、工位详情、Libraries 选择、主题协作与 CAT 讨论共用一个 Vue 工程。
+团队画板、详情、Libraries、协作表单与CAT使用同一Vue工程。画布读取TEAM和工位摘要，文档按需读取原件，主题协作复用Mail/CAT；前端不直接写文件或调用模型。
 
-## 运行
+本地验证使用Node 24。在本目录执行：
 
 ```text
-cd Core/front/ui
-npm install
-npm run dev
+npm ci
+npm run build
+npm test
 ```
 
-Vite 默认把 `/api` 代理到 `http://127.0.0.1:8780`。联调隔离 API 时：
+`package-lock.json`固定依赖版本。`build`先执行类型检查，再生成 `../dist/`；生成的HTML、JS与CSS是发行内容，不提交node_modules。开发时用 `npm run dev`，默认代理隔离接口 `http://127.0.0.1:8784`；需要其他已准备的本地接口时显式设置 `POE_API_TARGET`，不要把写入测试指向生产项目。
 
 ```powershell
 $env:POE_API_TARGET = 'http://127.0.0.1:8784'
 npm run dev
 ```
 
-## 构建
+主壳在App.vue；BoardCanvas负责布局和连线手势，CollaborationDialog维护一次主题请求，ChatView承接已验收的CAT阅读与发送交互。DocView共享原文阅读样式，Markdown沿用本地 `../vendor/markdown-it-15.0.3.mjs`。该资产已有许可证，无需再写解析器或安装第二份。
+
+组件测试覆盖暂停成员、主题双方、不可变提交、未知结果刷新、已知partial继续、卸载后的请求边界与文档导航。Core目录还可运行：
 
 ```text
-npm run build
+node --test tests/cat-ui.test.mjs tests/cat-content.test.mjs tests/cat-drafts.test.mjs
+python -m unittest discover -s tests -p test_*board.py
 ```
 
-`vue-tsc` 先做类型检查，随后 Vite 输出到 `Core/front/dist/`。`dist` 由现有 Python 本地服务直接提供，不需要 Node 常驻进程；接口始终是同源 `/api`。
-
-## 测试
-
-```text
-npm test
-```
-
-覆盖布局合并与视口边界、协作表单校验与稳定 message_id、未知结果不重发、CAT 消息游标、草稿按房间保存、成员暂停状态和人员卡片渲染。
-
-## 边界
-
-- 前端只读 `/api/*` 投影，不直接读写文件，不保存第二份团队、任务或消息状态。
-- 位置与视口只保存布局；拖动与连线不改团队关系。
-- 业务写入全部经现有接口：Mail 复用 `agent send`，Chat 复用 CAT 建/入/发，提醒沿原唤醒器。
-- 保存、提醒受理和对方接手分别显示；未知结果保留原请求，只读核对，不自动重发。
+正常使用部署好的静态包不需要Node。业务文件、消息、模型和Agent执行都可脱离网页继续运行。

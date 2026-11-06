@@ -3,13 +3,12 @@ import type {
   BoardLayout,
   CollabMode,
   CollabResult,
+  CollaborationFact,
   Dashboard,
   DocumentResponse,
   LayoutResponse,
   LibraryItem,
   ResourceResponse,
-  RoomDetail,
-  RoomSummary,
 } from './types'
 
 export class ApiError extends Error {
@@ -117,40 +116,7 @@ export const api = {
   collaborationFact(project: string, mode: CollabMode, messageId: string, roomId?: string) {
     const params = new URLSearchParams({ project, mode, message_id: messageId })
     if (roomId) params.set('room_id', roomId)
-    return receipt<CollabResult>('/api/collaboration?' + params.toString())
-  },
-  rooms() {
-    return request<{ ok: boolean; rooms: RoomSummary[] }>('/api/cat/rooms')
-  },
-  people() {
-    return request<{ ok: boolean; people: Array<{ id: string; name?: string; number?: string; role?: string; project?: string }> }>(
-      '/api/cat/people',
-    )
-  },
-  room(id: string) {
-    return request<RoomDetail>('/api/room/' + encodeURIComponent(id))
-  },
-  messages(id: string, after: number) {
-    return request<{ ok: boolean; messages: RoomDetail['messages'] }>(
-      '/api/room/' + encodeURIComponent(id) + '/messages?after=' + after,
-    )
-  },
-  sendRoomMessage(id: string, body: string, messageId: string, replyTo = '') {
-    return request<CollabResult>('/api/room/' + encodeURIComponent(id) + '/message', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sender_id: 'human', body, message_id: messageId, reply_to: replyTo }),
-    })
-  },
-  createRoom(title: string, members: string[]) {
-    return request<{ ok: boolean; room_id?: string; error?: string; error_code?: string; status?: number }>('/api/room', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, members }),
-    })
-  },
-  eventsUrl(roomId: string, after: number) {
-    return '/api/room/' + encodeURIComponent(roomId) + '/events?after=' + after
+    return receipt<CollaborationFact>('/api/collaboration?' + params.toString())
   },
 }
 
