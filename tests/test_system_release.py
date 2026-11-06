@@ -86,10 +86,10 @@ class SystemReleaseTests(unittest.TestCase):
 
     def installation(self):
         system = self.temp/'fresh system'
-        for directory in ('Core','Guide','Project-Template','rooter'):
+        for directory in ('Core','Guide','Project-Template','rooter','CAT'):
             shutil.copytree(ROOT/directory,system/directory,
                 ignore=shutil.ignore_patterns('.git','__pycache__','node_modules','local','data'))
-        for name in ('PROJECTS.md','RESOURCES.md'):
+        for name in ('PROJECTS.md','RESOURCES.md','README.md'):
             shutil.copyfile(ROOT/name,system/name)
         core = system/'Core'; config = core/'config/local/installation.json'
         env = {**os.environ,'PAOS_INSTALLATION_FILE':str(config),
