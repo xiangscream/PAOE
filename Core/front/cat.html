@@ -9,67 +9,91 @@
 <body>
 <div id="cat-app" class="cat-workspace" v-cloak>
   <aside class="rooms-panel" :class="{open:sidebar}" aria-label="房间列表">
-    <div class="brand"><span class="brand-mark">C</span><div><strong>CAT 圆桌</strong><p>一起讨论，及时接话。</p></div></div>
-    <button class="btn btn-primary btn-sm new-discussion" @click="openCreator">＋ 新建讨论</button>
+    <div class="brand"><span class="brand-mark"><cat-icon name="room"></cat-icon></span><div><strong>CAT</strong><span>一起讨论，及时接话</span></div><button class="icon-button sidebar-close" aria-label="关闭房间列表" @click="sidebar=false"><cat-icon name="close"></cat-icon></button></div>
+    <button class="primary-button new-discussion" @click="openCreator"><cat-icon name="plus"></cat-icon>新建讨论</button>
+    <div class="room-list-heading"><span>你的讨论</span><button class="icon-button small" :class="{spinning:roomsLoading}" :disabled="refreshing" aria-label="刷新房间" @click="refresh"><cat-icon name="refresh"></cat-icon></button></div>
     <div class="room-tabs" role="group" aria-label="房间范围">
-      <button class="btn btn-sm" :class="roomScope==='open'?'btn-neutral':'btn-ghost'" @click="roomScope='open'" :aria-pressed="roomScope==='open'">进行中</button>
-      <button class="btn btn-sm" :class="roomScope==='closed'?'btn-neutral':'btn-ghost'" @click="roomScope='closed'" :aria-pressed="roomScope==='closed'">已结束</button>
-      <button class="btn btn-ghost btn-sm" aria-label="刷新房间" @click="refresh">↻</button>
+      <button :class="{selected:roomScope==='open'}" @click="roomScope='open'" :aria-pressed="roomScope==='open'">进行中</button>
+      <button :class="{selected:roomScope==='closed'}" @click="roomScope='closed'" :aria-pressed="roomScope==='closed'">已结束</button>
     </div>
-    <input class="input input-sm room-search" v-model="filter" type="search" placeholder="查找房间" aria-label="查找房间">
+    <label class="search-field room-search"><cat-icon name="search"></cat-icon><input v-model="filter" type="search" placeholder="查找房间" aria-label="查找房间"></label>
     <nav class="room-list" aria-label="选择房间">
-      <p v-if="!filteredRooms.length" class="muted empty">{{filter?'没有匹配的房间。':'这里还没有讨论。'}}</p>
+      <div v-if="!filteredRooms.length" class="empty-room-list">
+        <p>{{roomsLoading?'正在读取讨论…':filter?'没有找到这个房间':'这里还没有讨论'}}</p>
+        <button v-if="filter" class="text-button" @click="filter=''">清空搜索</button>
+      </div>
       <button v-for="item in filteredRooms" :key="item.id" class="room-item" :class="{selected:item.id===roomId}" @click="selectRoom(item.id)" :aria-pressed="item.id===roomId">
-        <strong>{{item.title || '未命名圆桌'}}</strong><small>{{item.member_count}} 位同桌 · {{item.message_count}} 条消息</small>
+        <span class="room-item-icon"><cat-icon name="room"></cat-icon></span><span class="room-item-text"><strong>{{item.title || '未命名圆桌'}}</strong><small>{{item.member_count}} 位同桌 <span>·</span> {{item.message_count}} 条消息</small></span>
       </button>
     </nav>
-    <footer class="sidebar-footer"><label>外观 <select class="select select-xs" v-model="theme" aria-label="界面风格"><option value="light">简洁</option><option value="dark">深色</option><option value="corporate">商务</option><option value="retro">复古</option></select></label><a href="/">画板 ↗</a></footer>
+    <footer class="sidebar-footer"><label><cat-icon name="sun"></cat-icon><select v-model="theme" aria-label="界面风格"><option value="light">简洁</option><option value="dark">深色</option><option value="corporate">商务</option><option value="retro">复古</option></select></label><a href="/" class="board-link">工作画板<cat-icon name="external"></cat-icon></a></footer>
   </aside>
+  <button v-if="sidebar" class="sidebar-scrim" aria-label="收起房间列表" @click="sidebar=false"></button>
   <main class="conversation" @click="closeSidebarFromContent">
     <header class="conversation-header">
-      <button class="btn btn-ghost mobile-menu" aria-label="展开房间列表" :aria-expanded="sidebar" @click.stop="sidebar=!sidebar">☰</button>
-      <div class="room-heading"><p class="eyebrow">项目圆桌</p><h1>{{state?.title || '选择一个房间'}}</h1><p class="muted">{{state?(state.status==='closed'?'已结束的讨论':'公开讨论')+' · '+state.members.length+' 位同桌 · '+state.messages.length+' 条消息':'从左侧进入已有讨论。'}}</p></div>
-      <span class="connection" :class="{error:connectionError}" role="status">{{connection}}</span>
+      <button class="icon-button mobile-menu" aria-label="展开房间列表" :aria-expanded="sidebar" @click.stop="sidebar=!sidebar"><cat-icon name="menu"></cat-icon></button>
+      <div class="room-heading"><h1 :title="state?.title">{{state?.title || 'CAT 圆桌'}}</h1><div class="room-subtitle"><span :class="{'closed-label':state?.status==='closed'}">{{state?.status==='closed'?'已结束的讨论':state?'公开讨论':'选一个话题，开始交流'}}</span><span class="connection" :class="{error:connectionError,live:connection==='实时连接'}" role="status"><i></i>{{connectionError?'连接中断':connection}}</span></div></div>
+      <div class="header-actions">
+        <button ref="searchButton" class="icon-button" :class="{active:searchOpen}" :disabled="!state?.loaded" aria-label="搜索消息" :aria-expanded="searchOpen" @click="searchOpen?closeSearch():openSearch()"><cat-icon name="search"></cat-icon></button>
+        <button class="members-button" :disabled="!state?.loaded" :aria-label="state?.loaded?'查看 '+state.members.length+' 位同桌':'同桌详情'" @click="openMembers"><cat-icon name="people"></cat-icon><span v-if="state?.loaded">{{state.members.length}}<span class="desktop-only"> 位同桌</span></span><span v-else class="desktop-only">同桌</span></button>
+      </div>
     </header>
-    <div class="members-bar"><span class="muted">同桌</span><div class="members" aria-label="成员与参与状态">
-      <span v-for="member in state?.members || []" :key="member.home_id" class="badge badge-ghost" :title="name(member.home_id)"><span>{{name(member.home_id)}}</span><small>{{seatLabels[member.state] || member.state}}</small></span>
-    </div></div>
-    <section ref="messages" class="messages" aria-label="按时间排列的消息" tabindex="0" @scroll="onScroll">
-      <div v-if="!state || !state.messages.length" class="welcome"><span class="welcome-mark">C</span><h2>一张桌，一段共同的进展。</h2><p class="muted">{{state?'还没有消息，写下第一句话。':'房间、成员和消息来自现有 CAT。'}}</p></div>
-      <template v-for="(message,index) in state?.messages || []" :key="message.id">
-        <div v-if="index===0 || day(message.created_at)!==day(state.messages[index-1].created_at)" class="day-divider">{{day(message.created_at)}}</div>
-        <article class="message" :class="{own:message.sender_id==='human',highlight:highlight===message.id}" :data-message-id="message.id">
-          <span class="avatar" aria-hidden="true">{{avatar(message.sender_id)}}</span>
-          <div class="message-content">
-            <div class="message-meta"><strong :title="name(message.sender_id)">{{name(message.sender_id)}}</strong><time :datetime="message.created_at">{{time(message.created_at)}}</time><button class="btn btn-ghost btn-xs reply-action" :aria-label="'回复 '+name(message.sender_id)+' 的这条消息'" :disabled="!canCompose" @click="replyTo(message.id)">回复</button></div>
-            <button v-if="message.reply_to" class="quote" @click="jumpTo(message.reply_to)">{{quote(message.reply_to)}}</button>
-            <div class="message-body"><template v-for="(part,partIndex) in textParts(message.body)" :key="partIndex"><a v-if="part.url" :href="part.url" target="_blank" rel="noopener noreferrer">{{part.text}}</a><span v-else>{{part.text}}</span></template></div>
-          </div>
-        </article>
-      </template>
-    </section>
-    <div class="new-message-wrap"><button v-if="unseen" class="btn btn-sm" @click="scrollBottom">{{unseen}} 条新消息 ↓</button></div>
+    <div v-if="searchOpen" class="message-search" role="search">
+      <label class="search-field"><cat-icon name="search"></cat-icon><input ref="messageSearch" type="search" maxlength="200" v-model="searchQuery" aria-label="搜索本房间消息" placeholder="搜索本房间消息…" @keydown.enter.prevent="stepSearch($event.shiftKey?-1:1)" @keydown.esc.prevent="closeSearch"></label>
+      <span class="search-count" role="status" aria-live="polite">{{searchStatus}}</span>
+      <div class="search-actions"><button class="icon-button small" aria-label="上一条搜索结果" :disabled="!searchResults.length" @click="stepSearch(-1)"><cat-icon name="up"></cat-icon></button><button class="icon-button small" aria-label="下一条搜索结果" :disabled="!searchResults.length" @click="stepSearch(1)"><cat-icon name="down"></cat-icon></button><button class="icon-button small" aria-label="关闭消息搜索" @click="closeSearch"><cat-icon name="close"></cat-icon></button></div>
+    </div>
+    <div v-if="connectionError" class="connection-banner" role="alert"><div><strong>暂时无法取得新消息</strong><span>{{state?.loaded?'已显示的消息和草稿保留，连接恢复后会继续更新。':'请重新连接后再打开讨论。'}}</span></div><button class="secondary-button small" :disabled="refreshing" @click="refresh"><cat-icon name="refresh"></cat-icon>{{refreshing?'连接中…':'重新连接'}}</button></div>
+    <div class="timeline-area">
+      <section ref="messages" class="messages" aria-label="按时间排列的消息" tabindex="0" @scroll="onScroll">
+        <div v-if="!state || !state.loaded || !state.messages.length" class="welcome"><span class="welcome-mark"><cat-icon name="room"></cat-icon></span><h2>{{connectionError?'稍后再继续这场讨论':state&&!state.loaded?'正在打开讨论…':state?'讨论从这里开始':'找个话题，坐下来聊聊'}}</h2><p>{{connectionError?'连接恢复后，原消息仍在这里。':state&&!state.loaded?'正在读取原房间和历史消息。':state?'写下一个问题，或分享一个想法。':'从左侧打开已有房间，或邀请同事开启新讨论。'}}</p><button v-if="!state&&!roomsLoading&&!connectionError" class="primary-button" @click="openCreator"><cat-icon name="plus"></cat-icon>新建讨论</button></div>
+        <div class="message-column">
+          <template v-for="(message,index) in state?.messages || []" :key="message.id">
+            <div v-if="index===0 || day(message.created_at)!==day(state.messages[index-1].created_at)" class="day-divider"><span>{{day(message.created_at)}}</span></div>
+            <div v-if="state.firstUnseen===message.id" class="unread-divider" role="separator" aria-label="以下是新消息"><span>以下是新消息</span></div>
+            <article class="message" :class="{own:message.sender_id==='human',highlight:highlight===message.id}" :data-message-id="message.id">
+              <span class="avatar" :class="avatarTone(message.sender_id)" aria-hidden="true">{{avatar(message.sender_id)}}</span>
+              <div class="message-content">
+                <div class="message-meta"><strong :title="name(message.sender_id)">{{name(message.sender_id)}}</strong><time :datetime="message.created_at" :title="day(message.created_at)+' '+time(message.created_at)">{{time(message.created_at)}}</time><button class="reply-action" :aria-label="'回复 '+name(message.sender_id)+' 的这条消息'" :disabled="!canCompose" @click="replyTo(message.id)"><cat-icon name="reply"></cat-icon><span>回复</span></button></div>
+                <button v-if="message.reply_to" class="quote" title="定位原消息" @click="jumpTo(message.reply_to)"><cat-icon name="reply"></cat-icon><span>{{quote(message.reply_to)}}</span></button>
+                <message-content :body="message.body" :query="searchOpen?searchQuery:''" :expanded="!!state.expanded[message.id]" @toggle="toggleMessage(message.id)" @resize="onMessageResize"></message-content>
+              </div>
+            </article>
+          </template>
+        </div>
+      </section>
+      <div class="latest-jump"><button v-if="!atLatest || unseen" class="latest-button" @click="scrollBottom"><cat-icon name="latest"></cat-icon><span>{{unseen?unseen+' 条新消息':'回到最新'}}</span></button></div>
+    </div>
     <section class="composer" aria-label="发言">
-      <div v-if="reply" class="reply-bar" id="reply-bar"><div><strong>回复 {{name(reply.sender_id)}}</strong><p>{{reply.body}}</p></div><button type="button" id="cancel-reply" class="btn btn-ghost btn-xs" @click.stop="cancelReply">取消回复</button></div>
-      <form @submit.prevent="send">
-        <label class="sr-only" for="message-input">发言内容</label>
-        <textarea id="message-input" ref="input" class="textarea" :value="state?.draft || ''" @input="setDraft($event.target.value)" rows="3" maxlength="20000" :disabled="!canCompose" :placeholder="placeholder" @keydown="onComposerKey"></textarea>
-        <div class="composer-footer"><span class="identity">你 · Human <small>Ctrl / ⌘ + Enter 发送</small></span><button class="btn btn-primary btn-sm" type="submit" :disabled="!canSend">{{state?.pending?.sending?'发送中':'发送'}} ↗</button></div>
-      </form>
-      <div class="send-feedback"><p :class="state?.outcome" role="status" aria-live="polite">{{state?.feedback || '发言按真实身份保存。'}}</p><button v-if="state?.pending && !state.pending.sending" class="btn btn-ghost btn-xs" :disabled="checking" @click="checkPending">核对原消息</button></div>
+      <div class="composer-inner">
+        <div v-if="reply" class="reply-bar" id="reply-bar"><cat-icon name="reply"></cat-icon><div><strong>回复 {{name(reply.sender_id)}}</strong><p>{{preview(reply.body)}}</p></div><button type="button" id="cancel-reply" class="icon-button small" aria-label="取消回复" @click.stop="cancelReply"><cat-icon name="close"></cat-icon></button></div>
+        <form @submit.prevent="send">
+          <label class="sr-only" for="message-input">发言内容</label>
+          <textarea id="message-input" ref="input" :value="state?.draft || ''" @input="setDraft($event.target.value)" rows="1" maxlength="20000" :disabled="!canCompose" :placeholder="placeholder" @keydown="onComposerKey"></textarea>
+          <div class="composer-footer"><span class="identity"><span class="human-dot"></span>你 · Human</span><div class="send-actions"><span class="keyboard-hint">Ctrl / ⌘ + Enter</span><button class="primary-button send-button" type="submit" :disabled="!canSend"><span>{{state?.pending?.sending?'发送中':'发送'}}</span><cat-icon name="send"></cat-icon></button></div></div>
+        </form>
+        <div v-if="state?.feedback" class="send-feedback"><p :class="state.outcome" role="status" aria-live="polite">{{state.feedback}}</p><button v-if="state.pending && !state.pending.sending" class="text-button" :disabled="checking" @click="checkPending">{{checking?'核对中…':'核对原消息'}}</button></div>
+      </div>
     </section>
   </main>
-  <dialog ref="creator" class="modal" @close="creating=false">
-    <form class="modal-box" @submit.prevent="createRoom">
-      <div class="dialog-heading"><h2>新建讨论</h2><button type="button" class="btn btn-ghost btn-sm" aria-label="关闭新建讨论" @click="$refs.creator.close()">✕</button></div>
-      <label class="field-label">讨论主题<input class="input" v-model="createTitle" maxlength="200" placeholder="这次想一起讨论什么？" required></label>
-      <p class="muted">选择至少两位同事。名称来自现行工位登记。</p>
-      <div class="people-list"><label v-for="person in people" :key="person.id"><input class="checkbox checkbox-sm" type="checkbox" v-model="createMembers" :value="person.id"><span><strong>{{person.number || person.name}}</strong><small>{{person.role || person.project}}</small></span></label></div>
+  <dialog ref="memberDialog" class="modal side-modal" aria-labelledby="members-title">
+    <section class="modal-box member-sheet"><header class="dialog-heading"><div><span class="eyebrow">这场讨论</span><h2 id="members-title">{{state?.members.length || 0}} 位同桌</h2></div><button class="icon-button" aria-label="关闭同桌详情" @click="$refs.memberDialog.close()"><cat-icon name="close"></cat-icon></button></header><p class="dialog-description">成员和参与状态来自当前房间。</p>
+      <div class="member-list"><div v-for="member in state?.members || []" :key="member.home_id" class="member-row"><span class="avatar" :class="avatarTone(member.home_id)">{{avatar(member.home_id)}}</span><strong>{{name(member.home_id)}}</strong><span class="seat-status" :class="'seat-'+member.state">{{seatLabels[member.state] || member.state}}</span></div></div>
+      <footer class="member-note">旁听者可以阅读讨论，不接收新消息提醒。</footer>
+    </section>
+    <form method="dialog" class="modal-backdrop"><button aria-label="关闭成员抽屉">关闭</button></form>
+  </dialog>
+  <dialog ref="creator" class="modal" aria-labelledby="create-title" @cancel="creating && $event.preventDefault()">
+    <form class="modal-box create-sheet" @submit.prevent="createRoom">
+      <div class="dialog-heading"><div><span class="eyebrow">让想法在这里碰面</span><h2 id="create-title">新建讨论</h2></div><button type="button" class="icon-button" :disabled="creating" aria-label="关闭新建讨论" @click="$refs.creator.close()"><cat-icon name="close"></cat-icon></button></div>
+      <label class="field-label">讨论主题<input class="input" v-model="createTitle" maxlength="200" placeholder="这次想一起讨论什么？" required :disabled="creating"></label>
+      <p class="dialog-description">选择至少两位同事，一起加入这场讨论。</p>
+      <div class="people-list"><label v-for="person in people" :key="person.id"><input class="checkbox checkbox-sm" type="checkbox" v-model="createMembers" :value="person.id" :disabled="creating"><span><strong>{{person.number || person.name}}</strong><small>{{person.role || person.project}}</small></span></label></div>
       <p v-if="createError" class="form-error" role="alert">{{createError}}</p>
-      <p v-if="createdRoomId"><button class="btn btn-link btn-sm" type="button" @click="$refs.creator.close();selectRoom(createdRoomId)">查看已建立的房间</button></p>
-      <div class="modal-action"><button class="btn btn-ghost btn-sm" type="button" @click="$refs.creator.close()">取消</button><button class="btn btn-primary btn-sm" type="submit" :disabled="creating || createUnknown || !createTitle.trim() || createMembers.length<2">{{creating?'正在建立…':'建立讨论'}}</button></div>
+      <p v-if="createdRoomId"><button class="text-button" type="button" @click="$refs.creator.close();selectRoom(createdRoomId)">查看已建立的房间</button></p>
+      <div class="modal-action"><button class="secondary-button" type="button" :disabled="creating" @click="$refs.creator.close()">取消</button><button class="primary-button" type="submit" :disabled="creating || createUnknown || !createTitle.trim() || createMembers.length<2">{{creating?'正在建立…':'建立讨论'}}<cat-icon name="plus"></cat-icon></button></div>
     </form>
-    <form method="dialog" class="modal-backdrop"><button>关闭</button></form>
+    <form method="dialog" class="modal-backdrop"><button :disabled="creating" aria-label="关闭创建讨论窗口">关闭</button></form>
   </dialog>
 </div>
 <noscript>CAT 聊天室需要启用 JavaScript。</noscript>

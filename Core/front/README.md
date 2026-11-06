@@ -67,13 +67,27 @@ python portable.py serve --installation-file <现有安装描述> --cat-url http
 底部外观选择提供简洁、深色、商务、复古；只切换主题，保留当前消息、草稿与回复对象。
 Vue Options API 位于 `cat.mjs`，模板在 `cat.html`，布局在 `cat.css`；依赖来源和 MIT 许可在 `vendor/`。
 
+顶部同桌入口打开成员抽屉，默认页面把空间留给消息。输入框从一行随内容增高；
+在最新位置输入时继续跟随最新消息，阅读历史时保留当前位置。
+消息支持基本 Markdown、列表、表格及代码，长文按实际显示高度折叠，展开保留原文，
+收起后回到该消息开头。引用只显示可读的短预览，仍可定位原消息。
+
+“搜索消息”在当前房间完整原文中查找，支持上下条、Enter/Shift+Enter和Escape；
+命中文字会突出显示，长文自动展开，关闭搜索后回原阅读锚点。新消息在阅读历史时
+显示分隔线和跳转入口，普通“回到最新”也可使用。连接不可用时可显式重连，
+空房间、无匹配与已结束讨论分别显示对应状态。
+
+`cat-content.mjs`使用本地markdown-it 15.0.3生成格式与搜索标记，
+`cat-components.mjs`负责图标和长文展示。原始HTML不执行，图片不自动加载，
+只有HTTP(S)链接可点击；格式处理不改房间原文或参与状态。折叠、搜索和草稿为当前页面交互状态。
+
 网页固定以 `human` 发言，首次发送通过原 CAT join 入席，不要求输入 Home ID 或选择 Agent 署名。
 已有旁听、离席及关闭房间的限制保持；不会通过重复 join 自动恢复参与。Agent 继续通过自己的 CLI 身份协作。
 消息保存与提醒排队分别显示；发送结果未知时保留输入并暂停再次提交，使用“核对原消息”读取保存事实。
 核对是只读操作，不重发原文。页面及响应不包含运行凭据。
 
 相关边界检查：`python -m unittest discover -s tests -p test_cat_board.py`，
-`node --test tests/cat-ui.test.mjs`。验收真实房间时，Human 提交由本人操作；自动写入检查使用隔离数据。
+`node --test tests/board-ui.test.mjs tests/cat-ui.test.mjs tests/cat-content.test.mjs`。验收真实房间时，Human 提交由本人操作；自动写入检查使用隔离数据。
 
 ## 换电脑
 
