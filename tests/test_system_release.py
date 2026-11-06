@@ -107,30 +107,30 @@ class SystemReleaseTests(unittest.TestCase):
     def test_existing_registry_homes_libraries_and_stop_survive_repointing(self):
         system,core,config,env,prefix,portable,external = self.installation()
         legacy = self.temp/'existing machine'; data = legacy/'data'
-        project = legacy/'Project'; home = project/'Workstations/9900-s001'; rooter = legacy/'rooter'
+        project = legacy/'Project'; home = project/'Workstations/1999-s001'; rooter = legacy/'rooter'
         for path in (home,rooter,data/'project-registry/projects'):
             path.mkdir(parents=True)
         scripts = core/'code/personal-agent-os/scripts'; sys.path.insert(0,str(scripts))
         from paos_todo import render_todo
         (home/'ENTRY.md').write_text('# Original project identity\n','utf-8')
-        (home/'TODO.md').write_text(render_todo(home_kind='project_agent',home_id='9900-s001',
-            project_id='9900',objective='Original ongoing work',next_action='Continue original work'),'utf-8')
+        (home/'TODO.md').write_text(render_todo(home_kind='project_agent',home_id='1999-s001',
+            project_id='1999',objective='Original ongoing work',next_action='Continue original work'),'utf-8')
         (rooter/'ENTRY.md').write_text('# Original Rooter identity\n','utf-8')
         (rooter/'TODO.md').write_text(render_todo(home_kind='rooter',home_id='rooter-001',
             project_id='',objective='Keep existing machine',next_action='Read original input'),'utf-8')
         (rooter/'STOP').write_text('paused by owner\n','utf-8')
         (rooter/'private-data').mkdir(); (rooter/'private-data/owner.txt').write_text('existing binding marker\n','utf-8')
         (home/'mailbox').mkdir(); (home/'mailbox/original.md').write_text('Original durable input\n','utf-8')
-        (data/'project-registry/projects/9900.json').write_text(json.dumps({
-            'schema':'paos-project-registry/v1','id':'9900','root_path':str(project),
-            'homes':['9900-s001'],'coordinator_home_id':'9900-s001'}),'utf-8')
+        (data/'project-registry/projects/1999.json').write_text(json.dumps({
+            'schema':'paos-project-registry/v1','id':'1999','root_path':str(project),
+            'homes':['1999-s001'],'coordinator_home_id':'1999-s001'}),'utf-8')
         before = snapshot(legacy)
         run(prefix+['install','configure','--source-root',str(core/'code/personal-agent-os'),
             '--data-root',str(data),'--library-roots-config',str(core/'config/local/library-roots.json'),
             '--rooter-home',str(rooter)],cwd=self.temp,env=env)
         self.assertTrue(json.loads(run(portable+['doctor'],cwd=self.temp,env=env).stdout)['configuration_ok'])
         run(portable+['init'],cwd=self.temp,env=env)
-        result = json.loads(run(prefix+['workstation','show','9900','9900-s001'],cwd=self.temp,env=env).stdout)
+        result = json.loads(run(prefix+['workstation','show','1999','1999-s001'],cwd=self.temp,env=env).stdout)
         self.assertTrue(result['ok'])
         self.assertEqual(before,snapshot(legacy))
         self.assertEqual(external,snapshot(self.temp/'external libraries'))
