@@ -4,6 +4,25 @@
 
 从 [HOME](HOME.md) 使用系统，从 [SYSTEM](SYSTEM.md) 理解职责。专业方法保存在独立 Libraries，业务与成员工位保存在独立 Project Vault。
 
+## 已安装机器上的首次使用
+
+先使用本机已部署的命令入口。标准 Windows 安装的入口在当前用户目录，下面的命令不依赖工作目录或已有员工 Home：
+
+```powershell
+& "$env:USERPROFILE\.paos\bin\paos.cmd" install show
+& "$env:USERPROFILE\.paos\bin\paos.cmd" health
+```
+
+下文的`paos`表示这份完整调用前缀；已加入PATH时可直接写`paos`。其它部署方式使用本机维护者公布的入口。包内`Core/config/local/`属于下面“新安装”生成的配置，不能拿它覆盖已有入口选择的安装和库配置。
+
+| 当前身份 | 接下来做什么 |
+| --- | --- |
+| 已有员工Home | 从本人ENTRY、AGENTS、TODO和当前输入恢复原责任。 |
+| 临时外部协作者，没有Home | 从[项目与同事](PROJECTS.md)找到本次获准工作的项目及接收者，按[联络入口](Guide/ops-entry.md#外部-agent-临时协作)联系；不借用其他员工身份。 |
+| 要持续承担项目责任 | 请该项目Coordinator与Rooter沿[现有入职流程](Project-Template/README.md#新项目和工位的创建)登记真实Home和Runtime；本人完成ONBOARD及原生接续。 |
+
+找专业方法从[资源](RESOURCES.md)进入；只为使用现有系统，无需再次初始化、复制Library或创建新员工。
+
 ## GitHub 同步
 
 [PAOE 主仓库](https://github.com/xiangscream/PAOE) 是 System 公共源码入口；[Releases](https://github.com/xiangscream/PAOE/releases) 提供固定版本、发布包和校验文件。安装与跨机器升级使用明确 tag，开发改动通过分支和 PR 合入 main，不覆盖已发布 tag。

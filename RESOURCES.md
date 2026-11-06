@@ -20,12 +20,14 @@
 ## 按当前任务找原件
 
 ```powershell
-python -X utf8 -B Core/code/personal-agent-os/scripts/paos.py --installation-file Core/config/local/installation.json --library-roots-config Core/config/local/library-roots.json library search '任务关键词'
+& "$env:USERPROFILE\.paos\bin\paos.cmd" library search '写作'
 ```
 
-打开结果的 `source_path` 再使用。工具文档、本机安装、当前 Runtime 的权限和实测调用是不同事实，按当前任务核对需要的能力。
+这是标准Windows已安装入口，其他部署沿[当前安装入口](README.md#已安装机器上的首次使用)。它读取本机已登记的库配置，无需从同事工位借路径，也不需要手加包内的`--library-roots-config`。
 
-命令在 System 根目录执行；已有机器使用自己的权威安装与库配置，不导入另一台电脑的库路径。
+将“写作”换成本次任务关键词，打开命中的`source_path`后使用。检索为字面关键词匹配，多个词用空格分隔；零匹配时可换具体关键词或看Library用途表，不能据此认定没有方法。`library_roots_not_registered`则是安装或库配置问题，先用同一入口的`library roots show`核实，不重新安装一套库。
+
+System的启动、接入和通信规则在下方System Guide；这里的检索只查已登记的Workflow与Skill。方法的使用与改进沿Workflow库README的“方法使用与改进”，源文件是唯一正文。工具的具体权限和调用按本机Tool Catalog核对。
 
 ## System 的共同规则
 
