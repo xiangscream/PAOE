@@ -199,6 +199,31 @@ class HistoryArchiveTests(unittest.TestCase):
         self.assertTrue((self.vault / 'Workstations/3002-s002/mailbox/msg-history-003.md').exists())
         self.assertEqual(target.read_bytes(), b'conflict')
 
+    def test_direct_notice_can_move_and_be_read_by_notice_id(self):
+        source = self.root / 'incoming-direct.md'
+        source.write_text('直接输入原件', encoding='utf-8')
+        registered = self.call(
+            'attention', 'source-register', '3002', '3002-s002',
+            '--source-ref', str(source), '--summary', '直接输入',
+        )[1]
+        notice_id = registered['notice']['notice_id']
+        self.mark_done(notice_id)
+        history = self.root / 'external-history'
+        self.call(
+            'attention', 'archive-input', '3002', '3002-s002',
+            '--notice-id', notice_id, '--history-root', str(history),
+        )
+        self.assertFalse(
+            (self.vault / 'Workstations/3002-s002/notices' / f'{notice_id}.md').exists()
+        )
+        read = self.call(
+            'attention', 'history-read', '--history-root', str(history),
+            '--agent-id', '3002-s002', '--notice-id', notice_id,
+        )[1]
+        self.assertEqual(read['notice']['state'], 'handled')
+        self.assertTrue(read['notice']['read'])
+        self.assertEqual(read['notice']['summary'], '直接输入')
+
     def test_registered_home_label_does_not_say_unregistered(self):
         orient = render_orient({
             'identity': {'agent_id': '3002-s002', 'project_id': '3002', 'identity_id': None},
