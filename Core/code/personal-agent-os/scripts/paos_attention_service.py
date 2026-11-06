@@ -47,6 +47,8 @@ from paos_mail import (
     mail_archive_files,
     parse_mail_frontmatter,
     read_mail,
+    read_mail_archive,
+    record_mail_archive,
     send_mail,
     _atomic_create,
     _render_mail,
@@ -1488,6 +1490,19 @@ def archive_input(
     batch = _history_root(project_root, history_root)
     home_id = str(ref["home_id"])
 
+    if message_id:
+        existing_archive = read_mail_archive(project_root, home_id, message_id)
+        if existing_archive is not None:
+            return {
+                "schema": "paos-history-archive/v1",
+                "home": ref,
+                "history_root": str(existing_archive.get("history_root") or ""),
+                "message_id": message_id,
+                "notice_id": "",
+                "state": "already_archived",
+                "files": [],
+            }
+
     sources: list[Path] = []
     selected_notice: dict[str, Any]
     source_ref = ""
@@ -1594,6 +1609,26 @@ def archive_input(
                 "state": state,
             }
         )
+
+    if message_id:
+        try:
+            record_mail_archive(
+                project_root,
+                home_id,
+                message_id,
+                history_root=str(batch),
+            )
+        except MailProblem as problem:
+            raise AttentionServiceProblem(
+                problem.code,
+                str(problem),
+                {
+                    **dict(problem.details or {}),
+                    "moved": moved,
+                    "remaining": [],
+                    "history_root": str(batch),
+                },
+            ) from problem
 
     return {
         "schema": "paos-history-archive/v1",

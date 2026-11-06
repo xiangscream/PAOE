@@ -20,6 +20,7 @@ from typing import Any, Callable, Iterable
 MAIL_SCHEMA = "paos-workstation-mail/v1"
 DISPATCH_SCHEMA = "paos-workstation-mail-dispatch/v1"
 HANDLED_SCHEMA = "paos-workstation-mail-handled/v1"
+ARCHIVE_SCHEMA = "paos-workstation-mail-archive/v1"
 MAIL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,119}$")
 MAX_SUBJECT_CHARS = 240
 MAX_BODY_CHARS = 256 * 1024
@@ -258,6 +259,98 @@ def _handled_path(root: Path, recipient_id: str, message_id: str) -> Path:
         / ".handled"
         / f"{message_id}.json"
     )
+
+
+def _archive_path(root: Path, recipient_id: str, message_id: str) -> Path:
+    return (
+        root
+        / "Workstations"
+        / recipient_id
+        / "mailbox"
+        / ".archived"
+        / f"{message_id}.json"
+    )
+
+
+def read_mail_archive(
+    root: Path,
+    agent_id: str,
+    message_id: str,
+) -> dict[str, Any] | None:
+    """Read the explicit archive marker for one recipient, if present."""
+    message_id = _validate_message_id(message_id)
+    path = _archive_path(Path(root), agent_id, message_id)
+    if not path.is_file():
+        return None
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise MailProblem(
+            "mail_archive_record_invalid",
+            f"Mail archive 记录无法读取：{path}",
+            {"path": str(path), "cause": str(exc)},
+        ) from exc
+    if (
+        not isinstance(record, dict)
+        or record.get("schema") != ARCHIVE_SCHEMA
+        or record.get("message_id") != message_id
+        or record.get("recipient_agent_id") != agent_id
+        or not str(record.get("history_root") or "").strip()
+    ):
+        raise MailProblem(
+            "mail_archive_record_invalid",
+            f"Mail archive 记录内容无效：{path}",
+            {"path": str(path), "message_id": message_id},
+        )
+    return record
+
+
+def record_mail_archive(
+    root: Path,
+    agent_id: str,
+    message_id: str,
+    *,
+    history_root: str,
+) -> dict[str, Any]:
+    """Persist the explicit archive marker after verified source removal."""
+    message_id = _validate_message_id(message_id)
+    history_root = str(history_root or "").strip()
+    if not history_root:
+        raise MailProblem(
+            "mail_archive_history_root_missing",
+            "Mail archive 记录缺少历史批次目录。",
+            {"message_id": message_id},
+        )
+    path = _archive_path(Path(root), agent_id, message_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "schema": ARCHIVE_SCHEMA,
+        "message_id": message_id,
+        "recipient_agent_id": agent_id,
+        "history_root": history_root,
+        "archived_at": utc_now_iso(),
+    }
+    text = json.dumps(record, ensure_ascii=False, indent=2) + "\n"
+    if not _atomic_create(path, text):
+        existing = read_mail_archive(Path(root), agent_id, message_id)
+        if existing is None:
+            raise MailProblem(
+                "mail_archive_record_invalid",
+                f"Mail archive 记录创建失败：{path}",
+                {"path": str(path), "message_id": message_id},
+            )
+        if str(existing.get("history_root") or "") != history_root:
+            raise MailProblem(
+                "mail_archive_record_conflict",
+                "同一 message_id 已归档到不同历史批次。",
+                {
+                    "message_id": message_id,
+                    "existing_history_root": existing.get("history_root"),
+                    "requested_history_root": history_root,
+                },
+            )
+        return existing
+    return record
 
 
 def _load_dispatch(path: Path) -> dict[str, Any]:
@@ -526,23 +619,24 @@ def send_mail(
             continue
 
         if replayed_dispatch:
-            # The immutable envelope already exists.  A missing recipient file
-            # may be an externally archived Mail copy or an incomplete delivery;
-            # recreating it here would duplicate a handled/archived input.
-            # Report the gap instead and require an explicit repair.
-            deliveries.append(
-                {
-                    "recipient_agent_id": recipient_id,
-                    "state": "missing",
-                    "path": str(destination),
-                    "detail": (
-                        "已有 dispatch 但 mailbox 文件缺失；可能是显式历史归档，"
-                        "也可能是未完成投递。该状态不证明原件丢失；归档件需用"
-                        " attention history-read 和明确批次读回，不会按原 ID 自动全局可读。"
-                    ),
-                }
-            )
-            continue
+            archived = read_mail_archive(root, recipient_id, message_id)
+            if archived is not None:
+                # Only an explicit archive marker suppresses re-delivery.  A
+                # missing file without that marker is still a recoverable
+                # partial delivery and keeps the original retry behavior.
+                deliveries.append(
+                    {
+                        "recipient_agent_id": recipient_id,
+                        "state": "archived",
+                        "path": str(destination),
+                        "history_root": str(archived.get("history_root") or ""),
+                        "detail": (
+                            "该收件副本已显式归档；请用 attention history-read "
+                            "和记录中的历史批次读回，不按原 ID 自动重建或全局读取。"
+                        ),
+                    }
+                )
+                continue
 
         created = _atomic_create(destination, rendered)
         deliveries.append(
@@ -612,6 +706,20 @@ def dispatch_status(
             (expected_files.get(str(recipient_id)) or {}).get("sha256") or ""
         )
         if not path.is_file():
+            archived = read_mail_archive(root, str(recipient_id), message_id)
+            if archived is not None:
+                state = "archived"
+                actual_sha = ""
+                states.append(
+                    {
+                        "recipient_agent_id": str(recipient_id),
+                        "state": state,
+                        "path": str(path),
+                        "sha256": actual_sha,
+                        "history_root": str(archived.get("history_root") or ""),
+                    }
+                )
+                continue
             state = "missing"
             actual_sha = ""
         else:

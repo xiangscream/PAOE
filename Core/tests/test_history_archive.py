@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import unittest
@@ -151,7 +152,10 @@ class HistoryArchiveTests(unittest.TestCase):
         replay = self.send()
         self.assertFalse((self.vault / 'Workstations/3002-s002/mailbox/msg-history-001.md').exists())
         self.assertFalse((self.vault / 'Workstations/3002-s002/notices' / f'{notice_id}.md').exists())
-        self.assertEqual(replay['mail']['deliveries'][0]['state'], 'missing')
+        self.assertEqual(replay['mail']['deliveries'][0]['state'], 'archived')
+        self.assertTrue(
+            (self.vault / 'Workstations/3002-s002/mailbox/.archived/msg-history-001.json').is_file()
+        )
         self.assertEqual(replay['notices']['items'], [])
         self.assertEqual(
             before,
@@ -198,6 +202,17 @@ class HistoryArchiveTests(unittest.TestCase):
         self.assertEqual(result['error_code'], 'attention_history_conflict')
         self.assertTrue((self.vault / 'Workstations/3002-s002/mailbox/msg-history-003.md').exists())
         self.assertEqual(target.read_bytes(), b'conflict')
+
+    def test_partial_delivery_retry_is_not_blocked_without_archive_marker(self):
+        mailbox = self.vault / 'Workstations/3002-s002/mailbox'
+        shutil.rmtree(mailbox)
+        first = self.send('msg-partial-001')
+        self.assertEqual(first['mail']['deliveries'][0]['state'], 'workstation_missing')
+        mailbox.mkdir()
+        replay = self.send('msg-partial-001')
+        self.assertEqual(replay['mail']['deliveries'][0]['state'], 'delivered')
+        self.assertTrue((mailbox / 'msg-partial-001.md').is_file())
+        self.assertFalse((mailbox / '.archived/msg-partial-001.json').exists())
 
     def test_direct_notice_can_move_and_be_read_by_notice_id(self):
         source = self.root / 'incoming-direct.md'
