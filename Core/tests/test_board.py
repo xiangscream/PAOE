@@ -310,6 +310,18 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(status["state"], "saved")
         self.assertTrue(status["result"].get("ok"))
 
+    def test_mail_body_cli_special_forms_are_literal_user_text(self):
+        for index, body in enumerate(("@S006 请补充当前主题的资料。", "-")):
+            with self.subTest(body=body):
+                message_id = f"ui-literal-{index}"
+                sent = self.board.collaboration({
+                    "project": "1001", "mode": "mail", "members": ["1001-s002"],
+                    "topic": "保留原文", "body": body, "message_id": message_id,
+                })
+                self.assertEqual(sent["state"], "saved", sent)
+                original = self.roots["1001"] / "Workstations/1001-s002/mailbox" / f"{message_id}.md"
+                self.assertIn(body, original.read_text(encoding="utf-8"))
+
 
     def test_team_fields_paused_registered_and_team_only_are_visible(self):
         root = self.roots["1001"]

@@ -77,8 +77,9 @@ class CatBoardTests(unittest.TestCase):
         self.assertEqual(receipt["dispatch"], "queued")
         self.assertEqual(call.call_args_list[0].args[0], ["join", "room-one", "--home", "human", "--label", "Human"])
         self.assertEqual(call.call_args_list[1].args[0],
-            ["send", "room-one", "--from", "human", "--body", "回复原讨论",
+            ["send", "room-one", "--from", "human", "--body", "-",
              "--message-id", "same-id", "--reply-to", "original"])
+        self.assertEqual(call.call_args_list[1].kwargs["input_text"], "回复原讨论")
 
     def test_page_cannot_choose_an_agent_signature(self):
         with patch.object(self.board, "cat") as call:

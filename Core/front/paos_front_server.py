@@ -64,7 +64,7 @@ class Board:
         self.registry = ProjectRegistry(self.installation_file)
         self.cat_url = cat_url
 
-    def run_paos(self, args: list[str]) -> dict:
+    def run_paos(self, args: list[str], *, input_text: str | None = None) -> dict:
         """One existing CLI invocation. Never infer success from missing output."""
         source = runtime_path(self.installation["source_root"])
         env = dict(os.environ, PAOS_INSTALLATION_FILE=str(self.installation_file),
@@ -74,7 +74,7 @@ class Board:
             result = subprocess.run(
                 [sys.executable, "-X", "utf8", str(source / "scripts" / "paos.py"),
                  "--installation-file", str(self.installation_file), "--json", "--full-result", *args],
-                env=env, capture_output=True, text=True, encoding="utf-8", timeout=90,
+                env=env, input=input_text, capture_output=True, text=True, encoding="utf-8", timeout=90,
             )
         except subprocess.TimeoutExpired:
             return {"ok": False, "error_code": "cli_result_unknown", "retry": False,
@@ -364,10 +364,10 @@ class Board:
             for member in members:
                 args += ["--to", member]
             args += ["--sender-kind", "human", "--sender-id", "human", "--subject", topic,
-                     "--body", body, "--message-id", message_id]
+                     "--body", "-", "--message-id", message_id]
             if remind:
                 args.append("--remind")
-            result = self.run_paos(args)
+            result = self.run_paos(args, input_text=body)
             return {"ok": bool(result.get("ok")), "state": self._result_state(result),
                     "mode": mode, "phase": "send", "message_id": message_id,
                     "notification": self._notification_view(result, remind),
@@ -440,10 +440,10 @@ class Board:
                 "message_id": message_id, "room_id": room_id,
                 "detail": result.get("error", ""), "result": result}
 
-    def cat(self, args: list[str]) -> dict:
+    def cat(self, args: list[str], *, input_text: str | None = None) -> dict:
         if not self.cat_url:
             return {"ok": False, "error_code": "cat_not_configured", "error": "CAT 未配置；工位文件功能仍可使用。"}
-        return self.run_paos(["cat", "--url", self.cat_url, *args])
+        return self.run_paos(["cat", "--url", self.cat_url, *args], input_text=input_text)
 
     def dashboard(self, project_id: str = "") -> dict:
         projects = self.projects()
@@ -519,12 +519,13 @@ class Board:
         joined = self.cat(["join", room_id, "--home", sender, "--label", "Human" if sender == "human" else sender])
         if not joined.get("ok"):
             return {**joined, "message_submitted": False}
-        args = ["send", room_id, "--from", sender, "--body", body, "--message-id", message_id]
+        # Stdin preserves literal @mentions and long text without CLI @FILE semantics.
+        args = ["send", room_id, "--from", sender, "--body", "-", "--message-id", message_id]
         if reply_to:
             args += ["--reply-to", reply_to]
         if not notify:
             args.append("--no-notify")
-        return self.cat(args)
+        return self.cat(args, input_text=body)
 
     def hint(self, home_id: str, example: dict) -> dict:
         ref = self.home(home_id)
