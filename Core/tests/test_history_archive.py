@@ -214,6 +214,32 @@ class HistoryArchiveTests(unittest.TestCase):
         self.assertTrue((mailbox / 'msg-partial-001.md').is_file())
         self.assertFalse((mailbox / '.archived/msg-partial-001.json').exists())
 
+    def test_partial_delivery_multi_recipient_retries_only_missing_side(self):
+        mailbox = self.vault / 'Workstations/3002-s002/mailbox'
+        shutil.rmtree(mailbox)
+        args = (
+            'attention', 'send', '3002', '--to', '3002-s001', '--to', '3002-s002',
+            '--sender-kind', 'agent', '--sender-id', '3002-s001',
+            '--subject', '部分投递', '--body', '可重试的正文。',
+            '--message-id', 'msg-partial-002',
+        )
+        first = self.call(*args)[1]
+        first_states = {
+            item['recipient_agent_id']: item['state']
+            for item in first['mail']['deliveries']
+        }
+        self.assertEqual(first_states['3002-s001'], 'delivered')
+        self.assertEqual(first_states['3002-s002'], 'workstation_missing')
+        mailbox.mkdir()
+        replay = self.call(*args)[1]
+        replay_states = {
+            item['recipient_agent_id']: item['state']
+            for item in replay['mail']['deliveries']
+        }
+        self.assertEqual(replay_states['3002-s001'], 'already_delivered')
+        self.assertEqual(replay_states['3002-s002'], 'delivered')
+        self.assertTrue((mailbox / 'msg-partial-002.md').is_file())
+
     def test_direct_notice_can_move_and_be_read_by_notice_id(self):
         source = self.root / 'incoming-direct.md'
         source.write_text('直接输入原件', encoding='utf-8')
