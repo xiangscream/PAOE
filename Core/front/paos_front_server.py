@@ -14,10 +14,17 @@ import subprocess
 import sys
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit, quote
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 PACKAGE = Path(__file__).resolve().parents[1]
 STATIC = Path(__file__).resolve().parent
+CAT_FILES = {"/cat": ("cat.html", "text/html"), "/cat/": ("cat.html", "text/html"),
+             "/cat.css": ("cat.css", "text/css"), "/cat.mjs": ("cat.mjs", "text/javascript"),
+             "/cat-state.mjs": ("cat-state.mjs", "text/javascript"),
+             "/cat-vendor/vue.mjs": ("vendor/vue-3.5.45.mjs", "text/javascript"),
+             "/cat-vendor/daisyui.css": ("vendor/daisyui-5.7.50.css", "text/css")}
 sys.path.insert(0, str(PACKAGE / "code" / "personal-agent-os" / "scripts"))
 
 from paos_attention_service import AttentionServiceProblem, read_home_state
@@ -26,6 +33,8 @@ from paos_installation import InstallationProblem, effective_data_root, load_ins
 from paos_library import LibraryProblem, load_library_roots, scan_skills, scan_workflows
 from paos_registry import ProjectRegistry, RegistryProblem
 from paos_workstation import posix_windows_drive_locator
+from paos_agent_numbers import staff_number
+from paos_contact import _team_role_summaries
 
 
 class BoardProblem(ValueError):
@@ -162,25 +171,48 @@ class Board:
     def create_room(self, title: str, members: list[str]) -> dict:
         for member in members:
             self.home(member)
+        labels = {person["id"]: person["name"] for person in self.people()}
         result = self.cat(["create", "--title", title])
         if not result.get("ok"):
             return result
         room_id = result["room"]["id"]
         for member in members:
-            joined = self.cat(["join", room_id, "--home", member])
+            joined = self.cat(["join", room_id, "--home", member, "--label", labels[member]])
             if not joined.get("ok"):
                 return {**joined, "room_id": room_id, "phase": "join"}
         return {"ok": True, "room_id": room_id}
+
+    def people(self) -> list[dict]:
+        """Names come from the registered Homes, staff numbers and TEAM originals."""
+        people = []
+        for project in self.projects():
+            root = runtime_path(project["root_path"])
+            roles = _team_role_summaries(root, set(project["homes"]))
+            for home_id in project["homes"]:
+                number = staff_number(home_id, installation_path=self.installation_file, installation=self.installation)
+                role = roles.get(home_id, "")
+                people.append({"id": home_id, "number": number or "", "role": role,
+                               "name": (number or home_id) + (" · " + role if role else ""),
+                               "project": project["id"]})
+        if self.installation.get("rooter_home"):
+            number = staff_number("rooter-001", installation_path=self.installation_file, installation=self.installation)
+            people.append({"id": "rooter-001", "number": number or "", "role": "System 运行支持",
+                           "name": "Rooter", "project": "System"})
+        return people
 
     def room(self, room_id: str) -> dict:
         result = self.cat(["show", room_id])
         return {"ok": True, **result["room"]} if result.get("ok") else result
 
-    def send_message(self, room_id: str, sender: str, body: str, message_id: str) -> dict:
-        joined = self.cat(["join", room_id, "--home", sender])
+    def send_message(self, room_id: str, sender: str, body: str, message_id: str,
+                     reply_to: str = "") -> dict:
+        joined = self.cat(["join", room_id, "--home", sender, "--label", "Human" if sender == "human" else sender])
         if not joined.get("ok"):
-            return joined
-        return self.cat(["send", room_id, "--from", sender, "--body", body, "--message-id", message_id])
+            return {**joined, "message_submitted": False}
+        args = ["send", room_id, "--from", sender, "--body", body, "--message-id", message_id]
+        if reply_to:
+            args += ["--reply-to", reply_to]
+        return self.cat(args)
 
     def hint(self, home_id: str, example: dict) -> dict:
         ref = self.home(home_id)
@@ -198,16 +230,55 @@ class Board:
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _cat_events(self, room_id: str, after: str):
+        origin = self.server.board.cat_url
+        if not origin:
+            self._json({"ok": False, "error_code": "cat_not_configured", "error": "CAT 未配置。"}, 503)
+            return
+        headers = {"Accept": "text/event-stream"}
+        if self.headers.get("Last-Event-ID"):
+            headers["Last-Event-ID"] = self.headers["Last-Event-ID"]
+        request = Request(origin.rstrip("/") + "/api/rooms/" + quote(room_id, safe="") +
+                          "/events?after=" + quote(after, safe=""), headers=headers)
+        try:
+            upstream = urlopen(request, timeout=35)
+        except (HTTPError, URLError, OSError):
+            self._json({"ok": False, "error_code": "cat_stream_unavailable",
+                        "error": "CAT 实时接口尚不可用，请核配对的服务版本。"}, 503)
+            return
+        with upstream:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            try:
+                for line in upstream:
+                    self.wfile.write(line)
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, TimeoutError):
+                self.close_connection = True
+
     def _json(self, value: dict, status: int = 200):
         data = json.dumps(value, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
 
     def do_GET(self):
         url = urlsplit(self.path)
+        if url.path in CAT_FILES:
+            name, content_type = CAT_FILES[url.path]
+            data = (STATIC / name).read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type + "; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if url.path in {"/", "/index.html"}:
             data = (STATIC / "index.html").read_bytes()
             self.send_response(200)
@@ -217,7 +288,25 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         try:
-            if url.path == "/api/dashboard":
+            parts = url.path.strip("/").split("/")
+            if url.path == "/api/cat/rooms":
+                value = self.server.board.cat(["list"])
+            elif url.path == "/api/cat/people":
+                value = {"ok": True, "people": self.server.board.people()}
+            elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "events":
+                self._cat_events(unquote(parts[2]), parse_qs(url.query).get("after", ["0"])[0])
+                return
+            elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "messages":
+                try:
+                    after = int(parse_qs(url.query).get("after", ["0"])[0])
+                except ValueError as exc:
+                    raise BoardProblem("invalid_cursor", "消息位置必须是整数。") from exc
+                if after < 0:
+                    raise BoardProblem("invalid_cursor", "消息位置不能为负数。")
+                value = self.server.board.cat(["read", unquote(parts[2]), "--after", str(after)])
+            elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "members":
+                value = self.server.board.cat(["members", unquote(parts[2])])
+            elif url.path == "/api/dashboard":
                 value = self.server.board.dashboard(parse_qs(url.query).get("project", [""])[0])
             elif url.path.startswith("/api/agent/"):
                 value = self.server.board.agent(unquote(url.path.rsplit("/", 1)[-1]))
@@ -247,12 +336,15 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/hint":
                 value = self.server.board.hint(str(payload.get("agent_id") or ""), payload.get("example") or {})
             elif self.path.startswith("/api/room/") and self.path.endswith("/message"):
+                if payload.get("sender_id", "human") != "human":
+                    raise BoardProblem("human_sender_only", "此网页使用 Human 身份发言。")
                 body = str(payload.get("body") or "").strip()
                 if not body:
                     raise BoardProblem("empty_body", "请输入发言内容。")
                 value = self.server.board.send_message(unquote(self.path.rsplit("/", 2)[-2]),
-                                                      str(payload.get("sender_id") or "human"), body,
-                                                      str(payload.get("message_id") or f"board-{uuid.uuid4().hex}"))
+                                                      "human", body,
+                                                      str(payload.get("message_id") or f"board-{uuid.uuid4().hex}"),
+                                                      str(payload.get("reply_to") or ""))
             else:
                 self._json({"ok": False, "error": "未找到此入口。", "error_code": "not_found"}, 404)
                 return
