@@ -292,6 +292,42 @@ class HistoryArchiveTests(unittest.TestCase):
         )[1]
         self.assertEqual(read['notice']['state'], 'handled')
 
+    def test_rooter_home_archive_reentry_and_history_read(self):
+        args = (
+            'attention', 'send', '3002', '--to', 'rooter-001',
+            '--sender-kind', 'agent', '--sender-id', '3002-s001',
+            '--subject', 'Rooter 历史', '--body', 'Rooter 正文。',
+            '--message-id', 'msg-rooter-history-001',
+        )
+        self.call(*args)
+        notice_id = list_notices(self.rooter)['items'][0]['notice_id']
+        self.call('attention', 'rooter-read', notice_id)
+        self.call(
+            'attention', 'rooter-handle', notice_id,
+            '--resolution', 'Rooter 已处理', '--action-ref', 'Works/rooter.md',
+        )
+        history = self.root / 'rooter-history'
+        self.call(
+            'attention', 'rooter-archive-input', '--message-id',
+            'msg-rooter-history-001', '--history-root', str(history),
+        )
+        self.assertFalse((self.rooter / 'mailbox/msg-rooter-history-001.md').exists())
+        self.assertTrue(
+            (self.rooter / 'mailbox/.archived/msg-rooter-history-001.json').is_file()
+        )
+        replay = self.call(*args)[1]
+        self.assertFalse((self.rooter / 'mailbox/msg-rooter-history-001.md').exists())
+        self.assertEqual(list_notices(self.rooter)['count'], 0)
+        self.assertEqual(
+            replay['notices']['external_routes'][0]['mail_state'], 'archived'
+        )
+        read = self.call(
+            'attention', 'rooter-history-read', '--history-root', str(history),
+            '--message-id', 'msg-rooter-history-001',
+        )[1]
+        self.assertEqual(read['notice']['state'], 'handled')
+        self.assertEqual(list_notices(self.rooter)['count'], 0)
+
     def test_direct_notice_can_move_and_be_read_by_notice_id(self):
         source = self.root / 'incoming-direct.md'
         source.write_text('直接输入原件', encoding='utf-8')

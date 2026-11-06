@@ -261,25 +261,18 @@ def _handled_path(root: Path, recipient_id: str, message_id: str) -> Path:
     )
 
 
-def _archive_path(root: Path, recipient_id: str, message_id: str) -> Path:
-    return (
-        root
-        / "Workstations"
-        / recipient_id
-        / "mailbox"
-        / ".archived"
-        / f"{message_id}.json"
-    )
+def _archive_path(home_path: Path, message_id: str) -> Path:
+    return Path(home_path) / "mailbox" / ".archived" / f"{message_id}.json"
 
 
-def read_mail_archive(
-    root: Path,
+def read_mail_archive_home(
+    home_path: Path,
     agent_id: str,
     message_id: str,
 ) -> dict[str, Any] | None:
-    """Read the explicit archive marker for one recipient, if present."""
+    """Read the explicit archive marker from one exact Home."""
     message_id = _validate_message_id(message_id)
-    path = _archive_path(Path(root), agent_id, message_id)
+    path = _archive_path(Path(home_path), message_id)
     if not path.is_file():
         return None
     try:
@@ -305,14 +298,14 @@ def read_mail_archive(
     return record
 
 
-def record_mail_archive(
-    root: Path,
+def record_mail_archive_home(
+    home_path: Path,
     agent_id: str,
     message_id: str,
     *,
     history_root: str,
 ) -> dict[str, Any]:
-    """Persist the explicit archive marker after verified source removal."""
+    """Persist the explicit archive marker in one exact Home after verified removal."""
     message_id = _validate_message_id(message_id)
     history_root = str(history_root or "").strip()
     if not history_root:
@@ -321,7 +314,7 @@ def record_mail_archive(
             "Mail archive 记录缺少历史批次目录。",
             {"message_id": message_id},
         )
-    path = _archive_path(Path(root), agent_id, message_id)
+    path = _archive_path(Path(home_path), message_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "schema": ARCHIVE_SCHEMA,
@@ -332,7 +325,7 @@ def record_mail_archive(
     }
     text = json.dumps(record, ensure_ascii=False, indent=2) + "\n"
     if not _atomic_create(path, text):
-        existing = read_mail_archive(Path(root), agent_id, message_id)
+        existing = read_mail_archive_home(Path(home_path), agent_id, message_id)
         if existing is None:
             raise MailProblem(
                 "mail_archive_record_invalid",
@@ -351,6 +344,33 @@ def record_mail_archive(
             )
         return existing
     return record
+
+
+def read_mail_archive(
+    root: Path,
+    agent_id: str,
+    message_id: str,
+) -> dict[str, Any] | None:
+    """Project-root convenience wrapper; Home-specific reads use *_home."""
+    return read_mail_archive_home(
+        Path(root) / "Workstations" / agent_id, agent_id, message_id
+    )
+
+
+def record_mail_archive(
+    root: Path,
+    agent_id: str,
+    message_id: str,
+    *,
+    history_root: str,
+) -> dict[str, Any]:
+    """Project-root convenience wrapper; Home-specific writes use *_home."""
+    return record_mail_archive_home(
+        Path(root) / "Workstations" / agent_id,
+        agent_id,
+        message_id,
+        history_root=history_root,
+    )
 
 
 def _load_dispatch(path: Path) -> dict[str, Any]:
@@ -694,7 +714,6 @@ def dispatch_status(
             for recipient_id in dispatch.get("recipients") or []
         }
     for recipient_id in dispatch.get("recipients") or []:
-        archive_root = root
         if resolved_homes is not None:
             resolved = resolved_homes.get(str(recipient_id)) or {}
             path = (
@@ -702,16 +721,15 @@ def dispatch_status(
                 / "mailbox"
                 / f"{message_id}.md"
             )
-            archive_root = Path(
-                str(resolved.get("project_root") or path.parents[1])
-            )
         else:
             path = _mail_path(root, str(recipient_id), message_id)
         expected_sha = str(
             (expected_files.get(str(recipient_id)) or {}).get("sha256") or ""
         )
         if not path.is_file():
-            archived = read_mail_archive(archive_root, str(recipient_id), message_id)
+            archived = read_mail_archive_home(
+                path.parent.parent, str(recipient_id), message_id
+            )
             if archived is not None:
                 state = "archived"
                 actual_sha = ""
