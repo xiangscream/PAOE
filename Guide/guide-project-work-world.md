@@ -5,7 +5,7 @@ title: Project 文件与 Git
 description: 成果归项目、当前入口清楚、历史可读，文本版本使用现有 Git。
 tags: project, files, git, current
 status: active
-version: 18
+version: 19
 ---
 
 # Project 文件与 Git
@@ -56,7 +56,7 @@ Project 根可按需要使用 HISTORY 作为完成项短索引，每项只留日
 
 一个主题只维护一份现行准则。工位、AGENTS、模板与其他指南只链接对应章节；环境差异在同一准则内说明，不复制一本。修改规则时，沿登记入口和旧名称、路径、关键术语检查引用它的 Project、Workflow、Skill 与实际 Harness 入口，一起处理被替代的口径。
 
-移动原件时更新当前入口与仍使用它的引用；已有交付和版本证据照常保留，不为每次归位另建 Artifact 登记。
+移动原件时更新当前入口与仍使用它的引用；已有交付和版本证据照常保留，不为每次归位另建 Artifact 登记。Windows 归档按[文件移动操作](guide-tool-pitfalls.md#powershell-文件归档)执行，移动报错时保留源文件并处理错误。
 
 被取代的正文移出 current：有追溯价值的放 Archive 或使用 Git 固定版本链接，必要旧路径仅留指向现行来源的短导航。历史材料标明历史，不继续自称“当前/唯一合同”；有效证据与原始日志保持原样。能从 Git 恢复的重复副本无需再堆一份归档。
 
