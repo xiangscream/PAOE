@@ -2833,7 +2833,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     x = attention_sub.add_parser(
         "archive-input",
-        help="Move one already-read, handled Mail/Notice to an explicit external history batch",
+        help=(
+            "Move one already-read, handled Mail/Notice to an explicit external "
+            "history batch; use history-read with that batch to read it back"
+        ),
     )
     x.add_argument("project_id")
     x.add_argument("agent_id")
@@ -2845,7 +2848,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     x = attention_sub.add_parser(
         "history-read",
-        help="Read moved Mail/Notice from an explicit external history batch",
+        help=(
+            "Read moved Mail/Notice from the explicit external batch supplied by "
+            "the caller; archived IDs are not auto-discovered by active-mail reads"
+        ),
     )
     x.add_argument("--history-root", required=True)
     x.add_argument("--agent-id", required=True)

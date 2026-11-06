@@ -535,6 +535,11 @@ def send_mail(
                     "recipient_agent_id": recipient_id,
                     "state": "missing",
                     "path": str(destination),
+                    "detail": (
+                        "已有 dispatch 但 mailbox 文件缺失；可能是显式历史归档，"
+                        "也可能是未完成投递。该状态不证明原件丢失；归档件需用"
+                        " attention history-read 和明确批次读回，不会按原 ID 自动全局可读。"
+                    ),
                 }
             )
             continue
