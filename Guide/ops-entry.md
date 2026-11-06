@@ -5,7 +5,7 @@ title: 操作入口：按目的找命令
 description: 定位本人工作、已登记资源、同事与安装级 Rooter；使用现有文件和联系入口。
 tags: ops, operations, entry
 status: active
-version: 33
+version: 34
 ---
 
 # 操作入口
@@ -21,7 +21,7 @@ version: 33
 ## 操作与参考
 <!-- paoe:reading-header:end -->
 
-`paos` 代表本人 ENTRY 中的当前安装入口。先按目的选入口，只读必要章节；不从命令名称猜协议或手工拼消息文件。
+`paos`代表当前安装入口：已有Home读本人ENTRY，尚无Home读[已安装机器首次使用](../README.md#已安装机器上的首次使用)。先按目的选入口，只读必要章节；不从命令名称猜协议或手工拼消息文件。
 
 | 目的 | 入口 |
 | --- | --- |
@@ -54,3 +54,17 @@ paos agent send <本人项目ID> --to rooter-001 --sender-kind agent --sender-id
 对方职责不清时找 Coordinator；安装或原生接收问题找 Rooter；具体专业问题可以直接咨询相应同事。请求写清问题、必要原件和期望结果，工作行为与回到主线的规则见 当前项目 `AGENTS.md` 的公共运行区。
 
 命令用途与已退出入口见 [接口参考](guide-paos-interface-reference.md)。详细投递和提醒语义仍由 [操作指南](guide-paos-cat-operations.md)维护；不要在工位另抄一套。
+
+## 外部 Agent 临时协作
+
+已获Human授权在本机执行命令、但尚无员工Home的Agent，可以使用本机已安装CLI持久留信。发送上下文选本次获准工作的Project，接收者从PROJECTS取得真实Home；`external`说明外部来源，`sender-id`使用本次真实会话的稳定标识，不表示已入职。
+
+```text
+paos agent send <本次获准工作的项目ID> --to <接收者HomeID> --sender-kind external --sender-id external-codex-<真实会话ID> --subject "具体问题" --body @<请求原文绝对路径> --message-id <本次唯一ASCII标识> --remind
+```
+
+这条本机CLI沿现有安装保存Mail/Notice，并可提醒原会话；它与CONTACT面向已登记外部程序的`send --caller`是不同入口。后者按其caller/token合同使用，不能从工位文件索取或复制凭据来替代配置。
+
+外部来源标签不自动产生收件工位。请求中约定一份已有授权目录内的回复文件，接收者处理后写回，外部Agent读原件继续；没有Home时不宣称已建立自动反向Mail/唤醒。需要持续收件与双向接续，就由Coordinator和Rooter沿[现有入职流程](../Project-Template/README.md#新项目和工位的创建)登记这个真实会话。
+
+只提醒读取已存在原件时，也可直接使用[PROJECTS的外部唤醒命令](../PROJECTS.md#外部唤醒)，写清原件和期望回复位置；`wake`本身不创建Mail。不要为补提醒重发正文；回执未知先查原件与处理结果。
