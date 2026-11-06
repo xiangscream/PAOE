@@ -294,65 +294,35 @@ class Board:
             raise BoardProblem("document_unreadable", "文档无法读取。") from exc
         return {"ok": True, "path": relative, "body": body}
 
-    UNKNOWN_CODES = {"cli_result_unknown", "cli_output_invalid", "cat_stream_unavailable",
-                     "unreachable", "invalid_response"}
-    NOTIFICATION_VALUES = {"queued", "accepted", "partial", "not_requested", "unknown"}
-
     def _unknown_result(self, result: dict) -> bool:
-        code = str(result.get("error_code") or "")
-        if code in self.UNKNOWN_CODES:
-            return True
-        if code == "http_error":
-            status = result.get("status") or (result.get("details") or {}).get("status")
-            return status not in {400, 404, 409, 422}
-        return False
+        if result.get("ok"):
+            return False
+        # Only an explicit pre-submission failure or rejection permits a new send.
+        definite = result.get("message_submitted") is False or \
+            result.get("status") in {400, 404, 409, 422} or \
+            result.get("error_code") in {"cat_not_configured", "cli_start_failed", "empty_body", "human_sender_only"}
+        return not definite
 
-    def _result_state(self, result: dict, *, saved: bool | None = None) -> str:
+    def _result_state(self, result: dict) -> str:
         if self._unknown_result(result):
             return "unknown"
-        if saved is not None:
-            return "saved" if saved else "failed"
         return "saved" if result.get("ok") else "failed"
 
     def _notification_view(self, result: dict, remind: bool) -> str:
         if not remind:
             return "not_requested"
-        explicit = result.get("notification")
-        if isinstance(explicit, str) and explicit in self.NOTIFICATION_VALUES:
-            return explicit
         dispatch = str(result.get("dispatch") or "")
-        if dispatch in self.NOTIFICATION_VALUES:
-            return dispatch
+        if dispatch == "queued":
+            return "queued"
         if dispatch == "skipped":
             return "not_requested"
-        activation = result.get("activation")
-        if isinstance(activation, dict):
-            accepted = activation.get("accepted")
-            state = str(activation.get("state") or "")
-            if accepted is True or state in {"native_accepted", "accepted"}:
+        reminders = result.get("reminders", [])
+        if reminders:
+            flags = [item.get("accepted") for item in reminders]
+            if all(flag is True for flag in flags):
                 return "accepted"
-            if accepted is False or state in {"native_rejected", "rejected"}:
+            if any(flag is not None for flag in flags):
                 return "partial"
-            if state in self.NOTIFICATION_VALUES:
-                return state
-            activations = activation.get("activations")
-            if isinstance(activations, list):
-                states = [str(item.get("state") or "") for item in activations if isinstance(item, dict)]
-                flags = [item.get("accepted") for item in activations if isinstance(item, dict)]
-                if "native_accepted" in states or "accepted" in states:
-                    return "accepted" if all(flag is not False for flag in flags) else "partial"
-                if "native_rejected" in states or "rejected" in states:
-                    return "partial"
-        reminders = result.get("reminders")
-        if isinstance(reminders, list):
-            states = {str(item.get("state") or "") for item in reminders if isinstance(item, dict)}
-            accepted = {item.get("accepted") for item in reminders if isinstance(item, dict)}
-            if "native_accepted" in states or "accepted" in states or True in accepted:
-                return "accepted" if False not in accepted else "partial"
-            if "native_rejected" in states or "rejected" in states or False in accepted:
-                return "partial"
-            if "queued" in states:
-                return "queued"
         return "unknown"
 
     def _validate_members(self, members: list[str]) -> None:
@@ -418,16 +388,12 @@ class Board:
                         "notification": self._notification_view(shown, remind),
                         "detail": shown.get("error", ""), "error_code": shown.get("error_code", ""),
                         "result": shown}
-            room = shown.get("room") or {}
-            room_state = str(room.get("state") or room.get("status") or "")
-            if room_state in {"closed", "ended", "archived"}:
+            room = shown["room"]
+            if room["status"] != "open":
                 raise BoardProblem("collaboration_room_closed", "已有房间已结束，不能继续发起协作。")
-            room_members = room.get("members") or []
-            if isinstance(room_members, list):
-                ids = {str(item.get("home_id") or item) if isinstance(item, dict) else str(item)
-                       for item in room_members}
-                if ids and not ids <= set(members):
-                    raise BoardProblem("collaboration_room_mismatch", "已有房间包含本次未选择的成员。")
+            ids = {member["home_id"] for member in room["members"]} - {"human"}
+            if room["title"] != topic or not ids <= set(members):
+                raise BoardProblem("collaboration_room_mismatch", "已有房间的主题或成员与本次协作不匹配。")
         else:
             created = self.cat(["create", "--title", topic])
             if not created.get("ok"):

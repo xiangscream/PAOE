@@ -178,7 +178,8 @@ class BoardTests(unittest.TestCase):
 
     def test_existing_room_reuses_room_and_does_not_create_second(self):
         with patch.object(self.board, "cat", side_effect=[
-            {"ok": True, "room": {"id": "room-existing"}},
+            {"ok": True, "room": {"id": "room-existing", "status": "open", "title": "续接",
+                                   "members": [{"home_id": "1001-s001"}, {"home_id": "human"}]}},
             {"ok": True},
             {"ok": True},
             {"ok": True},
@@ -218,21 +219,31 @@ class BoardTests(unittest.TestCase):
             })
         self.assertEqual(result["state"], "unknown")
 
-    def test_notification_maps_real_mail_activation_and_cat_dispatch(self):
+    def test_notification_maps_each_real_mail_recipient(self):
         with patch.object(self.board, "run_paos", return_value={
-                "ok": True, "activation": {"state": "native_accepted", "accepted": True}}):
+                "ok": True, "reminders": [{"state": "native_accepted", "accepted": True}]}):
             mail = self.board.collaboration({
                 "project": "1001", "mode": "mail", "members": ["1001-s002"],
                 "topic": "通知", "body": "正文", "message_id": "ui-notify-001", "remind": True,
             })
         self.assertEqual(mail["notification"], "accepted")
         with patch.object(self.board, "run_paos", return_value={
-                "ok": True, "activation": {"accepted": True}}):
+                "ok": True, "reminders": [{"state": "native_accepted", "accepted": True}]}):
             no_remind = self.board.collaboration({
                 "project": "1001", "mode": "mail", "members": ["1001-s002"],
                 "topic": "不提醒", "body": "正文", "message_id": "ui-notify-002", "remind": False,
             })
         self.assertEqual(no_remind["notification"], "not_requested")
+        for accepted in (False, None):
+            with self.subTest(second_recipient=accepted), patch.object(self.board, "run_paos", return_value={
+                    "ok": True, "reminders": [{"state": "native_accepted", "accepted": True},
+                                               {"state": "network_unconfirmed" if accepted is None else "native_rejected", "accepted": accepted}]}):
+                mixed = self.board.collaboration({
+                    "project": "1001", "mode": "mail", "members": ["1001-s001", "1001-s002"],
+                    "topic": "部分提醒", "body": "正文", "message_id": "ui-mixed-reminder", "remind": True,
+                })
+                self.assertEqual(mixed["state"], "saved")
+                self.assertEqual(mixed["notification"], "partial")
 
     def test_cat_http_error_without_status_is_unknown(self):
         with patch.object(self.board, "cat", return_value={
@@ -244,9 +255,18 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(result["state"], "unknown")
         self.assertEqual(result["phase"], "create")
 
+    def test_cat_custom_server_error_stays_unknown(self):
+        with patch.object(self.board, "cat", return_value={
+                "ok": False, "status": 500, "error_code": "internal_error", "error": "receipt unavailable"}):
+            result = self.board.collaboration({
+                "project": "1001", "mode": "chat", "members": ["1001-s001", "1001-s002"],
+                "topic": "主题", "body": "正文", "message_id": "ui-server-unknown",
+            })
+        self.assertEqual(result["state"], "unknown")
+
     def test_existing_room_with_unrelated_member_is_rejected(self):
         with patch.object(self.board, "cat", return_value={
-                "ok": True, "room": {"id": "room-a", "members": [
+                "ok": True, "room": {"id": "room-a", "status": "open", "title": "不匹配", "members": [
                     {"home_id": "1001-s001"}, {"home_id": "2001-s009"}]}}) as call:
             with self.assertRaises(BoardProblem) as raised:
                 self.board.collaboration({
@@ -346,7 +366,7 @@ class BoardTests(unittest.TestCase):
         with patch.object(self.board, "cat", side_effect=[
             {"ok": True, "room": {"id": "room-x"}},
             {"ok": True},
-            {"ok": False, "error": "join failed", "error_code": "join_failed"},
+            {"ok": False, "status": 422, "error": "join failed", "error_code": "join_failed"},
         ]):
             result = self.board.collaboration({
                 "project": "1001", "mode": "chat", "members": ["1001-s001", "1001-s002"],
