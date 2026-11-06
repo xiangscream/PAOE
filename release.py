@@ -35,6 +35,43 @@ def validate_path(name: str) -> None:
         raise ValueError(f'private file is tracked: {name}')
 
 
+# Exact, reviewed examples only; no directory-wide Core exception.
+# Split drive literals keep this table from being mistaken for deployed paths.
+EXAMPLE_PATHS = {
+    'Core/code/personal-agent-os/docs/RUNTIME-INJECTION.md': {
+        'C:' + '/path/to/product-authorized-extension/.runtime.json',
+        'C:' + '/原目标的STOP路径', 'C:' + '/实际Python/python.exe',
+        'C:' + '/本机私有目录/opencode-server-auth.json'},
+    'Core/code/personal-agent-os/scripts/paos_cat_relay_windows.py': {
+        'C:' + '/path', 'C:' + r'\Windows\System32\wsl.exe', 'C:' + r'\\path'},
+    'Core/code/personal-agent-os/scripts/paos_library.py': {'C:' + '/...'},
+    'Core/code/personal-agent-os/scripts/paos_workstation.py': {
+        'C:' + '//...', 'C:' + '/…', 'C:' + r'\...'},
+    'Core/code/personal-agent-os/scripts/tests/test_codex_session_start_guard.py': {
+        'C:' + '/PAOS/receiver/runtime.json', 'C:' + '/Python/python.exe', 'C:' + r'\\PAOS\\receiver\\STOP'},
+    'Core/code/personal-agent-os/scripts/tests/test_codex_windows_execution.py': {
+        'C:' + '/Python/python.exe', 'C:' + '/private/runtime.json',
+        'C:' + '/安装目录/paos', 'C:' + r'\\安装目录\\paos\\scripts\\runtime_injection.py'},
+    'Core/code/personal-agent-os/scripts/tests/test_opencode_v2_injection.py': {
+        'C:' + '/PAOS', 'C:' + '/Python/python.exe', 'C:' + '/private/opencode-auth.json',
+        'C:' + '/work', 'C:' + '/工作区'},
+    'Core/code/personal-agent-os/scripts/wakeup_native/workbuddy_extension/test.cjs': {
+        'D:' + '/work/WorkBuddy/resources/app.asar.unpacked/main/preload/fork-preload.cjs'},
+    'Core/tests/test_stage1_entry.py': {'C:' + '/Users/remo', '/home/' + 'remo'},
+}
+
+
+def scan_machine_paths(name: str, data: bytes) -> None:
+    text = data.decode('utf-8', errors='replace')
+    pattern = r"(?<![\w])(?:[A-Za-z]:[\\/]+|/(?:home|Users)/)[^\s\"\x27`<>\[\](){},;|]+"
+    found = {match.group() for match in re.finditer(pattern, text)}
+    if found - EXAMPLE_PATHS.get(name, set()):
+        raise ValueError(f'unreviewed absolute machine path: {name}')
+    if name == 'PROJECTS.md' and re.search(
+            r'\b[123]\d{3}-s\d+\b|\brooter-\d+\b|\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b', text, re.I):
+        raise ValueError('PROJECTS must be a neutral public entry')
+
+
 def category(name: str) -> str:
     if name.startswith('Core/'):
         return 'core-source'
@@ -66,7 +103,8 @@ def collect(ref: str):
         modes[name] = int(mode, 8)
     required = {'VERSION', 'SOURCE.lock.json', 'README.md', 'UPGRADE.md', 'HOME.md',
                 'SYSTEM.md', 'PROJECTS.md', 'RESOURCES.md', 'MAINTENANCE.md',
-                'rooter/README.md', 'Core/portable.py', 'Guide/README.md',
+                'rooter/README.md', 'Core/portable.py', 'Guide/README.md', 'release.py',
+                'tests/test_system_release.py', 'tests/test_notice_wake_entries.py',
                 'Project-Template/AGENTS.md', 'Project-Template/INDEX.md',
                 'Project-Template/TEAM.md', 'Project-Template/Workstations/_workstation/ENTRY.md',
                 'Project-Template/Workstations/_workstation/TODO.md'}
@@ -79,6 +117,8 @@ def collect(ref: str):
     if lock.get('schema') != 'paoe-system-source/v1':
         raise ValueError('invalid source lock schema')
     actual_core_tree = git('rev-parse', commit + ':Core').decode().strip()
+    if version != lock.get('system_version'):
+        raise ValueError('System version differs from the source lock')
     if actual_core_tree != lock['core_tree']:
         raise ValueError('Core tree differs from the frozen source lock')
     secret_patterns = [rb'sk-(?:proj|svcacct)-[A-Za-z0-9_-]{32,}', rb'gh[pousr]_[A-Za-z0-9]{30,}',
@@ -86,8 +126,7 @@ def collect(ref: str):
     for name, data in payload.items():
         if any(re.search(pattern, data) for pattern in secret_patterns):
             raise ValueError(f'credential-shaped content requires review: {name}')
-        if not name.startswith('Core/') and ((b'C:/Users/' + b'ASUS') in data or (b'D:/' + b'PAOS-Projects') in data):
-            raise ValueError(f'machine path in public source: {name}')
+        scan_machine_paths(name, data)
     payload['BUILD.json'] = encoded({'schema': 'paoe-system-build/v1', 'version': version,
         'system_commit': commit, 'core_commit': lock['core_commit'], 'core_tree': actual_core_tree})
     modes['BUILD.json'] = 0o100644
@@ -102,7 +141,10 @@ def collect(ref: str):
 
 def build(ref: str, output: Path) -> dict:
     version, payload, modes, manifest = collect(ref)
-    output = output.resolve(); output.mkdir(parents=True, exist_ok=True)
+    output = output.resolve()
+    if output.is_relative_to(ROOT):
+        raise ValueError('release output must be outside the source checkout')
+    output.mkdir(parents=True, exist_ok=True)
     target = output / f'PAOE-System-{version}.zip'
     with tempfile.NamedTemporaryFile(dir=output, prefix='.system-release-', suffix='.tmp', delete=False) as stream:
         staged = Path(stream.name)
@@ -140,17 +182,28 @@ def verify(path: Path) -> dict:
         manifest = json.loads(archive.read(prefix + 'FILES.json'))
         if manifest.get('schema') != 'paoe-system-files/v1':
             raise ValueError('invalid file manifest')
-        expected = {prefix + item['path'] for item in manifest['files']} | {prefix + 'FILES.json'}
+        listed = [item['path'] for item in manifest['files']]
+        if len(listed) != len(set(listed)):
+            raise ValueError('duplicate manifest path')
+        if prefix != f"PAOE-System-{manifest['version']}/":
+            raise ValueError('archive root differs from its version')
+        expected = {prefix + name for name in listed} | {prefix + 'FILES.json'}
         if set(names) != expected:
             raise ValueError('archive file set differs from manifest')
         for item in manifest['files']:
             validate_path(item['path'])
             data = archive.read(prefix + item['path'])
+            scan_machine_paths(item['path'], data)
             if len(data) != item['size'] or hashlib.sha256(data).hexdigest() != item['sha256']:
                 raise ValueError('file checksum mismatch: ' + item['path'])
         build_info = json.loads(archive.read(prefix + 'BUILD.json'))
-        if build_info['system_commit'] != manifest['system_commit']:
-            raise ValueError('build identity differs from manifest')
+        lock = json.loads(archive.read(prefix + 'SOURCE.lock.json'))
+        version = archive.read(prefix + 'VERSION').decode('ascii').strip()
+        if (build_info['system_commit'] != manifest['system_commit']
+                or build_info['version'] != manifest['version']
+                or version != manifest['version'] or version != lock['system_version']
+                or any(build_info[key] != lock[key] for key in ('core_commit', 'core_tree'))):
+            raise ValueError('build identity differs from manifest/source lock')
     return {'ok': True, 'files': len(manifest['files']), 'version': manifest['version'],
             'system_commit': manifest['system_commit'], 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
 

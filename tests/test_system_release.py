@@ -63,6 +63,27 @@ class SystemReleaseTests(unittest.TestCase):
         self.assertIn('dirty',result.stderr)
         self.assertFalse(output.exists())
 
+    def test_machine_scan_covers_core_and_neutral_projects(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('release_under_test', ROOT/'release.py')
+        release = importlib.util.module_from_spec(spec); spec.loader.exec_module(release)
+        for name in ('Core/README.md','Guide/README.md','PROJECTS.md'):
+            for value in ('X:' + r'\Users\Someone\private', 'Z:' + '/Projects/Real', '/home/' + 'someone/project'):
+                with self.subTest(name=name,value=value), self.assertRaises(ValueError):
+                    release.scan_machine_paths(name,value.encode())
+        release.scan_machine_paths('Core/tests/test_stage1_entry.py',('C:'+'/Users/remo').encode())
+        with self.assertRaises(ValueError):
+            release.scan_machine_paths('Core/README.md',('C:'+'/Users/remo').encode())
+        with self.assertRaises(ValueError):
+            release.scan_machine_paths('PROJECTS.md',b'1999-s001')
+
+    def test_output_inside_checkout_is_rejected(self):
+        result = run([sys.executable,'-B',str(ROOT/'release.py'),'build','--ref','HEAD',
+                      '--output',str(ROOT/'must-not-be-created')],ok=False)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('outside the source checkout',result.stderr)
+        self.assertFalse((ROOT/'must-not-be-created').exists())
+
     def installation(self):
         system = self.temp/'fresh system'
         for directory in ('Core','Guide','Project-Template','rooter'):
