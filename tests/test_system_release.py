@@ -68,6 +68,8 @@ class SystemReleaseTests(unittest.TestCase):
         for directory in ('Core','Guide','Project-Template','rooter'):
             shutil.copytree(ROOT/directory,system/directory,
                 ignore=shutil.ignore_patterns('.git','__pycache__','node_modules','local','data'))
+        for name in ('PROJECTS.md','RESOURCES.md'):
+            shutil.copyfile(ROOT/name,system/name)
         core = system/'Core'; config = core/'config/local/installation.json'
         env = {**os.environ,'PAOS_INSTALLATION_FILE':str(config),
                'PAOS_LIBRARY_ROOTS_CONFIG':str(core/'config/local/library-roots.json'),
@@ -128,7 +130,7 @@ class SystemReleaseTests(unittest.TestCase):
             '--rooter-home',str(rooter)],cwd=self.temp,env=env)
         self.assertTrue(json.loads(run(portable+['doctor'],cwd=self.temp,env=env).stdout)['configuration_ok'])
         run(portable+['init'],cwd=self.temp,env=env)
-        result = json.loads(run(prefix+['workstation','read','9900','9900-s001'],cwd=self.temp,env=env).stdout)
+        result = json.loads(run(prefix+['workstation','show','9900','9900-s001'],cwd=self.temp,env=env).stdout)
         self.assertTrue(result['ok'])
         self.assertEqual(before,snapshot(legacy))
         self.assertEqual(external,snapshot(self.temp/'external libraries'))

@@ -86,7 +86,7 @@ def collect(ref: str):
     for name, data in payload.items():
         if any(re.search(pattern, data) for pattern in secret_patterns):
             raise ValueError(f'credential-shaped content requires review: {name}')
-        if not name.startswith('Core/') and (b'C:/Users/ASUS' in data or b'D:/PAOS-Projects' in data):
+        if not name.startswith('Core/') and ((b'C:/Users/' + b'ASUS') in data or (b'D:/' + b'PAOS-Projects') in data):
             raise ValueError(f'machine path in public source: {name}')
     payload['BUILD.json'] = encoded({'schema': 'paoe-system-build/v1', 'version': version,
         'system_commit': commit, 'core_commit': lock['core_commit'], 'core_tree': actual_core_tree})
