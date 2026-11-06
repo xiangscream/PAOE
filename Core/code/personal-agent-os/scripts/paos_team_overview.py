@@ -72,7 +72,7 @@ def render_overview(installation_file: Path, output: Path) -> str:
             members.append((home_id, contact))
             wake = f'[命令](#{home_id})'
         else:
-            wake = 'Contact 入口缺失，需安装维护'
+            wake = '联系入口未配置，状态和接续见ENTRY'
         return (f'| {home_id} | {cell(role)} | '
                 f'{cell(harness.group(1)) if harness else "未注明，读 ENTRY"} | '
                 f'{link("ENTRY", entry)} · {link("TODO", home / "TODO.md")} | {wake} |')
