@@ -39,6 +39,7 @@ from paos_mail import (  # noqa: E402
     resolve_recipients,
     send_mail,
 )
+from paos_notice import NoticeProblem  # noqa: E402
 from paos_agent_activation import (  # noqa: E402
     AgentActivationProblem,
     activate_mail_dispatch,
@@ -1875,15 +1876,20 @@ def execute_attention(
                 }
 
         if args.attention_command == "history-read":
-            return {
-                "ok": True,
-                **attention_read_history_input(
+            try:
+                history = attention_read_history_input(
                     history_root=str(args.history_root),
                     agent_id=str(args.agent_id),
                     message_id=str(args.message_id or ""),
                     notice_id=str(args.notice_id or ""),
-                ),
-            }
+                )
+            except (MailProblem, NoticeProblem) as problem:
+                raise AttentionServiceProblem(
+                    str(getattr(problem, "code", "attention_history_read_failed")),
+                    str(problem),
+                    dict(getattr(problem, "details", {}) or {}),
+                ) from problem
+            return {"ok": True, **history}
 
         project = registry.read(args.project_id)
         root_raw = str(

@@ -1377,7 +1377,14 @@ def _history_plan(
     planned: list[dict[str, Any]] = []
     for source in sources:
         source = Path(source)
-        relative = source.resolve().relative_to(project_root)
+        try:
+            relative = source.resolve().relative_to(project_root)
+        except ValueError as exc:
+            raise AttentionServiceProblem(
+                "attention_history_source_outside_project",
+                "待归档文件不在当前项目库内；拒绝移动。",
+                {"agent_id": home_id, "path": str(source)},
+            ) from exc
         if relative.parts[:2] != ("Workstations", home_id):
             raise AttentionServiceProblem(
                 "attention_history_source_outside_home",
