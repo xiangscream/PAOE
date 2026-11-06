@@ -5,7 +5,7 @@ title: 发布采用与回退
 description: 按需读取：发布范围、实际运行采用、成员例外及数据回退。
 tags: upgrade, adoption, recovery
 status: active
-version: 20
+version: 21
 absorbed_tips: [{"tip_id":"tip-s010-d217-scoped-validation-adoption-20261020","source_sha256":"74681c883f88d96b2668f3fdac3a7dfc51b5276c6e936e2080c5fdc35db3fad9","evidence_ref":"https://github.com/xiangscream/personal-agent-os/blob/0bd6f915a25723bc5123ed7d0518f9074b1118b6/docs/handoff/v15-d1-20261016/D217-FINAL-RETURN-S010-20261020.md"}]
 ---
 
@@ -27,6 +27,8 @@ absorbed_tips: [{"tip_id":"tip-s010-d217-scoped-validation-adoption-20261020","s
 ## 候选与正式入口
 
 新增或修改CLI/API前，先用 `paos install show` 确认正在使用的 `source_root`。候选代码在独立工作树开发、审阅和修订；正式 Source 保持已采用版本，正常发布后由安装人更新。代码和配套指南一起交付。正式 Library 保留与实际安装能力相符的正文，接受后与代码一起采用。
+
+System 公共版本通过 GitHub 主仓库与固定 tag 同步；Libraries 使用独立仓库，项目库按各自安排维护。先保存本机改动并比较版本，不以远端文件覆盖人工原件；机器配置、凭据与 Runtime 绑定保留本机。发布不等于目标机器已采用。
 
 已有能力的普通软流程修订继续按原权限直接维护发布。指南引用正文只维护一处，当前入口在采用时更新，旧原件留历史。
 
