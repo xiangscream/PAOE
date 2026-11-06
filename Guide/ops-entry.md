@@ -5,7 +5,7 @@ title: 操作入口：按目的找命令
 description: 定位本人工作、已登记资源、同事与安装级 Rooter；使用现有文件和联系入口。
 tags: ops, operations, entry
 status: active
-version: 36
+version: 37
 ---
 
 # 操作入口
@@ -25,7 +25,7 @@ version: 36
 
 | 目的 | 入口 |
 | --- | --- |
-| 恢复本人工作 | `orient <project> <home>` / `attention show <project> <home>`；再读 ENTRY、TODO 与当前原输入 |
+| 恢复本人工作 | `orient <project> <home> --read` 一次读取现行AGENTS、INDEX、ENTRY、TODO；再读本轮原输入。仅查摘要时省略 `--read` |
 | 找 Workflow、Skill、Tool 或项目经验 | [工作入口·按需寻找资源](guide-work-method.md#按需寻找资源) |
 | 找同事、咨询或交付 | [联系同事与 Rooter](#联系同事与-rooter) |
 | 读待处理输入 | `inbox <project> <home>` / `mail list/read` |

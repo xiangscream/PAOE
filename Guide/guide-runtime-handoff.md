@@ -5,7 +5,7 @@ title: Runtime 接班与在途外部写入
 description: 换会话保持责任与成果连续，明确外部副作用的完成、停止或接管。
 tags: runtime, handoff, external-write
 status: active
-version: 11
+version: 12
 ---
 
 # Runtime 接班与在途外部写入
@@ -23,7 +23,7 @@ version: 11
 
 消息唤醒后恢复的是员工已有责任，不是只完成一次收件动作。Runtime 提示应引导读取固定 ENTRY/TODO、处理消息、继续未完成且可执行的主线；只有没有后续责任、真实等待或阻碍才结束。不得用“只处理本次消息”把已经授权的原任务变成无关任务。
 
-同一会话压缩后，按当前项目 `AGENTS.md` 的公共运行区从固定ENTRY实际读取指南、Current与当前原件。orient用于定位。
+同一会话压缩后，从固定ENTRY取当前CLI前缀，用 `orient <project> <home> --read` 读取恢复原文，再按Current读取本轮输入与成果。公共工作规则以项目AGENTS为准。
 
 需要新会话时，由Human或已获授权的维护者沿当前Harness支持的入口创建Runtime，提供长期Agent ID、Project和固定ENTRY，绑定原成员。模型沿原设置；有明确变更授权时使用指定模型。
 
