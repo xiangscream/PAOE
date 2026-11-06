@@ -359,6 +359,7 @@ def send_mail(
     sender_id = _clean_single_line(sender_id, label="sender_id", max_chars=120)
     message_id = _validate_message_id(message_id or new_message_id())
     dispatch_path = _dispatch_path(root, message_id)
+    replayed_dispatch = dispatch_path.exists()
 
     if dispatch_path.exists():
         dispatch = _load_dispatch(dispatch_path)
@@ -453,6 +454,7 @@ def send_mail(
         dispatch_text = json.dumps(dispatch, ensure_ascii=False, indent=2) + "\n"
         if not _atomic_create(dispatch_path, dispatch_text):
             # A concurrent sender won the same ID. Re-read and verify it.
+            replayed_dispatch = True
             dispatch = _load_dispatch(dispatch_path)
             _assert_dispatch_matches(
                 dispatch,
@@ -518,6 +520,20 @@ def send_mail(
                 {
                     "recipient_agent_id": recipient_id,
                     "state": "already_delivered",
+                    "path": str(destination),
+                }
+            )
+            continue
+
+        if replayed_dispatch:
+            # The immutable envelope already exists.  A missing recipient file
+            # may be an externally archived Mail copy or an incomplete delivery;
+            # recreating it here would duplicate a handled/archived input.
+            # Report the gap instead and require an explicit repair.
+            deliveries.append(
+                {
+                    "recipient_agent_id": recipient_id,
+                    "state": "missing",
                     "path": str(destination),
                 }
             )
@@ -713,6 +729,16 @@ def list_mail(root: Path, agent_id: str) -> dict[str, Any]:
         "unhandled_count": unhandled_count,
         "items": items,
     }
+
+
+def mail_archive_files(root: Path, agent_id: str, message_id: str) -> list[Path]:
+    """Return the immutable Mail and optional legacy handling file for one input."""
+    message_id = _validate_message_id(message_id)
+    candidates = (
+        _mail_path(Path(root), agent_id, message_id),
+        _handled_path(Path(root), agent_id, message_id),
+    )
+    return [path for path in candidates if path.is_file()]
 
 
 def read_mail(root: Path, agent_id: str, message_id: str) -> dict[str, Any]:

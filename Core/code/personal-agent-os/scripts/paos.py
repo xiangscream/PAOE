@@ -58,6 +58,8 @@ from paos_attention_service import (  # noqa: E402
     handle_input as attention_handle_input,
     takeover_input as attention_takeover_input,
     mark_input_read as attention_mark_input_read,
+    archive_input as attention_archive_input,
+    read_history_input as attention_read_history_input,
     organize_input as attention_organize_input,
     handle_mail_input as attention_handle_mail_input,
     list_project_mail_inputs as attention_list_project_mail_inputs,
@@ -553,6 +555,7 @@ def _read_orient_inputs(
             "identity_id": session.get("identity_id"),
             "agent_label": session.get("agent_label"),
             "status": session.get("status"),
+            "registered_home": agent_id in set(project.get("homes") or []),
         },
         "project": {
             "root_path": project_root,
@@ -1871,6 +1874,17 @@ def execute_attention(
                     ),
                 }
 
+        if args.attention_command == "history-read":
+            return {
+                "ok": True,
+                **attention_read_history_input(
+                    history_root=str(args.history_root),
+                    agent_id=str(args.agent_id),
+                    message_id=str(args.message_id or ""),
+                    notice_id=str(args.notice_id or ""),
+                ),
+            }
+
         project = registry.read(args.project_id)
         root_raw = str(
             getattr(args, "root", None)
@@ -1888,6 +1902,7 @@ def execute_attention(
             "show",
             "handle",
             "read",
+            "archive-input",
             "takeover",
             "notice-update",
             "todo-write",
@@ -1920,6 +1935,16 @@ def execute_attention(
                     notice_id=str(args.notice_id),
                 )}
                 return marked
+            if args.attention_command == "archive-input":
+                return {
+                    "ok": True,
+                    **attention_archive_input(
+                        home_ref=home_ref,
+                        history_root=str(args.history_root),
+                        message_id=str(args.message_id or ""),
+                        notice_id=str(args.notice_id or ""),
+                    ),
+                }
             if args.attention_command == "notice-update":
                 return {
                     "ok": True,
@@ -2799,6 +2824,28 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("agent_id")
     x.add_argument("notice_id")
     x.add_argument("--root")
+
+    x = attention_sub.add_parser(
+        "archive-input",
+        help="Move one already-read, handled Mail/Notice to an explicit external history batch",
+    )
+    x.add_argument("project_id")
+    x.add_argument("agent_id")
+    target = x.add_mutually_exclusive_group(required=True)
+    target.add_argument("--message-id", help="Archive Mail and its mapped Notice together")
+    target.add_argument("--notice-id", help="Archive a non-Mail Notice and its sidecars")
+    x.add_argument("--history-root", required=True, help="Absolute external batch directory")
+    x.add_argument("--root")
+
+    x = attention_sub.add_parser(
+        "history-read",
+        help="Read moved Mail/Notice from an explicit external history batch",
+    )
+    x.add_argument("--history-root", required=True)
+    x.add_argument("--agent-id", required=True)
+    target = x.add_mutually_exclusive_group(required=True)
+    target.add_argument("--message-id")
+    target.add_argument("--notice-id")
 
     x = attention_sub.add_parser(
         "takeover",

@@ -138,9 +138,14 @@ def render_orient(payload: dict[str, Any]) -> str:
     communication = payload.get("communication") or {}
     mail = communication.get("durable_mail") or {}
     entry = payload.get("entry") or {}
+    identity_label = identity.get("identity_id") or (
+        "registered Home"
+        if identity.get("registered_home") or entry.get("available")
+        else "unregistered"
+    )
     lines = [
         f"PAOS orient — {identity.get('agent_id')} @ {identity.get('project_id')}",
-        f"Who: {identity.get('agent_id')} ({identity.get('identity_id') or 'unregistered'})"
+        f"Who: {identity.get('agent_id')} ({identity_label})"
         + (f" · 员工号 {identity.get('staff_number')}" if identity.get('staff_number') else ""),
         f"Project: {identity.get('project_id')} · {identity.get('project_name') or ''}",
         f"Status: {identity.get('status') or ''}",

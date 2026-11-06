@@ -44,7 +44,12 @@ external Runtime, and a successful transport receipt is **not** task completion.
    not a distributed database. The checkbox is the one task-state field.
 3. **Communication:** `paos_mail.py` and `paos_notice.py`. Compare immutable
    Mail (content) and handled Notice (input-processing fact). They intentionally
-   do not encode whether the underlying work is done.
+   do not encode whether the underlying work is done. Handled, read inputs can
+   be moved to an explicit external batch by `attention archive-input`; the
+   original relative `Workstations/<agent>/...` paths stay usable with
+   `attention history-read`. The dispatch envelope stays in place and a replay
+   of the same `message_id` reports a missing delivery instead of recreating a
+   second Mail or Notice.
 4. **Assembly:** `paos_attention_service.py` builds views and composes the
    narrow writers; `paos.py` maps CLI arguments into these calls. Search for
    `build_parser`, then `main`, before reading the middle of its large file.
