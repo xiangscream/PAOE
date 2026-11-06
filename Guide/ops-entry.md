@@ -5,7 +5,7 @@ title: 操作入口：按目的找命令
 description: 定位本人工作、已登记资源、同事与安装级 Rooter；使用现有文件和联系入口。
 tags: ops, operations, entry
 status: active
-version: 34
+version: 35
 ---
 
 # 操作入口
@@ -30,6 +30,7 @@ version: 34
 | 找同事、咨询或交付 | [联系同事与 Rooter](#联系同事与-rooter) |
 | 读待处理输入 | `inbox <project> <home>` / `mail list/read` |
 | 接手与更新 | `attention takeover` / `todo-update` / `todo-write` / `handle`；[当前页与输入](guide-paos-cat-operations.md#当前页与输入) |
+| 生成本人公开联系包 | [工位Contact薄入口](guide-paos-cat-operations.md#工位-contact-薄入口)：创建CONTACT.md、contact.py、STATUS.md；保留已有文件 |
 | 查联系或原消息结果 | `status <project> <home>` / `wake status <project> <home>`；已发信使用 `status ... --message-id <原ID>` |
 | 项目定位 / 首次登记 | `project show` / `project register --root --coordinator`；不创建项目管理状态 |
 | 安装定位或库路径异常 | `install show` / `library roots show` / `health`；[Rooter 安装](guide-rooter-installation.md) |

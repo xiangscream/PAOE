@@ -5,7 +5,7 @@ title: Workstation ENTRY 母本
 description: 分开说明流程约束与本人业务入口；各项事实引用其原件。
 tags: template, workstation, entry
 status: active
-version: 17
+version: 18
 ---
 
 # {{home_id}} · 个人工位入口
@@ -27,6 +27,8 @@ version: 17
 | Contact | 本人的联系与运行配置入口；已配置时读本工位 CONTACT.md / contact.py。 |
 
 ### 本机运行入口
+
+操作导航：{{guide_index_link}} · {{ops_link}}。生成本人公开联系包，在OPS选择“生成本人公开联系包”。
 
 - Harness：待本人填写实际使用的运行环境。
 - 状态与恢复：待本人补充可用命令；绑定、STOP 和接收器状态以 Contact 为准。

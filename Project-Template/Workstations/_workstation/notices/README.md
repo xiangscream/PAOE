@@ -7,7 +7,7 @@
 1. **了解体系**：读 [AGENTS](../../../AGENTS.md) 和 [ENTRY](../ENTRY.md)。System 管运行，Libraries 管方法，项目库管业务。
 2. **继承业务**：沿 [INDEX](../../../INDEX.md) 读原件与交接，确认目标、现状、未完事项；下一步写本人 TODO。
 3. **更新成员信息**：补 [TEAM](../../../TEAM.md) 本人职责、专长和工位入口；职责变化与 Coordinator 对齐。
-4. **配置唤醒器**：按本人 Harness 执行下方命令，完成真实 Mail 验收，把使用和恢复命令写回 ENTRY。
+4. **建立联系入口并配置唤醒器**：从ENTRY打开OPS的“生成本人公开联系包”，调用已登记安装中的公开包装；再按本人Harness执行下方命令，沿已有真实Mail完成验收，把使用和恢复入口写回ENTRY。
 
 ## 代码
 
@@ -17,7 +17,7 @@
 | [opencode.py](opencode.py) | OpenCode / OpenCode2：绑定原生服务、查状态、单次提醒 |
 | [wake_entry.py](wake_entry.py) | 共用安装定位与本人工位校验，调用 Core |
 
-底层实现位于 `paos install show` 返回的 `source_root`：Codex 为 `scripts/wakeup_native/codex_receiver.py`，准备入口为 `scripts/codex_receiver_session_start.py`；OpenCode 为 `scripts/runtime_injection.py` 的 `_opencode` / `_opencode_v2`。代码共用这些原件。
+本页脚本调用当前安装的Core。公开联系包命令只在OPS所链接的“工位Contact薄入口”维护；日常入职按该公开入口执行，无需调用实现函数。
 
 ## 配置与启动
 
