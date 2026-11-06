@@ -17,24 +17,9 @@ const emit = defineEmits<{
   (e: 'open-room', id: string): void
 }>()
 
-const draft = ref<CollaborationDraft>({ ...props.initial })
-const messageId = ref(createMessageId())
-const state = ref<CollabState | ''>('')
-const text = ref('')
-const submitting = ref(false)
-const checking = ref(false)
-const lastResult = ref<CollabResult | null>(null)
-const restored = ref(false)
-
-const contactable = computed(() => props.agents.filter(agent => agent.can_contact !== false && agent.ok !== false))
-const locked = computed(() => state.value === 'unknown' || state.value === 'partial')
-const validation = computed(() => validateDraft(draft.value))
-const preview = computed(() => buildBody(draft.value))
-const canSubmit = computed(() => !validation.value && !submitting.value && canResubmit(state.value))
-
-const storageKey = computed(() => 'poe.collab.' + props.project)
-
 interface SavedSession {
+  phase: 'draft' | 'submitting' | 'settled'
+  project: string
   draft: CollaborationDraft
   messageId: string
   state: CollabState | ''
@@ -42,9 +27,32 @@ interface SavedSession {
   result: CollabResult | null
 }
 
-function saveSession() {
+const draft = ref<CollaborationDraft>({ ...props.initial })
+const messageId = ref(createMessageId())
+const state = ref<CollabState | ''>('')
+const text = ref('')
+const submitting = ref(false)
+const checking = ref(false)
+const storageError = ref('')
+const lastResult = ref<CollabResult | null>(null)
+const restored = ref(false)
+const resumedRoomId = ref('')
+
+const contactable = computed(() => props.agents.filter(agent => agent.can_contact !== false && agent.ok !== false))
+const locked = computed(() => submitting.value || state.value === 'unknown' || state.value === 'partial' || restored.value)
+const validation = computed(() => validateDraft(draft.value))
+const preview = computed(() => buildBody(draft.value))
+const canSubmit = computed(() => !validation.value && !submitting.value && canResubmit(state.value) && !restored.value)
+const canContinuePartial = computed(
+  () => state.value === 'partial' && !!lastResult.value?.room_id && !!lastResult.value?.message_id && !submitting.value,
+)
+const storageKey = computed(() => 'poe.collab.' + props.project)
+
+function saveSession(phase: SavedSession['phase']): boolean {
   try {
     const value: SavedSession = {
+      phase,
+      project: props.project,
       draft: draft.value,
       messageId: messageId.value,
       state: state.value,
@@ -52,41 +60,55 @@ function saveSession() {
       result: lastResult.value,
     }
     localStorage.setItem(storageKey.value, JSON.stringify(value))
-  } catch {
-    /* ignore */
+    storageError.value = ''
+    return true
+  } catch (problem) {
+    storageError.value = '本地保存失败：' + String((problem as Error)?.message || problem) + '。请先处理存储，再提交。'
+    return false
   }
 }
 
 function loadSession(): SavedSession | null {
   try {
     const raw = localStorage.getItem(storageKey.value)
-    return raw ? (JSON.parse(raw) as SavedSession) : null
+    if (!raw) return null
+    const value = JSON.parse(raw) as SavedSession
+    if (value.project !== props.project) return null
+    return value
   } catch {
     return null
   }
 }
 
-function resetTo(draftValue: CollaborationDraft) {
-  draft.value = { ...draftValue, reference: draftValue.reference || null }
+function resetTo(value: CollaborationDraft) {
+  draft.value = {
+    ...value,
+    provider: value.mode === 'chat' && value.provider === 'human' ? '' : value.provider,
+    reference: value.reference || null,
+  }
   messageId.value = createMessageId()
   state.value = ''
   text.value = ''
   lastResult.value = null
-  saveSession()
+  restored.value = false
+  resumedRoomId.value = ''
+  saveSession('draft')
 }
 
 function restoreOrReset() {
   const saved = loadSession()
-  if (saved && (saved.state === 'unknown' || saved.state === 'partial') && saved.messageId) {
+  const unfinished = saved && saved.project === props.project &&
+    (saved.phase === 'submitting' || saved.state === 'unknown' || saved.state === 'partial')
+  if (unfinished) {
     draft.value = saved.draft
     messageId.value = saved.messageId
-    state.value = saved.state
-    text.value = saved.text
+    state.value = saved.state === 'partial' ? 'partial' : 'unknown'
+    text.value = saved.text || '上次提交的结果未确认。请先核对原记录；核对前不会自动重发。'
     lastResult.value = saved.result
     restored.value = true
+    resumedRoomId.value = saved.result?.room_id || ''
     return
   }
-  restored.value = false
   resetTo(props.initial)
 }
 
@@ -101,26 +123,29 @@ function swap() {
   const provider = draft.value.provider
   draft.value.provider = draft.value.receiver
   draft.value.receiver = provider
-  saveSession()
+  saveSession('draft')
 }
 
 function setMode(mode: CollabMode) {
   if (locked.value) return
   draft.value.mode = mode
-  saveSession()
+  if (mode === 'chat' && draft.value.provider === 'human') draft.value.provider = ''
+  saveSession('draft')
 }
 
 function close() {
-  saveSession()
+  if (!submitting.value) saveSession(restored.value ? 'settled' : 'draft')
   emit('close')
 }
 
-async function submit() {
-  if (!canSubmit.value) return
+async function submit(roomId = '') {
+  if (!canSubmit.value && !roomId) return
+  if (!saveSession('submitting')) return
+  if (state.value === 'failed') messageId.value = createMessageId()
   submitting.value = true
   state.value = ''
   text.value = ''
-  const payload = payloadFor(draft.value, props.project, messageId.value)
+  const payload = payloadFor(draft.value, props.project, messageId.value, roomId)
   try {
     const result = await api.collaborate(payload)
     lastResult.value = result
@@ -134,8 +159,14 @@ async function submit() {
     text.value = outcome.text
   } finally {
     submitting.value = false
-    saveSession()
+    saveSession(state.value === 'unknown' ? 'submitting' : 'settled')
   }
+}
+
+async function continuePartial() {
+  if (!canContinuePartial.value || !lastResult.value?.room_id) return
+  resumedRoomId.value = lastResult.value.room_id
+  await submit(lastResult.value.room_id)
 }
 
 async function check() {
@@ -147,25 +178,32 @@ async function check() {
     if (outcome.state === 'saved') {
       state.value = 'saved'
       text.value = '已核到原记录：请求已保存。提醒与接手仍以原回执为准。'
+      restored.value = false
       emit('completed', result)
     } else if (result.state === 'not_found') {
       text.value = '暂未读到原记录。保留本次请求，稍后再核对，不自动重发。'
     } else {
       state.value = outcome.state
-      text.value = '核对结果：' + outcome.text
+      text.value = outcome.text
     }
   } catch (problem) {
     text.value = '核对未完成：' + String((problem as Error)?.message || problem)
   } finally {
     checking.value = false
-    saveSession()
+    saveSession(state.value === 'unknown' || state.value === 'partial' ? 'submitting' : 'settled')
   }
+}
+
+function startNew() {
+  resetTo({ ...draft.value, topic: '', note: '', reference: null })
 }
 
 watch(() => props.open, (open) => {
   if (open) restoreOrReset()
 })
-watch(draft, () => saveSession(), { deep: true })
+watch(draft, () => {
+  if (!locked.value) saveSession('draft')
+}, { deep: true })
 onMounted(() => {
   if (props.open) restoreOrReset()
 })
@@ -179,20 +217,22 @@ onMounted(() => {
         <div class="hint">提交前可见正文与去向；位置与连线不改团队关系。</div>
       </div>
       <span class="spacer"></span>
-      <button class="btn ghost" @click="close">关闭</button>
+      <button class="btn ghost" :disabled="submitting" @click="close">关闭</button>
     </header>
     <div class="body">
       <div v-if="restored" class="banner">
-        已恢复未完成的协作请求（{{ messageId }}）。请先核对原记录；核对前不能改对象或方式，也不会自动重发。
+        已恢复未完成的请求。请先核对原记录；核对前不能改对象或方式，也不会自动重发。
       </div>
+      <div v-if="storageError" class="banner error">{{ storageError }}</div>
 
       <div class="row" style="align-items: flex-end">
         <div class="field" style="flex: 1">
           <label for="provider">提供方</label>
           <select id="provider" v-model="draft.provider" :disabled="locked">
-            <option value="human">Human（我提供）</option>
+            <option value="" disabled>选择同事</option>
             <option v-for="agent in contactable" :key="agent.id" :value="agent.id">{{ label(agent) }}</option>
           </select>
+          <span v-if="draft.mode === 'chat'" class="hint">Chat 由同事之间接续，Human 只作为发言人。</span>
         </div>
         <button class="btn" title="交换方向" :disabled="locked" @click="swap">⇄</button>
         <div class="field" style="flex: 1">
@@ -248,15 +288,24 @@ onMounted(() => {
       <p v-if="text" class="card" :class="{ error: state === 'failed' }">{{ text }}</p>
 
       <div class="row" style="margin-top: 10px">
-        <button class="btn primary" :disabled="!canSubmit" @click="submit">
+        <button v-if="!locked" class="btn primary" :disabled="!canSubmit" @click="submit()">
           {{ submitting ? '提交中…' : '发起协作' }}
         </button>
-        <button v-if="locked" class="btn" :disabled="checking" @click="check">
+        <button v-if="locked && !submitting" class="btn" :disabled="checking" @click="check">
           {{ checking ? '核对中…' : '核对原记录' }}
         </button>
+        <button v-if="canContinuePartial" class="btn primary" :disabled="submitting" @click="continuePartial">
+          继续原房间
+        </button>
         <button v-if="lastResult?.room_id" class="btn ghost" @click="emit('open-room', lastResult!.room_id!)">打开房间</button>
-        <span class="hint">请求编号：{{ messageId }}</span>
+        <button v-if="state === 'saved' || state === 'failed'" class="btn ghost" @click="startNew">新建另一个请求</button>
       </div>
+
+      <details v-if="messageId" class="hint" style="margin-top: 8px">
+        <summary>请求详情</summary>
+        <p>请求编号：{{ messageId }}</p>
+        <p v-if="resumedRoomId">续用房间：{{ resumedRoomId }}</p>
+      </details>
     </div>
   </div>
 </template>

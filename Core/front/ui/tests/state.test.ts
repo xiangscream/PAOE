@@ -47,11 +47,13 @@ describe('collaboration', () => {
     expect(validateDraft({ ...draft, topic: ' ' })).not.toBe('')
     expect(validateDraft({ ...draft, receiver: 'A' })).not.toBe('')
     expect(validateDraft(draft)).toBe('')
+    expect(validateDraft({ ...draft, provider: 'human' })).not.toBe('')
   })
 
   it('allows a single receiver for a reference mail', () => {
     expect(validateDraft({ ...draft, mode: 'mail', provider: 'human' })).toBe('')
-    expect(membersFor({ ...draft, mode: 'mail' })).toEqual(['B'])
+    expect(membersFor({ ...draft, mode: 'mail' })).toEqual(['A', 'B'])
+    expect(membersFor({ ...draft, mode: 'mail', provider: 'human' })).toEqual(['B'])
   })
 
   it('shows provider, receiver, topic and the reference path before submit', () => {
@@ -72,6 +74,8 @@ describe('collaboration', () => {
     expect(outcomeOf({ state: 'unknown' }).state).toBe('unknown')
     expect(outcomeOf({ state: 'saved', notification: 'not_requested' }).text).toContain('未请求提醒')
     expect(outcomeOf({ state: 'saved', notification: 'queued' }).text).toContain('已保存')
+    expect(outcomeOf({ state: 'saved', notification: 'partial' }).text).toContain('部分提醒未受理')
+    expect(payloadFor(draft, '3002', 'ui-1', 'room-9').room_id).toBe('room-9')
   })
 })
 

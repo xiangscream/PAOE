@@ -24,8 +24,10 @@ export function createMessageId(): string {
 export function validateDraft(draft: CollaborationDraft): string {
   if (!draft.receiver) return '请选择接收方。'
   if (!draft.topic.trim()) return '请填写本次协作主题。'
-  if (draft.mode === 'chat' && (!draft.provider || draft.provider === draft.receiver)) {
-    return 'Chat 需要提供方和接收方两位不同同事。'
+  if (draft.mode === 'chat') {
+    if (!draft.provider) return '请选择提供方。'
+    if (draft.provider === 'human') return 'Chat 的提供方需要是同事；Human 只作为发言人。'
+    if (draft.provider === draft.receiver) return 'Chat 需要两位不同同事。'
   }
   return ''
 }
@@ -53,7 +55,12 @@ export function membersFor(draft: CollaborationDraft): string[] {
     : [draft.receiver]
 }
 
-export function payloadFor(draft: CollaborationDraft, project: string, messageId = createMessageId()) {
+export function payloadFor(
+  draft: CollaborationDraft,
+  project: string,
+  messageId = createMessageId(),
+  roomId = '',
+) {
   return {
     project,
     mode: draft.mode,
@@ -62,6 +69,7 @@ export function payloadFor(draft: CollaborationDraft, project: string, messageId
     body: buildBody(draft),
     message_id: messageId,
     remind: draft.remind,
+    ...(roomId ? { room_id: roomId } : {}),
   }
 }
 
@@ -86,9 +94,11 @@ export function outcomeOf(result: CollabResult | null, thrown?: unknown): { stat
         ? '提醒已排队'
         : result.notification === 'accepted'
           ? '提醒已受理'
-          : result.notification === 'not_requested'
-            ? '未请求提醒'
-            : '提醒结果未知'
+          : result.notification === 'partial'
+            ? '部分提醒未受理'
+            : result.notification === 'not_requested'
+              ? '未请求提醒'
+              : '提醒结果未知'
     return { state: 'saved', text: `已保存 · ${notify}。保存不代表对方已读或接手。` }
   }
   if (state === 'partial') {

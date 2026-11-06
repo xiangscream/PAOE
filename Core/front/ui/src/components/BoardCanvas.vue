@@ -99,7 +99,12 @@ function locate(id: string) {
   void setViewport({ x: -node.position.x + 320, y: -node.position.y + 240, zoom: 1 })
 }
 
-defineExpose({ resetLayout, clearEdges, locate, fit: () => fitView({ padding: 0.14 }) })
+function select(ids: string[]) {
+  const wanted = new Set(ids)
+  nodes.value = nodes.value.map(node => ({ ...node, selected: wanted.has(node.id) }))
+}
+
+defineExpose({ resetLayout, clearEdges, locate, select, fit: () => fitView({ padding: 0.14 }) })
 
 watch(() => props.agents, () => {
   buildNodes()

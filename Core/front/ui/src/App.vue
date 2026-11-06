@@ -26,13 +26,15 @@ const theme = ref<Theme>((localStorage.getItem('poe.theme') as Theme) || 'light'
 const layout = ref<BoardLayout>({ nodes: {}, viewport: { ...DEFAULT_VIEWPORT } })
 const layoutSupported = ref(true)
 const saving = ref('')
+const saveError = ref('')
+let pendingSave: { project: string; layout: BoardLayout } | null = null
 const selectedIds = ref<string[]>([])
 const drawerId = ref('')
 const libraryOpen = ref(false)
 const libraryAgent = ref('')
 const collabOpen = ref(false)
 const collabInitial = ref<CollaborationDraft>({
-  provider: 'human', receiver: '', topic: '', note: '', mode: 'chat', remind: true, reference: null,
+  provider: '', receiver: '', topic: '', note: '', mode: 'chat', remind: true, reference: null,
 })
 const lastCompleted = ref<CollabResult | null>(null)
 const boardRef = ref<InstanceType<typeof BoardCanvas> | null>(null)
@@ -83,31 +85,40 @@ async function load(target = project.value) {
     project.value = data.project || target
     localStorage.setItem('poe.project', project.value)
     let saved: BoardLayout | null = null
+    let hasLayout = false
     try {
       const response = await api.getLayout(project.value)
-      saved = response.layout
+      saved = response.layout || null
+      hasLayout = !!saved && (
+        Object.keys(saved.nodes || {}).length > 0 ||
+        saved.viewport.x !== 0 || saved.viewport.y !== 0 || Math.abs(saved.viewport.zoom - 0.9) > 0.001
+      )
       layoutSupported.value = true
     } catch (problem) {
       if (problem instanceof ApiError && problem.status === 404) {
         layoutSupported.value = false
-        notice.value = '布局接口尚未就绪：本页只记住当前会话的位置，刷新会回到默认布局。'
+        notice.value = '布局接口不可用：本次只显示默认布局，位置不会保存。'
       } else {
         throw problem
       }
     }
-    layout.value = mergeLayout(agents.value, saved || { nodes: {}, viewport: { ...DEFAULT_VIEWPORT } })
-    if (!layoutSupported.value) {
-      const cached = localStorage.getItem('poe.layout.' + project.value)
-      if (cached) {
-        try {
-          layout.value = mergeLayout(agents.value, JSON.parse(cached))
-        } catch {
-          /* ignore broken cache */
-        }
-      }
-    }
+    const merged = mergeLayout(agents.value, saved || { nodes: {}, viewport: { ...DEFAULT_VIEWPORT } })
+    layout.value = hasLayout ? merged : { nodes: merged.nodes, viewport: { x: 0, y: 0, zoom: 0 } }
     await nextTick()
-    boardRef.value?.fit()
+    if (!hasLayout) boardRef.value?.fit()
+    try {
+      const cached = localStorage.getItem('poe.selection.' + project.value)
+      if (cached) {
+        const ids = JSON.parse(cached)
+        if (Array.isArray(ids)) selectedIds.value = ids.filter(id => typeof id === 'string')
+      }
+    } catch {
+      /* ignore */
+    }
+    selectedIds.value = selectedIds.value.filter(id => agents.value.some(agent => agent.id === id))
+    await nextTick()
+    boardRef.value?.select(selectedIds.value)
+    if (drawerId.value && !agents.value.some(agent => agent.id === drawerId.value)) drawerId.value = ''
   } catch (problem) {
     error.value = problem instanceof ApiError ? problem.message : String(problem)
   } finally {
@@ -118,22 +129,44 @@ async function load(target = project.value) {
 function queueSave(next: BoardLayout) {
   layout.value = next
   if (!layoutSupported.value) {
-    localStorage.setItem('poe.layout.' + project.value, JSON.stringify(next))
-    saving.value = '仅本地'
+    saving.value = '未保存（布局接口不可用）'
     return
   }
+  const owner = project.value
+  pendingSave = { project: owner, layout: next }
   saving.value = '保存中…'
+  saveError.value = ''
   if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(async () => {
-    try {
-      await api.saveLayout(project.value, next)
-      saving.value = '已保存布局'
-    } catch (problem) {
-      layoutSupported.value = false
-      localStorage.setItem('poe.layout.' + project.value, JSON.stringify(next))
-      saving.value = '保存失败，仅本地'
-    }
-  }, 500)
+  saveTimer = setTimeout(() => void flushSave(), 500)
+}
+
+async function flushSave() {
+  const job = pendingSave
+  if (!job) return
+  try {
+    await api.saveLayout(job.project, job.layout)
+    if (pendingSave === job) pendingSave = null
+    if (project.value === job.project) saving.value = '已保存布局'
+  } catch (problem) {
+    const message = problem instanceof ApiError ? problem.message : String(problem)
+    if (project.value === job.project) saving.value = '未保存'
+    saveError.value = '布局保存失败：' + message
+  }
+}
+
+function retrySave() {
+  if (!pendingSave) return
+  saveError.value = ''
+  saving.value = '保存中…'
+  void flushSave()
+}
+
+function openChatRoomFromQuery() {
+  const room = new URLSearchParams(location.search).get('room')
+  if (!room) return false
+  initialChatRoom.value = room
+  tab.value = 'chat'
+  return true
 }
 
 function onNodeContext(payload: { id: string; event: MouseEvent }) {
@@ -142,6 +175,11 @@ function onNodeContext(payload: { id: string; event: MouseEvent }) {
 
 function onSelectionChange(ids: string[]) {
   selectedIds.value = ids
+  try {
+    localStorage.setItem('poe.selection.' + project.value, JSON.stringify(ids))
+  } catch {
+    /* selection is a convenience only */
+  }
 }
 
 function openAgent(id: string) {
@@ -179,7 +217,7 @@ function fromSelection() {
 }
 
 function fromDrawer(id: string) {
-  openCollab({ provider: 'human', receiver: id, mode: 'chat', remind: true })
+  openCollab({ provider: '', receiver: id, mode: 'chat', remind: true })
 }
 
 function attachReference(item: LibraryItem) {
@@ -251,6 +289,7 @@ watch(theme, value => applyTheme(value))
 
 onMounted(() => {
   applyTheme(theme.value)
+  openChatRoomFromQuery()
   void load()
 })
 </script>
@@ -281,6 +320,10 @@ onMounted(() => {
     <div v-if="error" class="banner error">
       {{ error }}
       <button class="btn ghost" @click="load(project)">重试</button>
+    </div>
+    <div v-else-if="saveError" class="banner error">
+      {{ saveError }}
+      <button class="btn ghost" @click="retrySave">重试保存</button>
     </div>
     <div v-else-if="notice" class="banner">
       {{ notice }}
@@ -326,7 +369,14 @@ onMounted(() => {
         </div>
       </template>
 
-      <ChatView v-else-if="tab === 'chat'" ref="chatRef" :project="project" :initial-room="initialChatRoom" />
+      <ChatView
+        v-else-if="tab === 'chat'"
+        ref="chatRef"
+        :project="project"
+        :initial-room="initialChatRoom"
+        @new-discussion="openCollab({ provider: '', receiver: '', mode: 'chat', remind: true })"
+        @board="tab = 'board'"
+      />
 
       <ProjectOverview
         v-else

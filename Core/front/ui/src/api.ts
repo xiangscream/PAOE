@@ -106,6 +106,7 @@ export const api = {
     body: string
     message_id: string
     remind: boolean
+    room_id?: string
   }) {
     return receipt<CollabResult>('/api/collaboration', {
       method: 'POST',
