@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 89
+version: 90
 ---
 
 # PAOS 操作指南
@@ -105,6 +105,8 @@ S号寻址和跨Project参数查安装 `agent send --help`。普通消息使用�
 Core/bridge 的独立运行由 Rooter 和运行维护者处理；本人接收器依赖所属 Harness。关闭 Harness 后的可用条件分别记录，不能把 Core 在线当作目标会话在线。
 
 ## CAT 圆桌
+
+网页入口、轻量JSON与实时显示的功能说明见 [CAT](../CAT/README.md)；启动方式沿现有System网页入口，不另建消息服务。本节维护Agent实际协作与CLI操作。
 
 CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。Room与同事从现行Project/联系入口取得。
 
