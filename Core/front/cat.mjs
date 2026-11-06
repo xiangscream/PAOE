@@ -1,5 +1,7 @@
 import {createApp, markRaw} from '/cat-vendor/vue.mjs';
 import {readPage, acceptMessage, sendOutcome, errorText, seatLabels} from './cat-state.mjs';
+import {findMessages, messagePreview} from './cat-content.mjs';
+import {CatIcon, MessageContent} from './cat-components.mjs';
 
 const dayFormat = new Intl.DateTimeFormat('zh-CN', {month:'long',day:'numeric',weekday:'short'});
 const timeFormat = new Intl.DateTimeFormat('zh-CN', {hour:'2-digit',minute:'2-digit',hour12:false});
@@ -7,7 +9,7 @@ const themes = ['light','dark','corporate','retro'];
 const endpoint = (id, suffix='') => '/api/room/' + encodeURIComponent(id) + suffix;
 function newConversation(id) {
   return {id,title:'',status:'open',members:[],messages:[],cursor:0,draft:'',reply:'',pending:null,
-          feedback:'发言按真实身份保存。',outcome:'',loaded:false};
+          feedback:'',outcome:'',loaded:false,expanded:{},position:null,atLatest:true,firstUnseen:''};
 }
 async function request(path, options={}) {
   const controller = new AbortController();
@@ -22,16 +24,23 @@ async function request(path, options={}) {
 function checked(value) { if (!value.ok) throw new Error(errorText(value)); return value; }
 
 createApp({
+  components:{CatIcon, MessageContent},
   data() {
     const savedTheme=localStorage.getItem('cat.theme');
-    return {rooms:[],people:[],roomStates:{},roomId:'',filter:'',roomScope:'open',sidebar:false,
+    return {rooms:[],people:[],roomStates:{},roomId:'',filter:'',roomScope:'open',sidebar:false,roomsLoading:true,
       theme:themes.includes(savedTheme)?savedTheme:'light',seatLabels,selection:0,stream:null,
-      connection:'正在连接',connectionError:false,unseen:0,highlight:'',checking:false,
+      connection:'正在连接',connectionError:false,unseen:0,highlight:'',checking:false,atLatest:true,
+      searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false,
       createTitle:'',createMembers:[],createError:'',createdRoomId:'',creating:false,createUnknown:false};
   },
   computed: {
     state() { return this.roomStates[this.roomId] || null; },
     reply() { return this.state?.messages.find(message=>message.id===this.state.reply); },
+    searchResults() { return findMessages(this.state?.messages || [],this.searchQuery); },
+    searchStatus() {
+      return !this.searchQuery.trim()?'搜索当前房间的原消息':this.searchResults.length?
+        (this.searchIndex+1)+' / '+this.searchResults.length+' 条':'没有匹配的消息';
+    },
     filteredRooms() {
       return this.rooms.filter(room=>room.status===this.roomScope && (room.title||'').toLowerCase().includes(this.filter.trim().toLowerCase()))
         .slice().sort((a,b)=>b.created_at.localeCompare(a.created_at));
@@ -52,6 +61,7 @@ createApp({
   },
   watch: {
     theme(value) { document.documentElement.dataset.theme=value; localStorage.setItem('cat.theme',value); },
+    searchQuery() {this.searchIndex=0;this.highlight='';this.locateSearchResult();},
   },
   methods: {
     day(value) { return dayFormat.format(new Date(value)); },
@@ -67,29 +77,87 @@ createApp({
       const number=this.people.find(person=>person.id===id)?.number;
       return number || this.name(id).slice(0,2);
     },
+    avatarTone(id) {
+      return id==='human'?'tone-human':'tone-'+(this.state.members.findIndex(member=>member.home_id===id)%5);
+    },
     quote(id) {
       const message=this.state?.messages.find(item=>item.id===id);
-      return message ? this.name(message.sender_id)+'：'+message.body.replace(/\n/g,' ') : '回复较早的消息';
+      return message ? this.name(message.sender_id)+'：'+this.preview(message.body) : '回复较早的消息';
     },
-    textParts(body) {
-      const parts=[],pattern=/https?:\/\/[^\s<>()，。；]+/g; let end=0;
-      for (const match of body.matchAll(pattern)) {
-        parts.push({text:body.slice(end,match.index)},{text:match[0],url:match[0]});
-        end=match.index+match[0].length;
-      }
-      parts.push({text:body.slice(end)});
-      return parts;
+    preview:messagePreview,
+    setDraft(value) { if(this.state)this.state.draft=value;this.$nextTick(this.resizeComposer); },
+    resizeComposer() {
+      const pin=this.atLatest&&!this.searchOpen;
+      const input=this.$refs.input,limit=parseFloat(getComputedStyle(input).maxHeight);
+      input.style.height='auto';
+      input.style.height=Math.min(input.scrollHeight,limit)+'px';
+      input.style.overflowY=input.scrollHeight>limit?'auto':'hidden';
+      this.$nextTick(()=>{if(pin&&!this.searchOpen)this.scrollBottom();});
     },
-    setDraft(value) { if (this.state) this.state.draft=value; },
     closeSidebarFromContent() { this.sidebar=false; },
     nearEnd() { const el=this.$refs.messages; return el.scrollHeight-el.scrollTop-el.clientHeight<100; },
-    scrollBottom() { const el=this.$refs.messages; el.scrollTop=el.scrollHeight; this.unseen=0; },
-    onScroll() { if (this.nearEnd()) this.unseen=0; },
-    replyTo(id) { if (this.canCompose) {this.state.reply=id;this.$nextTick(()=>this.$refs.input.focus());} },
-    cancelReply() { if (this.state) this.state.reply=''; this.$nextTick(()=>this.$refs.input.focus()); },
-    jumpTo(id) {
-      const target=[...this.$refs.messages.querySelectorAll('[data-message-id]')].find(node=>node.dataset.messageId===id);
-      if (target) {target.scrollIntoView({block:'center'});this.highlight=id;setTimeout(()=>{if(this.highlight===id)this.highlight='';},1800);}
+    scrollBottom() {
+      const el=this.$refs.messages;el.scrollTop=el.scrollHeight;this.unseen=0;this.atLatest=true;
+      if(this.state)this.state.firstUnseen='';
+    },
+    onScroll() {
+      this.atLatest=this.nearEnd();
+      if(this.atLatest){this.unseen=0;if(this.state)this.state.firstUnseen='';}
+    },
+    messageElement(id) {
+      return [...this.$refs.messages.querySelectorAll('[data-message-id]')].find(node=>node.dataset.messageId===id);
+    },
+    readingPosition() {
+      const box=this.$refs.messages,top=box.getBoundingClientRect().top;
+      const first=[...box.querySelectorAll('[data-message-id]')].find(node=>node.getBoundingClientRect().bottom>top);
+      return first?{id:first.dataset.messageId,offset:first.getBoundingClientRect().top-top}:null;
+    },
+    restorePosition(position) {
+      if(!position)return;
+      const box=this.$refs.messages;
+      const target=this.messageElement(position.id);
+      if(target)box.scrollTop+=target.getBoundingClientRect().top-box.getBoundingClientRect().top-position.offset;
+      this.onScroll();
+    },
+    onMessageResize() {
+      this.$nextTick(()=>{if(this.atLatest&&!this.searchOpen)this.scrollBottom();});
+    },
+    async toggleMessage(id) {
+      const position=this.readingPosition(),expanding=!this.state.expanded[id];this.atLatest=false;
+      this.state.expanded[id]=expanding;
+      await this.$nextTick();
+      if(expanding)this.restorePosition(position);
+      else {this.messageElement(id).scrollIntoView({block:'start'});this.onScroll();}
+    },
+    openMembers() {this.sidebar=false;this.$refs.memberDialog.showModal();},
+    async openSearch() {
+      this.searchReturn=this.readingPosition();this.searchOpen=true;this.sidebar=false;
+      await this.$nextTick();this.$refs.messageSearch.focus();
+    },
+    async closeSearch() {
+      this.searchOpen=false;this.searchQuery='';this.highlight='';
+      await this.$nextTick();this.restorePosition(this.searchReturn);this.$refs.searchButton.focus();
+    },
+    locateSearchResult() {
+      if(this.searchQuery.trim()&&this.searchResults.length)this.jumpTo(this.searchResults[this.searchIndex].id);
+    },
+    stepSearch(direction) {
+      if(!this.searchResults.length)return;
+      this.searchIndex=(this.searchIndex+direction+this.searchResults.length)%this.searchResults.length;
+      this.locateSearchResult();
+    },
+    replyTo(id) { if (this.canCompose) {this.state.reply=id;this.$nextTick(()=>{this.resizeComposer();this.$refs.input.focus();});} },
+    cancelReply() { if (this.state) this.state.reply=''; this.$nextTick(()=>{this.resizeComposer();this.$refs.input.focus();}); },
+    async jumpTo(id) {
+      const state=this.state;state.expanded[id]=true;this.atLatest=false;
+      await this.$nextTick();
+      if(this.state!==state)return;
+      const target=this.messageElement(id);
+      if(target){
+        const hit=this.searchOpen?target.querySelector('.rich-text mark'):null;
+        (hit||target).scrollIntoView({block:'center'});this.highlight=id;
+        setTimeout(()=>{if(this.highlight===id&&!this.searchOpen)this.highlight='';},1800);
+      }
     },
     confirmPending(state) {
       // A stream event may precede the POST receipt. Keep the composer owned
@@ -97,18 +165,24 @@ createApp({
       if (!state.pending || state.pending.sending || !state.messages.some(message=>message.id===state.pending.id)) return;
       state.pending=null;state.draft='';state.reply='';state.outcome='saved';
       state.feedback='已核到原消息 · 消息已保存，提醒结果以原回执为准。';
+      if(this.state===state)this.$nextTick(this.resizeComposer);
     },
     async loadRooms() {
-      this.rooms=checked(await request('/api/cat/rooms')).rooms;
-      return this.rooms;
+      this.roomsLoading=true;
+      try {this.rooms=checked(await request('/api/cat/rooms')).rooms;return this.rooms;}
+      finally {this.roomsLoading=false;}
     },
     async loadPeople() { this.people=checked(await request('/api/cat/people')).people; },
     async selectRoom(id) {
       this.sidebar=false;
       if (this.roomId===id && this.state?.loaded) return;
+      if(this.state){this.state.position=this.readingPosition();this.state.atLatest=this.atLatest;}
+      this.searchOpen=false;this.searchQuery='';this.searchReturn=null;this.highlight='';
       this.stopStream(); const generation=++this.selection;
       if (!this.roomStates[id]) this.roomStates[id]=newConversation(id);
       this.roomId=id;const state=this.state,summary=this.rooms.find(room=>room.id===id);
+      this.atLatest=state.atLatest;
+      this.$nextTick(this.resizeComposer);
       if (summary) {state.title=summary.title;state.status=summary.status;this.roomScope=summary.status;}
       const url=new URL(location.href);url.searchParams.set('room',id);history.replaceState(null,'',url);
       this.connection='正在读取';this.connectionError=false;this.unseen=0;
@@ -118,7 +192,9 @@ createApp({
         this.confirmPending(state);
         if (generation!==this.selection) return;
         this.roomScope=room.status;document.title=(room.title||'圆桌')+' · CAT';
-        await this.$nextTick();this.scrollBottom();this.startStream(state);
+        await this.$nextTick();this.resizeComposer();
+        if(state.atLatest)this.scrollBottom();else this.restorePosition(state.position);
+        this.startStream(state);
       } catch(error) {
         if(generation!==this.selection)return;
         this.connection='读取失败';this.connectionError=true;state.feedback=error.message;state.outcome='failed';
@@ -133,7 +209,10 @@ createApp({
       this.connection='正在接入实时消息';this.connectionError=false;
       stream.addEventListener('room',async event=>{
         if(this.stream!==stream || generation!==this.selection)return;
-        const update=JSON.parse(event.data),near=this.nearEnd(),count=state.messages.length;
+        const update=JSON.parse(event.data),near=this.nearEnd()&&!this.searchOpen,count=state.messages.length;
+        const seen=new Set(state.messages.map(message=>message.id));
+        const firstNew=update.messages.find(message=>!seen.has(message.id));
+        if(!near&&firstNew&&!state.firstUnseen)state.firstUnseen=firstNew.id;
         Object.assign(state,readPage(state,update.messages),{title:update.title,status:update.status,members:update.members});
         this.confirmPending(state);
         const summary=this.rooms.find(room=>room.id===state.id);
@@ -141,7 +220,7 @@ createApp({
         this.connection='实时连接';this.connectionError=false;
         await this.$nextTick();
         if(this.roomId!==state.id)return;
-        if(near)this.scrollBottom();else this.unseen+=Math.max(0,state.messages.length-count);
+        if(near)this.scrollBottom();else {this.unseen+=Math.max(0,state.messages.length-count);this.onScroll();}
       });
       stream.onerror=()=>{
         if(this.stream!==stream)return;
@@ -149,15 +228,24 @@ createApp({
       };
     },
     async refresh() {
+      if(this.refreshing)return;
+      this.refreshing=true;
       try {
         await Promise.all([this.loadRooms(),this.loadPeople()]);
         if(this.state) {
           const state=this.state,room=checked(await request(endpoint(state.id)));
           Object.assign(state,{title:room.title,status:room.status,members:room.members,loaded:true},readPage(state,room.messages));
           this.confirmPending(state);this.startStream(state);
-        }
+        }else await this.openInitialRoom();
       } catch(error) {this.connection=error.message;this.connectionError=true;}
+      finally{this.refreshing=false;this.$nextTick(this.resizeComposer);}
     },
+    async openInitialRoom() {
+      const wanted=new URLSearchParams(location.search).get('room');
+      const first=this.rooms.find(room=>room.status==='open')||this.rooms[0];
+      if(wanted||first)await this.selectRoom(wanted||first.id);else this.connection='已连接';
+    },
+    onVisibility() {if(document.hidden)this.stopStream();else if(this.state?.loaded)this.startStream(this.state);},
     onComposerKey(event) {
       if(!event.isComposing && (event.ctrlKey||event.metaKey) && event.key==='Enter'){event.preventDefault();this.send();}
     },
@@ -178,7 +266,7 @@ createApp({
         if(this.roomId===state.id){await this.$nextTick();this.scrollBottom();}
       }else if(outcome.state==='failed')state.pending=null;
       else if(state.pending)state.pending.sending=false;
-      if(this.roomId===state.id && !state.pending){await this.$nextTick();this.$refs.input.focus();}
+      if(this.roomId===state.id && !state.pending){await this.$nextTick();this.resizeComposer();this.$refs.input.focus();}
     },
     async checkPending() {
       const state=this.state;if(!state?.pending || state.pending.sending)return;
@@ -214,13 +302,16 @@ createApp({
   },
   async mounted() {
     document.documentElement.dataset.theme=this.theme;
-    document.addEventListener('visibilitychange',()=>{if(document.hidden)this.stopStream();else if(this.state)this.startStream(this.state);});
+    document.addEventListener('visibilitychange',this.onVisibility);
+    window.addEventListener('resize',this.resizeComposer);
+    this.resizeComposer();
     try {
       await Promise.all([this.loadRooms(),this.loadPeople()]);
-      const wanted=new URLSearchParams(location.search).get('room');
-      const first=this.rooms.find(room=>room.status==='open')||this.rooms[0];
-      if(wanted||first)await this.selectRoom(wanted||first.id);else this.connection='已连接';
+      await this.openInitialRoom();
     }catch(error){this.connection='CAT暂不可用';this.connectionError=true;}
   },
-  beforeUnmount() {this.stopStream();},
+  beforeUnmount() {
+    this.stopStream();window.removeEventListener('resize',this.resizeComposer);
+    document.removeEventListener('visibilitychange',this.onVisibility);
+  },
 }).mount('#cat-app');

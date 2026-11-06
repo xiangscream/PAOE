@@ -40,7 +40,9 @@ class CatBoardTests(unittest.TestCase):
         with patch.object(self.board, "cat", side_effect=AssertionError("static read must not join or send")):
             for path, content_type in (("/cat", "text/html"), ("/cat.css", "text/css"),
                                        ("/cat.mjs", "text/javascript"), ("/cat-state.mjs", "text/javascript"),
-                                       ("/cat-vendor/vue.mjs", "text/javascript"), ("/cat-vendor/daisyui.css", "text/css")):
+                                       ("/cat-vendor/vue.mjs", "text/javascript"), ("/cat-vendor/daisyui.css", "text/css"),
+                                       ("/cat-content.mjs", "text/javascript"), ("/cat-components.mjs", "text/javascript"),
+                                       ("/vendor/markdown-it-15.0.3.mjs", "text/javascript")):
                 with self.subTest(path=path), urlopen(self.origin + path) as response:
                     self.assertIn(content_type, response.headers["Content-Type"])
                     self.assertTrue(response.read())

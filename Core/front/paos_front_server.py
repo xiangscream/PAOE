@@ -23,6 +23,9 @@ STATIC = Path(__file__).resolve().parent
 CAT_FILES = {"/cat": ("cat.html", "text/html"), "/cat/": ("cat.html", "text/html"),
              "/cat.css": ("cat.css", "text/css"), "/cat.mjs": ("cat.mjs", "text/javascript"),
              "/cat-state.mjs": ("cat-state.mjs", "text/javascript"),
+             "/cat-content.mjs": ("cat-content.mjs", "text/javascript"),
+             "/cat-components.mjs": ("cat-components.mjs", "text/javascript"),
+             "/vendor/markdown-it-15.0.3.mjs": ("vendor/markdown-it-15.0.3.mjs", "text/javascript"),
              "/cat-vendor/vue.mjs": ("vendor/vue-3.5.45.mjs", "text/javascript"),
              "/cat-vendor/daisyui.css": ("vendor/daisyui-5.7.50.css", "text/css")}
 sys.path.insert(0, str(PACKAGE / "code" / "personal-agent-os" / "scripts"))
