@@ -57,7 +57,7 @@ EXAMPLE_PATHS = {
         'C:' + '/work', 'C:' + '/工作区'},
     'Core/code/personal-agent-os/scripts/wakeup_native/workbuddy_extension/test.cjs': {
         'D:' + '/work/WorkBuddy/resources/app.asar.unpacked/main/preload/fork-preload.cjs'},
-    'Core/tests/test_stage1_entry.py': {'C:' + '/Users/remo', '/home/' + 'remo'},
+    'Core/tests/test_stage1_entry.py': {'C:' + '/Users/' + 'remo', '/home/' + 'remo'},
 }
 
 

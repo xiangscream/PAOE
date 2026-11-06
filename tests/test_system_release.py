@@ -71,9 +71,9 @@ class SystemReleaseTests(unittest.TestCase):
             for value in ('X:' + r'\Users\Someone\private', 'Z:' + '/Projects/Real', '/home/' + 'someone/project'):
                 with self.subTest(name=name,value=value), self.assertRaises(ValueError):
                     release.scan_machine_paths(name,value.encode())
-        release.scan_machine_paths('Core/tests/test_stage1_entry.py',('C:'+'/Users/remo').encode())
+        release.scan_machine_paths('Core/tests/test_stage1_entry.py',('C:'+'/Users/' + 'remo').encode())
         with self.assertRaises(ValueError):
-            release.scan_machine_paths('Core/README.md',('C:'+'/Users/remo').encode())
+            release.scan_machine_paths('Core/README.md',('C:'+'/Users/' + 'remo').encode())
         with self.assertRaises(ValueError):
             release.scan_machine_paths('PROJECTS.md',b'1999-s001')
 
