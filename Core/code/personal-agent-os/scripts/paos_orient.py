@@ -131,6 +131,62 @@ def _orient_todo_contract_issues(todo: dict[str, Any], project_id: str, agent_id
     return issues
 
 
+RECOVERY_FILES = (
+    ("project_agents", "Project AGENTS", "AGENTS.md", False),
+    ("home_agents", "Home AGENTS", "AGENTS.md", True),
+    ("project_index", "Project INDEX", "INDEX.md", False),
+    ("home_entry", "Home ENTRY", "ENTRY.md", False),
+    ("home_todo", "Home TODO", "TODO.md", False),
+)
+
+
+def read_recovery_inputs(*, project_root: Path, home_path: Path) -> dict[str, Any]:
+    """Read the five current recovery originals without parsing or copying them."""
+    project_root = Path(project_root)
+    home_path = Path(home_path)
+    documents = []
+    for key, label, name, optional in RECOVERY_FILES:
+        path = (home_path / name) if key.startswith("home_") else (project_root / name)
+        item = {"key": key, "label": label, "path": str(path), "optional": optional,
+                "present": False, "body": "", "error": ""}
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            if optional:
+                item["error"] = "optional_missing"
+                item["state"] = "optional_missing"
+            else:
+                item["error"] = "missing"
+                item["state"] = "missing"
+        except (OSError, UnicodeError) as exc:
+            item["error"] = f"unreadable: {exc}"
+            item["state"] = "unreadable"
+        else:
+            item["present"] = True
+            item["state"] = "present"
+            item["body"] = text
+        documents.append(item)
+    return {"schema": "paos-orient-recovery/v1", "project_root": str(project_root),
+            "home_path": str(home_path), "documents": documents}
+
+
+def render_recovery_read(payload: dict[str, Any]) -> str:
+    recovery = payload.get("recovery") or {}
+    documents = recovery.get("documents") or []
+    identity = payload.get("identity") or {}
+    lines = [f"PAOS orient read — {identity.get('agent_id')} @ {identity.get('project_id')}",
+             f"Project root: {recovery.get('project_root') or ''}",
+             f"Home: {recovery.get('home_path') or ''}"]
+    for item in documents:
+        lines.append("")
+        lines.append(f"## {item.get('label')} · {item.get('path')}")
+        if item.get("present"):
+            lines.append(str(item.get("body") or ""))
+        else:
+            lines.append(f"[{item.get('state') or 'missing'}] {item.get('path')}")
+    return "\n".join(lines)
+
+
 def render_orient(payload: dict[str, Any]) -> str:
     identity = payload.get("identity") or {}
     todo = payload.get("todo") or {}

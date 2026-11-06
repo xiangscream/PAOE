@@ -129,6 +129,7 @@ PEERS_SCHEMA = "paos-peers/v2"
 from paos_orient import (
     _orient_source_root, _orient_library_roots, _orient_next_action,
     _todo_current_view, _todo_open_tasks, _orient_todo_contract_issues, render_orient,
+    read_recovery_inputs, render_recovery_read,
 )
 
 
@@ -624,6 +625,16 @@ def execute_orient(
     if label:
         payload["identity"]["staff_number"] = label
         payload["staff_number"] = label
+    if getattr(args, "read_originals", False):
+        root_raw = str(payload.get("project", {}).get("root_path") or "")
+        if root_raw:
+            root = Path(posix_windows_drive_locator(root_raw)).expanduser()
+            home = root / "Workstations" / args.agent_id
+            payload["recovery"] = read_recovery_inputs(project_root=root, home_path=home)
+        else:
+            payload["recovery"] = {"schema": "paos-orient-recovery/v1", "project_root": "",
+                                   "home_path": "", "documents": []}
+        return payload if args.json_output else render_recovery_read(payload)
     return payload if args.json_output else render_orient(payload)
 
 
@@ -2812,6 +2823,8 @@ def build_parser() -> argparse.ArgumentParser:
     orient.add_argument("project_id")
     orient.add_argument("agent_id")
     orient.add_argument("--root", help="Override Project root when root_path is missing")
+    orient.add_argument("--read", dest="read_originals", action="store_true",
+                        help="Print the current Project AGENTS, Home AGENTS, INDEX, ENTRY and TODO source text")
 
     status = sub.add_parser(
         "status",
