@@ -155,6 +155,27 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(failure["error_code"], "cat_not_configured")
 
 
+    def test_http_layout_and_document_routes(self):
+        server = make_server(self.board, port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 3)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        origin = f"http://127.0.0.1:{server.server_port}"
+        with urlopen(origin + "/api/layout?project=1001") as response:
+            self.assertEqual(json.load(response)["layout"]["nodes"], {})
+        request = Request(origin + "/api/layout", method="PUT", data=json.dumps({
+            "project": "1001",
+            "layout": {"nodes": {"1001-s001": {"x": 4, "y": 5}},
+                       "viewport": {"x": 0, "y": 0, "zoom": 1}},
+        }).encode(), headers={"Content-Type": "application/json"})
+        with urlopen(request) as response:
+            self.assertEqual(json.load(response)["layout"]["nodes"]["1001-s001"]["y"], 5)
+        with urlopen(origin + "/api/document?project=1001&path=INDEX.md") as response:
+            self.assertIn("唯一口径", json.load(response)["body"])
+
+
     def test_team_fields_paused_registered_and_team_only_are_visible(self):
         root = self.roots["1001"]
         (root / "TEAM.md").write_text(
