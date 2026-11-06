@@ -11,8 +11,8 @@
 | 内容 | 同步归属 |
 | --- | --- |
 | Core、Guide、公共规则、项目母版、Rooter 公共说明 | 本仓库，作为完整 System 一起更新 |
-| Workflow、Skill、Tool | 独立 Libraries 私有仓库，保持原件独立 |
-| 项目业务与成果 | 各独立项目自行维护；项目3002本轮不建远端 |
+| Workflow、Skill、Tool | [PAOE-Libraries 私有仓库](https://github.com/xiangscream/PAOE-Libraries)，保持原件独立（需要本人权限） |
+| 项目业务与成果 | 各独立项目自行维护，按项目安排配置远端 |
 | 本机配置、凭据、Contact/Runtime 绑定、消息与工位历史 | 保留本机，不进入 System 公共仓库 |
 
 先保存并提交本机改动，再 fetch 和比较差异；冲突按原件合并，保留人工内容。GitHub 版本已发布与本机已采用分别记录，不能用一次 push 代替运行或 Agent 消费验收。
