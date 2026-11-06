@@ -10,6 +10,7 @@
 | 现在想做什么 | 直接打开 |
 | --- | --- |
 | 推进项目、找成员或唤醒 Agent | [项目与 Agent](PROJECTS.md) |
+| 邀请同事集中讨论 | [CAT 即时圆桌](CAT/README.md) |
 | 找一种做法或工具 | [资源](RESOURCES.md) |
 | 处理本机安装和运行问题 | [Rooter 入口](rooter/README.md) |
 | 看懂整个体系 | [体系](SYSTEM.md) |

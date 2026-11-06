@@ -41,6 +41,8 @@ installation.json 的 source_root、data_root、library_roots_config、rooter_ho
 
 Home 保存工作，Harness 执行模型，Contact 连接已绑定会话。配置存在、提醒受理、本人实读和任务完成分别核实；自动恢复须由本机实际验收。
 
+成员职责或TEAM变更后，用现有汇总器更新本机PROJECTS，不手工另维护一份名册。在System根运行：`python Core/code/personal-agent-os/scripts/paos_team_overview.py --installation-file <本机安装描述> --output PROJECTS.md --write`。改为`--check`只核是否过期；生成的机器路径不纳入公共发布。
+
 文件不可用时核准确原件，不从空结果推断项目不存在；保留原登记、处理缺盘或读取错误。普通文件操作不依赖旧 Core/Bridge 或 Dashboard。
 
 ## 备份与记录
