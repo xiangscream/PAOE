@@ -118,7 +118,9 @@ class HeadlessTests(unittest.TestCase):
         before_todo = (home / 'TODO.md').read_bytes()
         before_mail = sorted((home / 'mailbox').glob('*'))
         before_notices = sorted((home / 'notices').glob('*'))
-        result = self.call('orient', '3002', '3002-s001', '--read')[1]
+        with patch.object(paos, '_read_orient_inputs',
+                          side_effect=AssertionError('summary path must not be called')):
+            result = self.call('orient', '3002', '3002-s001', '--read')[1]
         documents = {item['key']: item for item in result['recovery']['documents']}
         self.assertEqual(documents['project_agents']['body'], '# Project AGENTS\nproject rule')
         self.assertEqual(documents['home_agents']['body'], '# Home AGENTS\nhome rule')
@@ -136,11 +138,6 @@ class HeadlessTests(unittest.TestCase):
         broken_docs = {item['key']: item for item in broken['recovery']['documents']}
         self.assertEqual(broken_docs['home_todo']['body'], 'broken old todo')
         self.assertEqual(broken_docs['home_agents']['state'], 'present')
-        (project / 'AGENTS.md').unlink()
-        missing = self.call('orient', '3002', '3002-s001', '--read')[1]
-        missing_docs = {item['key']: item for item in missing['recovery']['documents']}
-        self.assertEqual(missing_docs['project_agents']['state'], 'missing')
-        self.assertEqual(missing_docs['project_agents']['body'], '')
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             code = paos.main(['--installation-file', str(self.install), 'orient',
@@ -148,6 +145,15 @@ class HeadlessTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('# Home AGENTS\nhome rule', out.getvalue())
         self.assertIn('Project AGENTS', out.getvalue())
+        (home / 'AGENTS.md').unlink()
+        optional = self.call('orient', '3002', '3002-s001', '--read')[1]
+        optional_docs = {item['key']: item for item in optional['recovery']['documents']}
+        self.assertEqual(optional_docs['home_agents']['state'], 'optional_missing')
+        (project / 'AGENTS.md').unlink()
+        code, missing = self.call('orient', '3002', '3002-s001', '--read', ok=False)
+        self.assertNotEqual(code, 0)
+        self.assertEqual(missing['error_code'], 'orient_read_source_unavailable')
+        self.assertIn('project_agents', str(missing.get('details', {})))
 
 
     def test_health_is_local_not_runtime_success(self):

@@ -45,7 +45,7 @@ from paos_agent_activation import (  # noqa: E402
     activate_mail_dispatch,
     send_agent_mail,
 )
-from paos_home import HomeProblem, agent_project_id
+from paos_home import HomeProblem, agent_project_id, project_agent_home
 from paos_attention_service import (  # noqa: E402
     resolve_home_by_registry,
     AttentionServiceProblem,
@@ -605,11 +605,66 @@ def _read_orient_inputs(
     return payload
 
 
+def _execute_orient_read(
+    args: argparse.Namespace,
+    registry: ProjectRegistry,
+    installation_path: Path,
+) -> Any:
+    """Short read-only path: resolve Home and read the five originals only."""
+    project = registry.read(args.project_id)
+    root_raw = str(args.root or project.get("root_path") or "").strip()
+    if not root_raw:
+        raise CliError("Project 未登记 root_path，无法读取恢复原文。",
+                       error_code="orient_project_root_missing")
+    root = Path(posix_windows_drive_locator(root_raw)).expanduser()
+    try:
+        ref = project_agent_home(project=project, agent_id=args.agent_id,
+                                 root_override=str(root), require_existing=True)
+    except HomeProblem as problem:
+        raise CliError(str(problem), error_code=getattr(problem, "code", "home_unavailable"),
+                       details=getattr(problem, "details", {})) from problem
+    home = Path(ref["home_path"])
+    recovery = read_recovery_inputs(project_root=root, home_path=home)
+    failed = [item for item in recovery["documents"]
+              if not item.get("optional") and not item.get("present")]
+    if failed:
+        detail = [{"key": item.get("key"), "label": item.get("label"),
+                   "path": item["path"], "state": item.get("state"), "error": item.get("error")}
+                  for item in failed]
+        raise CliError(
+            "恢复原文缺失或不可读：" + ", ".join(item["path"] for item in failed),
+            error_code="orient_read_source_unavailable",
+            details={"documents": detail},
+        )
+    payload = {
+        "ok": True,
+        "schema": ORIENT_SCHEMA,
+        "identity": {
+            "project_id": args.project_id,
+            "agent_id": args.agent_id,
+            "registered_home": args.agent_id in set(project.get("homes") or []),
+        },
+        "project": {"root_path": str(root)},
+        "recovery": recovery,
+    }
+    label = agent_staff_number(
+        args.agent_id,
+        explicit_path=str(getattr(args, "agent_numbers_file", None) or ""),
+        installation_path=installation_path,
+    )
+    if label:
+        payload["identity"]["staff_number"] = label
+        payload["staff_number"] = label
+    return payload if args.json_output else render_recovery_read(payload)
+
+
 def execute_orient(
     args: argparse.Namespace,
     registry: ProjectRegistry,
     installation_path: Path,
 ) -> Any:
+    if getattr(args, "read_originals", False):
+        return _execute_orient_read(args, registry, installation_path)
     payload = _read_orient_inputs(
         registry,
         args.project_id,
@@ -625,16 +680,6 @@ def execute_orient(
     if label:
         payload["identity"]["staff_number"] = label
         payload["staff_number"] = label
-    if getattr(args, "read_originals", False):
-        root_raw = str(payload.get("project", {}).get("root_path") or "")
-        if root_raw:
-            root = Path(posix_windows_drive_locator(root_raw)).expanduser()
-            home = root / "Workstations" / args.agent_id
-            payload["recovery"] = read_recovery_inputs(project_root=root, home_path=home)
-        else:
-            payload["recovery"] = {"schema": "paos-orient-recovery/v1", "project_root": "",
-                                   "home_path": "", "documents": []}
-        return payload if args.json_output else render_recovery_read(payload)
     return payload if args.json_output else render_orient(payload)
 
 
