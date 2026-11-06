@@ -176,6 +176,78 @@ class BoardTests(unittest.TestCase):
             self.assertIn("唯一口径", json.load(response)["body"])
 
 
+    def test_existing_room_reuses_room_and_does_not_create_second(self):
+        with patch.object(self.board, "cat", side_effect=[
+            {"ok": True, "room": {"id": "room-existing"}},
+            {"ok": True},
+            {"ok": True},
+            {"ok": True},
+            {"ok": True, "dispatch": "queued"},
+        ]) as call:
+            result = self.board.collaboration({
+                "project": "1001", "mode": "chat",
+                "members": ["1001-s001", "1001-s002"], "room_id": "room-existing",
+                "topic": "续接", "body": "继续", "message_id": "ui-existing-001",
+            })
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["room_id"], "room-existing")
+        self.assertNotIn("create", [args[0] for args in call.call_args_list])
+        self.assertEqual(call.call_count, 5)
+
+    def test_paused_member_is_rejected_before_any_cli_call(self):
+        root = self.roots["1001"]
+        (root / "TEAM.md").write_text(
+            "# TEAM\n\n## 当前成员\n\n### 1001-s001\n- 成员状态：暂停保留\n- 职责：暂停\n",
+            encoding="utf-8")
+        with patch.object(self.board, "run_paos") as run:
+            with self.assertRaises(BoardProblem) as raised:
+                self.board.collaboration({
+                    "project": "1001", "mode": "mail", "members": ["1001-s001"],
+                    "topic": "拒绝", "body": "不应发送", "message_id": "ui-paused-001",
+                })
+        self.assertEqual(raised.exception.code, "member_paused")
+        self.assertEqual(run.call_count, 0)
+
+    def test_unknown_cli_outcome_is_not_failed(self):
+        with patch.object(self.board, "run_paos", return_value={
+                "ok": False, "error_code": "cli_output_invalid", "error": "bad receipt"}):
+            result = self.board.collaboration({
+                "project": "1001", "mode": "mail", "members": ["1001-s002"],
+                "topic": "未知", "body": "保留", "message_id": "ui-unknown-001",
+            })
+        self.assertEqual(result["state"], "unknown")
+
+    def test_notification_maps_cat_dispatch_and_mail_reminders(self):
+        with patch.object(self.board, "run_paos", return_value={
+                "ok": True, "reminders": [{"state": "accepted"}]}):
+            mail = self.board.collaboration({
+                "project": "1001", "mode": "mail", "members": ["1001-s002"],
+                "topic": "通知", "body": "正文", "message_id": "ui-notify-001", "remind": True,
+            })
+        self.assertEqual(mail["notification"], "accepted")
+        with patch.object(self.board, "run_paos", return_value={"ok": True, "dispatch": "queued"}):
+            pass
+
+    def test_dashboard_is_summary_and_agent_detail_has_full_text(self):
+        dashboard = self.board.dashboard("1001")
+        row = next(item for item in dashboard["agents"] if item["id"] == "1001-s001")
+        self.assertNotIn("todo", row)
+        self.assertNotIn("mails", row)
+        detail = self.board.agent("1001-s001")
+        self.assertIn("todo", detail)
+        self.assertIn("mails", detail)
+
+    def test_mail_collaboration_status_uses_real_status_command(self):
+        sent = self.board.collaboration({
+            "project": "1001", "mode": "mail", "members": ["1001-s002"],
+            "topic": "状态", "body": "核对保存", "message_id": "ui-status-001",
+        })
+        self.assertEqual(sent["state"], "saved")
+        status = self.board.collaboration_status("1001", "mail", "ui-status-001")
+        self.assertEqual(status["state"], "saved")
+        self.assertTrue(status["result"].get("ok"))
+
+
     def test_team_fields_paused_registered_and_team_only_are_visible(self):
         root = self.roots["1001"]
         (root / "TEAM.md").write_text(

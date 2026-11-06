@@ -294,6 +294,66 @@ class Board:
             raise BoardProblem("document_unreadable", "文档无法读取。") from exc
         return {"ok": True, "path": relative, "body": body}
 
+    UNKNOWN_CODES = {"cli_result_unknown", "cli_output_invalid", "cat_stream_unavailable",
+                     "cat_timeout", "cat_unknown"}
+    NOTIFICATION_VALUES = {"queued", "accepted", "partial", "not_requested", "unknown"}
+
+    def _result_state(self, result: dict, *, saved: bool | None = None) -> str:
+        code = str(result.get("error_code") or "")
+        if code in self.UNKNOWN_CODES:
+            return "unknown"
+        if saved is not None:
+            return "saved" if saved else "failed"
+        return "saved" if result.get("ok") else "failed"
+
+    def _notification_view(self, result: dict, remind: bool) -> str:
+        if not remind:
+            return "not_requested"
+        explicit = result.get("notification")
+        if isinstance(explicit, str) and explicit in self.NOTIFICATION_VALUES:
+            return explicit
+        dispatch = str(result.get("dispatch") or "")
+        if dispatch in self.NOTIFICATION_VALUES:
+            return dispatch
+        if dispatch == "skipped":
+            return "not_requested"
+        reminders = result.get("reminders")
+        if isinstance(reminders, list):
+            states = {str(item.get("state") or "") for item in reminders if isinstance(item, dict)}
+            if "accepted" in states:
+                return "accepted"
+            if "queued" in states:
+                return "queued"
+            if "partial" in states or (states and states <= {"queued", "accepted", "not_requested"} and len(states) > 1):
+                return "partial"
+            if states == {"not_requested"} or not states:
+                return "not_requested"
+        activation = result.get("activation")
+        if isinstance(activation, dict):
+            state = str(activation.get("state") or "")
+            if state in self.NOTIFICATION_VALUES:
+                return state
+        return "unknown"
+
+    def _validate_members(self, members: list[str]) -> None:
+        for member in members:
+            ref = self.home(member)
+            if ref["home_kind"] == "project_agent":
+                fields = self._team_fields(ref["project_id"], member)
+                if not fields["can_contact"]:
+                    raise BoardProblem("member_paused", f"{member} 在 TEAM 中明确暂停，不能发起协作或提醒。")
+
+    def _agent_summary(self, row: dict) -> dict:
+        summary = {"ok": row.get("ok"), "id": row.get("id"), "project": row.get("project"),
+                   "objective": row.get("objective", ""), "next_action": row.get("next_action", ""),
+                   "tasks": row.get("tasks", {}), "pending_notices": row.get("pending_notices", 0),
+                   "mail_total": row.get("mail_total", 0)}
+        for key in ("number", "name", "role", "member_status", "registered", "can_contact", "team_path"):
+            summary[key] = row.get(key, "" if key not in {"registered", "can_contact"} else False)
+        if not row.get("ok"):
+            summary.update({"error": row.get("error", ""), "error_code": row.get("error_code", "")})
+        return summary
+
     def collaboration(self, payload: dict) -> dict:
         project_id = str(payload.get("project") or "")
         mode = str(payload.get("mode") or "")
@@ -314,8 +374,7 @@ class Board:
             raise BoardProblem("collaboration_topic_missing", "主题不能为空。")
         if not body:
             raise BoardProblem("collaboration_body_missing", "正文不能为空。")
-        for member in members:
-            self.home(member)
+        self._validate_members(members)
         if mode == "mail":
             args = ["agent", "send", project_id]
             for member in members:
@@ -325,40 +384,62 @@ class Board:
             if remind:
                 args.append("--remind")
             result = self.run_paos(args)
-            state = "unknown" if result.get("error_code") == "cli_result_unknown" else (
-                "saved" if result.get("ok") else "failed")
-            return {"ok": bool(result.get("ok")), "state": state, "mode": mode,
-                    "phase": "send", "message_id": message_id,
-                    "notification": result.get("activation") or result.get("reminders") or {},
+            return {"ok": bool(result.get("ok")), "state": self._result_state(result),
+                    "mode": mode, "phase": "send", "message_id": message_id,
+                    "notification": self._notification_view(result, remind),
                     "detail": result.get("error", ""), "error_code": result.get("error_code", ""),
                     "result": result}
-        created = self.cat(["create", "--title", topic])
-        if not created.get("ok"):
-            state = "unknown" if created.get("error_code") in {"cli_result_unknown", "cat_stream_unavailable"} else "failed"
-            return {"ok": False, "state": state, "mode": mode, "phase": "create",
-                    "message_id": message_id, "notification": {}, "detail": created.get("error", ""),
-                    "error_code": created.get("error_code", ""), "result": created}
-        room_id = str((created.get("room") or {}).get("id") or "")
+        room_id = str(payload.get("room_id") or "").strip()
+        if room_id:
+            shown = self.cat(["show", room_id])
+            if not shown.get("ok"):
+                return {"ok": False, "state": self._result_state(shown), "mode": mode,
+                        "phase": "room", "message_id": message_id, "room_id": room_id,
+                        "notification": self._notification_view(shown, remind),
+                        "detail": shown.get("error", ""), "error_code": shown.get("error_code", ""),
+                        "result": shown}
+            room = shown.get("room") or {}
+            room_members = room.get("members") or []
+            if isinstance(room_members, list):
+                ids = {str(item.get("home_id") or item) if isinstance(item, dict) else str(item)
+                       for item in room_members}
+                if ids and not (ids & set(members)):
+                    raise BoardProblem("collaboration_room_mismatch", "已有房间与提交成员不匹配。")
+        else:
+            created = self.cat(["create", "--title", topic])
+            if not created.get("ok"):
+                return {"ok": False, "state": self._result_state(created), "mode": mode,
+                        "phase": "create", "message_id": message_id,
+                        "notification": self._notification_view(created, remind),
+                        "detail": created.get("error", ""), "error_code": created.get("error_code", ""),
+                        "result": created}
+            room_id = str((created.get("room") or {}).get("id") or "")
         labels = {person["id"]: person["name"] for person in self.people()}
         for member in members:
             joined = self.cat(["join", room_id, "--home", member, "--label", labels.get(member, member)])
             if not joined.get("ok"):
-                return {"ok": False, "state": "partial", "mode": mode, "phase": "join",
-                        "message_id": message_id, "room_id": room_id,
-                        "notification": {}, "detail": joined.get("error", ""),
-                        "error_code": joined.get("error_code", ""), "result": joined}
+                join_state = "unknown" if str(joined.get("error_code") or "") in self.UNKNOWN_CODES else "partial"
+                return {"ok": False, "state": join_state,
+                        "mode": mode, "phase": "join", "message_id": message_id, "room_id": room_id,
+                        "notification": self._notification_view(joined, remind),
+                        "detail": joined.get("error", ""), "error_code": joined.get("error_code", ""),
+                        "result": joined}
         sent = self.send_message(room_id, "human", body, message_id, notify=remind)
-        state = "unknown" if sent.get("error_code") in {"cli_result_unknown", "cat_stream_unavailable"} else (
-            "saved" if sent.get("ok") else "partial")
+        if sent.get("ok"):
+            state = "saved"
+        elif str(sent.get("error_code") or "") in self.UNKNOWN_CODES:
+            state = "unknown"
+        else:
+            state = "partial"
         return {"ok": bool(sent.get("ok")), "state": state, "mode": mode, "phase": "send",
                 "message_id": message_id, "room_id": room_id,
-                "notification": sent.get("notification") or sent.get("reminders") or {},
+                "notification": self._notification_view(sent, remind),
                 "detail": sent.get("error", ""), "error_code": sent.get("error_code", ""),
                 "result": sent}
 
     def collaboration_status(self, project_id: str, mode: str, message_id: str, room_id: str = "") -> dict:
         if mode == "mail":
-            result = self.run_paos(["mail", "read", project_id, message_id])
+            result = self.run_paos(["mail", "status", project_id, message_id])
             return {"ok": bool(result.get("ok")), "state": "saved" if result.get("ok") else (
                 "not_found" if result.get("error_code") in {"mail_message_missing", "mail_missing"} else "unknown"),
                 "mode": mode, "message_id": message_id, "detail": result.get("error", ""), "result": result}
@@ -388,9 +469,9 @@ class Board:
         if selected:
             for home_id in selected["homes"]:
                 try:
-                    agents.append(self.agent(home_id))
+                    agents.append(self._agent_summary(self.agent(home_id)))
                 except READ_ERRORS as exc:
-                    agents.append({"id": home_id, **error_view(exc)})
+                    agents.append({"id": home_id, "ok": False, **error_view(exc)})
         rooms_result = self.cat(["list"]) if self.cat_url else self.cat([])
         rooms = rooms_result["rooms"] if rooms_result.get("ok") else []
         root = runtime_path(selected["root_path"]) if selected else None
