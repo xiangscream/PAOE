@@ -626,7 +626,7 @@ def _execute_orient_read(
     home = Path(ref["home_path"])
     recovery = read_recovery_inputs(project_root=root, home_path=home)
     failed = [item for item in recovery["documents"]
-              if not item.get("optional") and not item.get("present")]
+              if not item["present"] and item["state"] != "optional_missing"]
     if failed:
         detail = [{"key": item.get("key"), "label": item.get("label"),
                    "path": item["path"], "state": item.get("state"), "error": item.get("error")}
