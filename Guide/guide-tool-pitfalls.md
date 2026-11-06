@@ -5,7 +5,7 @@ title: 工具行为陷阱：按工具与操作检索
 description: 按工具/操作查已记录的时间、版本、现象与处理动作；不把单次版本现象外推成普遍定律。
 tags: tools, pitfalls, feishu, cli, verification
 status: active
-version: 7
+version: 8
 ---
 
 # 工具行为陷阱
@@ -36,6 +36,20 @@ version: 7
 ## 基本动作区分
 
 新增内容用插入语义（如 `block_insert_after`）；改原内容才用替换。不要用“替换”锚点顺手吞掉原项，也不要用插入结果冒充原内容已更新。任何写后都以云端回读的 revision、块结构和目标文本为准。
+
+## PowerShell UTF-8
+
+调用输出UTF-8的命令时，在同一段PowerShell调用中先设文本编码，再执行命令：
+
+```powershell
+$paosUtf8 = [Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = $paosUtf8
+[Console]::OutputEncoding = $paosUtf8
+$OutputEncoding = $paosUtf8
+# 在这里执行本人ENTRY的CLI命令
+```
+
+中文已在原生命令转成PowerShell字符串时损坏，之后用`Out-File -Encoding UTF8`只会保存损坏的字符串。先使调用环境按UTF-8读取，再读完整输出；不要只截取标题或TODO来判断恢复成功。
 
 ## PowerShell 文件归档
 

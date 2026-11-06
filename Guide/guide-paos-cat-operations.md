@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 91
+version: 92
 ---
 
 # PAOS 操作指南
@@ -37,7 +37,7 @@ Mail、正式 Requests 和已配置 CAT 分开读取。读取失败不是零消�
 
 ## 联系并让对方接续
 
-需要同事接续时，用 `agent send <本人项目ID> --to <目标完整HomeID> --remind`：先保存 Mail 与 Notice，再沿目标 Home 的 Contact 提醒一次。第一个项目参数是发送上下文，不是目标所属 Project；因此项目同事、跨项目同事、安装级 Rooter 均用已有接口，不另建项目。先从本人 Current 取得成果原件，再编写简短 UTF-8 交接正文，说明结论、接续动作和原件的实际路径；正文用 `@` 读取文件。
+需要同事接续时，用 `agent send <本人项目ID> --to <目标完整HomeID> --remind`：先保存 Mail 与 Notice，再沿目标 Home 的 Contact 提醒一次。第一个项目参数是发送上下文，不是目标所属 Project；因此项目同事、跨项目同事、安装级 Rooter 均用已有接口，不另建项目。先从本人 Current 取得成果原件，再编写简短 UTF-8 交接正文，说明结论、接续动作和原件的实际路径；正文用 `@` 读取文件，例如 `--body '@完整UTF-8文件路径'`。Windows批处理入口的多行正文使用该文件方式；内联多行可能在批处理转发时丢失正文和后续参数。
 
 普通交接保存成果后，用 `agent send --remind` 交付、`attention todo-update` 校准本人当前页；下游回告后直接读其成果并继续。解除等待的验收回告也属于需要接续的交付。对方没有回流或报告失败时，再用 `status --message-id` 定位。已有原件和回告即可引用，无须另写一份收件证明或逐级重查全部状态。记录完成状态或回告时，把当前结论写在前，再接续动作和原件。
 
