@@ -13,7 +13,7 @@ test('message formatting keeps literal code and the original text intact', () =>
 });
 
 test('raw HTML and dangerous protocols cannot become active room content', () => {
-  const html = renderMessage('<img src=x onerror=alert(1)>\n\n[bad](javascript:alert(1))\n[local](file:///C:/private.txt)\n[x](data:text/html,hello)');
+  const html = renderMessage('<img src=x onerror=alert(1)>\n\n[bad](javascript:alert(1))\n[local](file:///private.txt)\n[x](data:text/html,hello)');
   assert.doesNotMatch(html, /<img|href="(?:javascript|file|data):/i);
   assert.match(html, /&lt;img/);
 });
@@ -41,7 +41,7 @@ test('room search includes the full original body, preserves order and ignores a
 });
 
 test('search highlighting escapes text and treats metacharacters as literal content', () => {
-  const html = renderMessage('**青柠**\n\n`C:/青柠.md`\n\n```js\n青柠\n```','青柠');
+  const html = renderMessage('**青柠**\n\n`notes/青柠.md`\n\n```js\n青柠\n```','青柠');
   assert.equal((html.match(/<mark>青柠<\/mark>/g)||[]).length, 3);
   assert.match(renderMessage('a.*b and axxb','.*'), /a<mark>\.\*<\/mark>b and axxb/);
   const unsafe = renderMessage('<img src=x onerror=alert(1)>','<img');
