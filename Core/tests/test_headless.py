@@ -108,6 +108,54 @@ class HeadlessTests(unittest.TestCase):
             '--sender-id','3002-s001','--subject','日会增量','--body','原件已保存；请更新当前口径。',
             '--message-id',mid,*extras)[1]
 
+    def test_orient_read_returns_raw_recovery_sources_and_errors(self):
+        project = self.vault
+        home = project / 'Workstations' / '3002-s001'
+        (project / 'AGENTS.md').write_text('# Project AGENTS\nproject rule', encoding='utf-8')
+        (project / 'INDEX.md').write_text('# INDEX\ncurrent entry', encoding='utf-8')
+        (home / 'AGENTS.md').write_text('# Home AGENTS\nhome rule', encoding='utf-8')
+        (home / 'ENTRY.md').write_text('# ENTRY\nrecover here', encoding='utf-8')
+        before_todo = (home / 'TODO.md').read_bytes()
+        before_mail = sorted((home / 'mailbox').glob('*'))
+        before_notices = sorted((home / 'notices').glob('*'))
+        with patch.object(paos, '_read_orient_inputs',
+                          side_effect=AssertionError('summary path must not be called')):
+            result = self.call('orient', '3002', '3002-s001', '--read')[1]
+        documents = {item['key']: item for item in result['recovery']['documents']}
+        self.assertEqual(documents['project_agents']['body'], '# Project AGENTS\nproject rule')
+        self.assertEqual(documents['home_agents']['body'], '# Home AGENTS\nhome rule')
+        self.assertEqual(documents['project_index']['body'], '# INDEX\ncurrent entry')
+        self.assertEqual(documents['home_entry']['body'], '# ENTRY\nrecover here')
+        self.assertEqual(documents['home_todo']['body'], before_todo.decode('utf-8').replace('\r\n', '\n'))
+        self.assertTrue(documents['home_agents']['present'])
+        self.assertEqual(before_todo, (home / 'TODO.md').read_bytes())
+        self.assertEqual(before_mail, sorted((home / 'mailbox').glob('*')))
+        self.assertEqual(before_notices, sorted((home / 'notices').glob('*')))
+        default = self.call('orient', '3002', '3002-s001')[1]
+        self.assertNotIn('recovery', default)
+        (home / 'TODO.md').write_text('broken old todo', encoding='utf-8')
+        broken = self.call('orient', '3002', '3002-s001', '--read')[1]
+        broken_docs = {item['key']: item for item in broken['recovery']['documents']}
+        self.assertEqual(broken_docs['home_todo']['body'], 'broken old todo')
+        self.assertEqual(broken_docs['home_agents']['state'], 'present')
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = paos.main(['--installation-file', str(self.install), 'orient',
+                              '3002', '3002-s001', '--read'])
+        self.assertEqual(code, 0)
+        self.assertIn('# Home AGENTS\nhome rule', out.getvalue())
+        self.assertIn('Project AGENTS', out.getvalue())
+        (home / 'AGENTS.md').unlink()
+        optional = self.call('orient', '3002', '3002-s001', '--read')[1]
+        optional_docs = {item['key']: item for item in optional['recovery']['documents']}
+        self.assertEqual(optional_docs['home_agents']['state'], 'optional_missing')
+        (project / 'AGENTS.md').unlink()
+        code, missing = self.call('orient', '3002', '3002-s001', '--read', ok=False)
+        self.assertNotEqual(code, 0)
+        self.assertEqual(missing['error_code'], 'orient_read_source_unavailable')
+        self.assertIn('project_agents', str(missing.get('details', {})))
+
+
     def test_health_is_local_not_runtime_success(self):
         r=self.call('health')[1]
         self.assertEqual(r['backend'],'local_files')

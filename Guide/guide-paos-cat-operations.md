@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 90
+version: 91
 ---
 
 # PAOS 操作指南
@@ -223,11 +223,16 @@ paos attention rooter-takeover <notice_id> \
 
 ### 工位 Contact 薄入口
 
-对已登记的具体 Home，沿同一安装/Project/Rooter resolver 建立薄入口：
+已登记并初始化的Home使用现有公开包装生成联系包。将下面两处占位值换成本人ENTRY中的安装描述和完整Home ID；从Home、Project或System目录均可执行，不依赖源码工作目录。
 
+```powershell
+$contactInstallationFile = '<本人ENTRY中的安装描述绝对路径>'
+$contactInstallation = Get-Content -LiteralPath $contactInstallationFile -Raw -Encoding utf8 | ConvertFrom-Json
+$contactPackageScript = Join-Path $contactInstallation.source_root 'scripts/paos_contact_package.py'
+python -X utf8 -B $contactPackageScript '<本人完整Home ID>' --installation-file $contactInstallationFile
 ```
-python scripts/paos_contact_package.py <agent_id> --installation-file <现有安装描述>
-```
+
+此命令只创建缺失的公开文件，已有原生绑定和接收器状态保持。
 
 安装函数按“存在则保留、缺失才创建”处理，生成三份薄文件：
 

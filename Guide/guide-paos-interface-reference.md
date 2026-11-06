@@ -5,7 +5,7 @@ title: PAOS 接口参考：本地工位、项目登记与方法库
 description: Agent 无 Core HTTP 运行的本地入口；内容维护走原文件，不另建项目概览。
 tags: paos, interface, reference, cli
 status: active
-version: 28
+version: 29
 ---
 
 # PAOS 接口参考
@@ -30,7 +30,7 @@ version: 28
 
 ## Home 读面
 
-`orient <project> <home>` 读取身份、ENTRY、当前 TODO 与待处理 Mail。
+`orient <project> <home>` 返回身份、入口、当前任务与待处理输入的摘要。加 `--read` 直接读取当前Project AGENTS、可选Home AGENTS、INDEX、ENTRY、TODO原文与来源，不处理消息或修改状态。
 `attention show <project> <home>` 读 Home 的 Current、Tasks 和 Notice；
 Rooter 使用 `attention rooter-show`。`inbox` 给待处理优先的 Mail 短表，
 `mail list/read` 展开原件。读取不等于输入已处理。
