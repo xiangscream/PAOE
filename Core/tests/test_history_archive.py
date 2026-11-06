@@ -151,6 +151,10 @@ class HistoryArchiveTests(unittest.TestCase):
         self.assertIn('这条输入已处理', read['mail']['markdown'])
         self.assertEqual(read['notice']['state'], 'handled')
         self.assertTrue(read['notice']['read'])
+        self.assertTrue(read['mail']['handling']['handled'])
+        self.assertEqual(read['mail']['handling']['state'], 'handled')
+        self.assertEqual(read['mail']['handling']['reason'], '已处理')
+        self.assertEqual(read['mail']['handling']['action_ref'], 'Works/test.md')
         self.assertEqual(list_mail(self.vault, '3002-s002')['count'], 0)
 
     def test_same_message_id_reentry_does_not_recreate_archived_mail_or_notice(self):

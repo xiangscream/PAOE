@@ -1957,6 +1957,18 @@ def read_history_input(
                 break
     else:
         result["notice"] = read_notice(home_path, notice_id)
+    if result.get("mail") is not None and result.get("notice") is not None:
+        notice = result["notice"]
+        result["mail"]["handling"] = {
+            "handled": notice.get("state") == "handled",
+            "state": str(notice.get("state") or "pending"),
+            "reason": str(notice.get("resolution") or ""),
+            "handled_at": str(notice.get("handled_at") or ""),
+            "action_ref": str(notice.get("action_ref") or ""),
+            "notice_id": str(notice.get("notice_id") or ""),
+            "source": "notice",
+            "source_ref": str(notice.get("source_ref") or ""),
+        }
     return result
 
 
