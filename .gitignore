@@ -1,25 +1,20 @@
-# ---- 本地安装事实与业务数据：不入公开仓库 ----
-data/
-Works/
-libraries/Rooter/
-libraries/Works/
-config/installation.json
-config/library-roots.json
-config/AGENT-NUMBERS.json
-config/AGENT-NUMBERS.md
-config/local/
-config/.portable-*/
-
-# ---- 运行时与缓存 ----
-.paos/
-__pycache__/
+# Machine configuration, state and private Homes are not release source.
+/Core/.git/
+/Core/config/local/
+/Core/data/
+/Core/config/installation.json
+/Core/config/library-roots.json
+/Core/config/AGENT-NUMBERS.*
+/rooter/*
+!/rooter/README.md
+/.obsidian/
+/.backups/
+/Learning/NOTES/*
+!/Learning/NOTES/README.md
+**/__pycache__/
 *.pyc
 *.pyo
-node_modules/
-build/
-dist/
 *.log
-
-# ---- 系统文件 ----
-.DS_Store
-Thumbs.db
+node_modules/
+dist/
+build/

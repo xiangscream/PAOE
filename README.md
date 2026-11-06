@@ -1,79 +1,48 @@
-# PAOE
+# PAOE-System
 
-> **让 Agent 的工作，持续跨越对话。**
+完整的 Agent 工作环境公共基线：Core 提供硬基座，Guide 提供专项操作，Project-Template 提供完整项目母版，rooter 提供安装级公共入口。
 
-**Personal Agent Operating Environment · 个人 Agent 工作环境**
+从 [HOME](HOME.md) 使用系统，从 [SYSTEM](SYSTEM.md) 理解职责。专业方法保存在独立 Libraries，业务与成员工位保存在独立 Project Vault。
 
-PAOE 把长期工作放在你自己的电脑上：项目有独立资料库，Agent 有固定工位，方法可以共享，成果可以积累。关闭对话、换一个模型或重开电脑后，Agent 能沿原来的入口找回责任，继续推进。
+## GitHub 同步
 
-[了解整体结构](#一张图看懂-paoe) · [开始使用](docs/setup/QUICKSTART.md) · [查看架构](ARCHITECTURE.md) · [学习路线](LEARNING-BASELINE.md)
+[PAOE 主仓库](https://github.com/xiangscream/PAOE) 是 System 公共源码入口；[Releases](https://github.com/xiangscream/PAOE/releases) 提供固定版本、发布包和校验文件。安装与跨机器升级使用明确 tag，开发改动通过分支和 PR 合入 main，不覆盖已发布 tag。
 
-## 一张图看懂 PAOE
-
-![PAOE 体系总览：人通过 Obsidian、Agent 应用或画板使用系统；独立项目库保存业务与工位，共享方法库提供方法，系统说明库负责导航；PAOE 本体连接这些资产与外部运行环境。](docs/images/paoe-overview.svg)
-
-**系统集中维护，项目独立保存。** PAOE 本体、共享方法库、系统说明库各有自己的位置；每个项目拥有自己的目录和资料边界，通过登记连接起来，可以放在不同磁盘。
-
-## 各部分分别放什么
-
-| 部分 | 你会在这里找到 | 它负责什么 |
-| --- | --- | --- |
-| **项目库 · Project Vault** | 项目入口、需求与材料、决策与成果、团队和 Agent 工位 | 保存“这件事在做什么、做到哪里、产出了什么”。一个项目可以作为独立 Obsidian 库打开；需要版本管理时使用自己的 Git 仓库。 |
-| **共享方法库 · Library** | Workflow 流程与指南、Skill 专业方法、Tool 工具目录 | 保存“事情可以怎么做”，供不同项目按需复用。 |
-| **系统说明库 · System Vault** | 人类可读的首页、体系说明、资源导航、维护手册 | 帮你理解整套环境，并打开实际的项目、方法和维护入口。 |
-| **PAOE 本体 · Core & Installation** | 程序、本机配置、项目位置登记、联系入口、Rooter 工位 | 连接各个独立部分，提供稳定的读写与接续能力。 |
-| **执行环境 · Runtime** | Codex、OpenCode 等原生 Agent 应用与会话 | 让 Agent 实际思考、使用工具和执行工作；具体登录与唤醒能力按本机配置。 |
-
-项目正文留在项目库，方法正文留在共享库，系统说明库提供解释与导航。**每份内容有明确的原件，入口指向它。**
-
-## 谁负责什么
-
-| 角色 | 责任范围 |
+| 内容 | 同步归属 |
 | --- | --- |
-| **你 · Human** | 确定目标、优先级与授权，判断成果是否满足需要。 |
-| **Coordinator · 项目协调者** | 对齐本项目的目标、分工与交付，协调项目成员。 |
-| **Agent · 项目成员** | 在自己的固定工位接收输入、维护当前行动、完成工作，把成果写回项目。 |
-| **Rooter · 环境维护者** | 维护本机安装、共享入口与运行连接；它拥有独立的安装级工位。 |
+| Core、Guide、公共规则、项目母版、Rooter 公共说明 | 本仓库，作为完整 System 一起更新 |
+| Workflow、Skill、Tool | [PAOE-Libraries 私有仓库](https://github.com/xiangscream/PAOE-Libraries)，保持原件独立（需要本人权限） |
+| 项目业务与成果 | 各独立项目自行维护，按项目安排配置远端 |
+| 本机配置、凭据、Contact/Runtime 绑定、消息与工位历史 | 保留本机，不进入 System 公共仓库 |
 
-工位是 Agent 长期工作的落脚点：入口说明身份与资源位置，TODO 保存当前行动，邮件与通知保存输入和处理记录。**会话是一次运行，工位让工作延续。**
+先保存并提交本机改动，再 fetch 和比较差异；冲突按原件合并，保留人工内容。GitHub 版本已发布与本机已采用分别记录，不能用一次 push 代替运行或 Agent 消费验收。
 
-## 一件工作怎样持续推进
+## 新安装
 
-**提出目标 → 回到工位 → 查方法或找同事 → 执行并保存成果 → 交付 → 继续主线**
+在 Windows、Python 3.10 及以上环境，从 System 根目录执行：
 
-例如，让 Agent 整理一份长期研究：研究材料和结论保存在项目库；Agent 从共享库寻找合适的方法，在自己的工位记录下一步。下次打开原生应用时，它沿入口读回当前行动，继续处理同一份研究。
+```text
+python Core/portable.py plan
+python Core/portable.py init --workflow-root <已有Workflow库绝对路径> --skill-root <已有Skill库绝对路径>
+python Core/portable.py doctor
+python -X utf8 -B Core/code/personal-agent-os/scripts/paos.py --installation-file Core/config/local/installation.json health
+```
 
-成员之间可以留信；配置好运行入口后，还可以请求原生提醒。**消息已保存、提醒已受理、Agent 已读取、任务已完成，是分别需要确认的事实。**
+库须已由其正常工具初始化；System 不复制或改造它们。初始化只创建本机配置和空安装数据，不创建 Project、Home、原生会话或 CAT 服务。已有 Rooter 可显式传 `--rooter-home <现有Home绝对路径>`。
 
-## 你可以怎样使用它
+## 旧机器升级
 
-- **Obsidian / Markdown 编辑器**：阅读和维护项目资料、成果与共享方法，从系统说明库进入各部分。
-- **Agent 原生应用**：直接与 Codex、OpenCode 等应用里的成员一起工作，让它从自己的工位接续。
-- **可选画板**：浏览项目与成员，查看工位和项目入口；连接独立 CAT 后，可围绕主题开展圆桌讨论。
+按 [UPGRADE](UPGRADE.md) 采用固定版本，保留本机 Registry、Rooter/项目工位、TODO、消息、绑定、STOP、独立 Libraries 和业务历史。不能直接用公开旧 main 或整包覆盖生产目录。
 
-这些入口围绕同一批原件工作。画板关闭后，项目资料与工位仍然保留；讨论形成的结论应写回项目正文。
+发布包不含本机实例数据；PROJECTS 是中性入口，目标机器用现有生成器重建自己的页面。已配置、命令可运行和实际 Agent 接续分别验收。
 
-<details>
-<summary>看看画板原型</summary>
+## 版本与复现
 
-![PAOE 画板原型：项目成员节点与工位详情](front/board-polished.png)
+`VERSION` 标识 System 版本，`SOURCE.lock.json` 固定 Core 源提交和树。完整 System 是一个 Git 树，Core 是普通文件，不依赖 submodule 或嵌套 Git。
 
-图片来自 WorkBuddy 原型，用于说明交互形态。当前接入版读取 Portable 的真实登记和工位，具体界面与 CAT 操作以目标电脑验证为准。见[画板说明](front/README.md)。
+```text
+python release.py build --ref system-v0.2.0 --output <输出目录>
+python release.py verify <发布ZIP>
+```
 
-</details>
-
-## 从哪里开始
-
-先在本机准备安装，再选择一个真实项目和它的成员。**取得代码包与方法资产后，还需要配置本机项目、工位和运行入口。**
-
-| 你现在想做什么 | 从这里进入 |
-| --- | --- |
-| 第一次安装、检查环境 | [快速开始](docs/setup/QUICKSTART.md) |
-| 理解各层关系和事实归属 | [系统架构](ARCHITECTURE.md) |
-| 配置独立系统说明库、连接分散项目 | [本机配置指导](docs/setup/PAOE-CENTRAL-CORE-DISTRIBUTED-PROJECTS.md) · [System Vault 工具](docs/setup/SYSTEM-VAULT-TOOL.md) |
-| 阅读共享流程与专业方法 | [Workflow](libraries/workflow/README.md) · [Skill](libraries/skill/README.md) |
-| 打开可选画板 | [画板使用说明](front/README.md) |
-| 学习或参与开发 | [学习路线](LEARNING-BASELINE.md) · [代码地图](code/personal-agent-os/docs/CODE-MAP.md) |
-| 换电脑或选择迁入资料 | [迁移说明](MIGRATION-NOTES.md) |
-
-PAOE 当前面向个人电脑上的长期 Agent 工作。基础文件操作可独立使用；原生提醒、画板和 CAT 按需要配置。现有 CLI 与配置中保留的 `paos` / `PAOS_*` 是兼容性标识，使用方法见[快速开始](docs/setup/QUICKSTART.md#名称与开发入口)。
+发布工具从精确 Git 提交读取文件，固定归档顺序、时间和权限；同一 tag 构建两次应得到相同 ZIP SHA-256。

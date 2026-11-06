@@ -1,0 +1,37 @@
+# PAOS Portable — Agent 工作底座
+
+正常入口是 `scripts/paos.py`。项目与工位读取直接使用本机登记和文件，
+不需要旧 Core HTTP 服务；CAT 和显式原生提醒是外部运行通道。
+
+## 先读什么
+
+开发先读 `docs/DEVELOPMENT-PRINCIPLES.md`。Agent 公共运行正文在 System 的 `Project-Template/AGENTS.md` 母本公共区，
+实际项目使用自己的生效 AGENTS。专业方法从独立 Libraries 登记根检索；
+具体 System 操作按需查 System/Guide，源码不复制第二套运行规则。
+
+## 代码边界
+
+- `paos_registry.py`：唯一 `paos-project-registry/v1` 项目定位原件；显式 `project register` 只创建五字段登记，不覆盖、不合成旧项目管理状态。正常读取始终只读。
+- `paos.py`：参数、调用既有模块、输出结果。仅 CAT 使用本文件的 HTTP 客户端。Project 登记写入只经 registry，Home 写入仍经各自 writer。
+- `paos_home.py`、`paos_workstation.py`：固定工位定位和文件；Rooter 是安装级工位。
+- `paos_todo.py`：现行 `paos-todo/v4`，Pinned 自由 Markdown + Current 小字段 + Tasks checkbox；只有 Home 的合法写者修改。
+- `paos_mail.py`、`paos_notice.py`、`paos_attention_service.py`：持久输入与处理事实；不再生成第二份 Workbench 当前页。
+- `paos_library.py`：Workflow/Skill 索引、搜索与使用记录；正文是方法，不是硬状态机。
+- Contact / runtime injection：显式本机绑定与一次提醒；不从迁入的 Project 旧字段恢复原生会话。
+
+不再提供旧 `session`、`coordinator`、`workbench`、`tips` HTTP 代理和
+`project progress-update`。用户要求/项目概览不再作为 CLI 需要维护的字段。
+历史数据未被此代码变更删除。尚存未使用旧模块按实际调用继续裁减，不恢复旧服务来补接口。
+
+## 验证
+
+在包根或任意工作目录执行：
+
+```text
+python code/personal-agent-os/scripts/verify.py
+```
+
+Core verification covers portable setup, file-backed state, native adapter contracts and Python syntax.
+不是原系统 Dashboard 的七道门，也不是生产工位、原生模型或 Windows Desktop 采用证明。
+
+仅改本次具名代码与材料。真实项目、工位、凭据和生产服务不因测试被更改。
