@@ -86,7 +86,7 @@ class SystemReleaseTests(unittest.TestCase):
 
     def installation(self):
         system = self.temp/'fresh system'
-        for directory in ('Core','Guide','Project-Template','rooter'):
+        for directory in ('Core','Guide','Project-Template','rooter','CAT'):
             shutil.copytree(ROOT/directory,system/directory,
                 ignore=shutil.ignore_patterns('.git','__pycache__','node_modules','local','data'))
         for name in ('PROJECTS.md','RESOURCES.md'):
