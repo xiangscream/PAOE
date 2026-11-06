@@ -5,7 +5,7 @@ title: Runtime 接班与在途外部写入
 description: 换会话保持责任与成果连续，明确外部副作用的完成、停止或接管。
 tags: runtime, handoff, external-write
 status: active
-version: 10
+version: 11
 ---
 
 # Runtime 接班与在途外部写入
@@ -32,9 +32,9 @@ version: 10
 压缩时机沿当前项目 `AGENTS.md` 的公共运行区。使用当前登记的服务、sessionID和实际目录。首次使用或版本变化时核同版CLI/OpenAPI；当前API v2用`session.compact`，不是v1的`summarize`。
 
 1. 本人保存Current、当前原输入、成果和在途写入状态，明确由谁执行压缩。维护者收到保存结果后接着操作，不再等本人自行压缩。
-2. 维护者核原session的运行与待处理输入，在工具完成点执行`opencode api session.compact --param sessionID=<原ID> --data '{}'`。该操作沿原会话模型；已运行的任务在下一安全点处理，不停止共享server。
+2. 维护者先核是否已有自动或手动压缩完成；已完成就接恢复，不为重走计划再压一次。确需压缩时，核原session的运行与待处理输入，在工具完成点执行`opencode api session.compact --param sessionID=<原ID> --data '{}'`。该操作沿原会话模型；已运行的任务在下一安全点处理，不停止共享server。
 3. 返回受理只表示请求入队。核`session.compaction.ended`事件或原生context中的压缩消息完成；失败查原错误，回执不明先查原请求，不重复提交。
-4. 沿既有Mail/Contact交还一次，给出固定ENTRY、必要指南、Current及本批原件的准确路径。本人实际重读正文，以当前页和成果纠正摘要中的旧目标、旧等待，再做下一项可执行动作；只有真实依赖才等待。
+4. 沿既有Mail/Contact交还一次，说明实际完成或失败，给出固定ENTRY、必要指南、Current及本批原件的准确路径。入口定位是正常交接信息，不用笼统的“继续”替代。本人实际重读正文，以当前页和成果纠正摘要中的旧目标、旧等待，再做下一项可执行动作；只有真实依赖才等待。
 5. 核本人当前页和实际接续后收口。原历史仍由Harness保留，不为压缩复制全量聊天或另建一套交接台账。
 
 接口说明见[OpenCode V2压缩](https://dev.opencode.ai/v2/docs/compaction/)及[API参考](https://dev.opencode.ai/v2/docs/api)。同版参数以实际安装为准。
