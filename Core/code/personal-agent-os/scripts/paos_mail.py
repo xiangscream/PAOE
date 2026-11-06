@@ -694,11 +694,16 @@ def dispatch_status(
             for recipient_id in dispatch.get("recipients") or []
         }
     for recipient_id in dispatch.get("recipients") or []:
+        archive_root = root
         if resolved_homes is not None:
+            resolved = resolved_homes.get(str(recipient_id)) or {}
             path = (
-                Path(str((resolved_homes.get(str(recipient_id)) or {}).get("home_path") or ""))
+                Path(str(resolved.get("home_path") or ""))
                 / "mailbox"
                 / f"{message_id}.md"
+            )
+            archive_root = Path(
+                str(resolved.get("project_root") or path.parents[1])
             )
         else:
             path = _mail_path(root, str(recipient_id), message_id)
@@ -706,7 +711,7 @@ def dispatch_status(
             (expected_files.get(str(recipient_id)) or {}).get("sha256") or ""
         )
         if not path.is_file():
-            archived = read_mail_archive(root, str(recipient_id), message_id)
+            archived = read_mail_archive(archive_root, str(recipient_id), message_id)
             if archived is not None:
                 state = "archived"
                 actual_sha = ""

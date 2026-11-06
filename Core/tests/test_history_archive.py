@@ -55,8 +55,22 @@ class HistoryArchiveTests(unittest.TestCase):
         (records / '3002.json').write_text(
             json.dumps(self.project, ensure_ascii=False), encoding='utf-8'
         )
+        self.other_vault = self.root / 'other-project'
+        self.other_project = {
+            'schema': 'paos-project-registry/v1',
+            'id': '2001',
+            'root_path': str(self.other_vault),
+            'homes': ['2001-s009'],
+            'coordinator_home_id': '2001-s009',
+        }
+        (records / '2001.json').write_text(
+            json.dumps(self.other_project, ensure_ascii=False), encoding='utf-8'
+        )
         for sid in ('3002-s001', '3002-s002'):
             self.make_home(self.vault / 'Workstations' / sid, sid, '3002')
+        self.make_home(
+            self.other_vault / 'Workstations' / '2001-s009', '2001-s009', '2001'
+        )
         self.make_home(self.rooter, 'rooter-001', '')
         self.env = patch.dict(os.environ, {
             'HOME': str(self.root),
@@ -239,6 +253,44 @@ class HistoryArchiveTests(unittest.TestCase):
         self.assertEqual(replay_states['3002-s001'], 'already_delivered')
         self.assertEqual(replay_states['3002-s002'], 'delivered')
         self.assertTrue((mailbox / 'msg-partial-002.md').is_file())
+
+    def test_cross_project_archive_marker_blocks_sender_replay(self):
+        history = self.root / 'cross-history'
+        args = (
+            'attention', 'send', '3002', '--to', '2001-s009',
+            '--sender-kind', 'agent', '--sender-id', '3002-s001',
+            '--subject', '跨项目历史', '--body', '跨项目正文。',
+            '--message-id', 'msg-cross-001',
+        )
+        sent = self.call(*args)[1]
+        target_mail = self.other_vault / 'Workstations/2001-s009/mailbox/msg-cross-001.md'
+        self.assertTrue(target_mail.is_file())
+        target_home = self.other_vault / 'Workstations/2001-s009'
+        notice_id = list_notices(target_home)['items'][0]['notice_id']
+        self.call('attention', 'read', '2001', '2001-s009', notice_id)
+        self.call(
+            'attention', 'handle', '2001', '2001-s009', notice_id,
+            '--resolution', '跨项目已处理', '--action-ref', 'Works/cross.md',
+        )
+        self.call(
+            'attention', 'archive-input', '2001', '2001-s009',
+            '--message-id', 'msg-cross-001', '--history-root', str(history),
+        )
+        self.assertFalse(target_mail.exists())
+        self.assertTrue(
+            (target_home / 'mailbox/.archived/msg-cross-001.json').is_file()
+        )
+        replay = self.call(*args)[1]
+        self.assertFalse(target_mail.exists())
+        self.assertEqual(list_notices(target_home)['count'], 0)
+        self.assertEqual(
+            replay['notices']['external_routes'][0]['mail_state'], 'archived'
+        )
+        read = self.call(
+            'attention', 'history-read', '--history-root', str(history),
+            '--agent-id', '2001-s009', '--message-id', 'msg-cross-001',
+        )[1]
+        self.assertEqual(read['notice']['state'], 'handled')
 
     def test_direct_notice_can_move_and_be_read_by_notice_id(self):
         source = self.root / 'incoming-direct.md'

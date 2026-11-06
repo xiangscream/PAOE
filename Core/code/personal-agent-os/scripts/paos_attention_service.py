@@ -205,8 +205,24 @@ def _deliver_external_mail_copy(
     home_path = Path(str(home_ref["home_path"]))
     recipient_id = str(home_ref["home_id"])
     target_mailbox = home_path / "mailbox"
-    target_mailbox.mkdir(parents=True, exist_ok=True)
     mail_path = target_mailbox / f"{message_id}.md"
+    target_root = Path(
+        str(home_ref.get("project_root") or home_path.parents[1])
+    )
+    archived = read_mail_archive(target_root, recipient_id, message_id)
+    if archived is not None:
+        return {
+            "recipient": recipient_id,
+            "home_kind": str(home_ref["home_kind"]),
+            "project_id": str(home_ref.get("project_id") or ""),
+            "mail_path": str(mail_path),
+            "mail_state": "archived",
+            "history_root": str(archived.get("history_root") or ""),
+            "notice_id": "",
+            "notice_state": "",
+            "created": False,
+        }
+    target_mailbox.mkdir(parents=True, exist_ok=True)
     mail_text = _render_mail(
         message_id=message_id,
         project_id=str(project.get("id") or ""),
@@ -1684,10 +1700,15 @@ def read_history_input(
             notice_listing = list_notices(home_path)
         except NoticeProblem:
             notice_listing = {"items": []}
+        legacy_refs = {
+            message_id,
+            f"legacy-mail-file:{message_id}",
+            f"legacy-mail-file:{message_id}.md",
+        }
         for item in notice_listing.get("items") or []:
             if (
                 item.get("source_kind") == "mail"
-                and item.get("source_ref") == message_id
+                and item.get("source_ref") in legacy_refs
             ):
                 result["notice"] = read_notice(
                     home_path, str(item.get("notice_id") or "")
