@@ -58,6 +58,14 @@ class BoardTests(unittest.TestCase):
                     objective=f"维护项目 {project}", next_action="读取已交原件",
                     tasks=[{"id": "T-001", "title": "接续原件", "state": "doing"}]))
         self.board = Board(self.install)
+        self.front_dist = self.base / "compiled-ui"
+        (self.front_dist / "assets").mkdir(parents=True)
+        (self.front_dist / "index.html").write_text('<title>POE 工作台</title><script src="./assets/app.js"></script>', encoding="utf-8")
+        (self.front_dist / "assets/app.js").write_text('document.title="POE 工作台";', encoding="utf-8")
+        (self.front_dist / "assets/app.css").write_text('body{color:#234}', encoding="utf-8")
+        static_patch = patch("front.paos_front_server.DIST", self.front_dist)
+        static_patch.start()
+        self.addCleanup(static_patch.stop)
 
     def test_v4_and_registered_project_not_old_machine_defaults(self):
         with patch.dict(os.environ, {"PAOS_INSTALLATION_FILE": "missing-old-install.json",
@@ -145,7 +153,7 @@ class BoardTests(unittest.TestCase):
             data = json.load(response)
         self.assertEqual(data["coordinator"], "1001-s001")
         with urlopen(origin + "/") as response:
-            self.assertIn("PAOS 画板", response.read().decode("utf-8"))
+            self.assertIn("POE 工作台", response.read().decode("utf-8"))
         request = Request(origin + "/api/room", data=json.dumps(
             {"title": "只测未配置", "members": ["1001-s001", "1001-s002"]}).encode(),
             headers={"Content-Type": "application/json"})

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import mimetypes
 import os
 import re
 from pathlib import Path
@@ -22,14 +23,7 @@ from urllib.error import HTTPError, URLError
 
 PACKAGE = Path(__file__).resolve().parents[1]
 STATIC = Path(__file__).resolve().parent
-CAT_FILES = {"/cat": ("cat.html", "text/html"), "/cat/": ("cat.html", "text/html"),
-             "/cat.css": ("cat.css", "text/css"), "/cat.mjs": ("cat.mjs", "text/javascript"),
-             "/cat-state.mjs": ("cat-state.mjs", "text/javascript"),
-             "/cat-content.mjs": ("cat-content.mjs", "text/javascript"),
-             "/cat-components.mjs": ("cat-components.mjs", "text/javascript"),
-             "/vendor/markdown-it-15.0.3.mjs": ("vendor/markdown-it-15.0.3.mjs", "text/javascript"),
-             "/cat-vendor/vue.mjs": ("vendor/vue-3.5.45.mjs", "text/javascript"),
-             "/cat-vendor/daisyui.css": ("vendor/daisyui-5.7.50.css", "text/css")}
+DIST = STATIC / "dist"
 sys.path.insert(0, str(PACKAGE / "code" / "personal-agent-os" / "scripts"))
 
 from paos_attention_service import AttentionServiceProblem, read_home_state
@@ -585,25 +579,42 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _workbench_file(self, url) -> bool:
+        if url.path == "/cat/":
+            self.send_response(302)
+            self.send_header("Location", "/cat" + ("?" + url.query if url.query else ""))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return True
+        page = url.path in {"/", "/index.html", "/cat"}
+        if page:
+            path = DIST / "index.html"
+        elif url.path.startswith("/assets/"):
+            path = (DIST / unquote(url.path.lstrip("/"))).resolve()
+            try:
+                path.relative_to((DIST / "assets").resolve())
+            except ValueError:
+                self._json({"ok": False, "error": "未找到页面资源。", "error_code": "not_found"}, 404)
+                return True
+        else:
+            return False
+        if not path.is_file():
+            self._json({"ok": False, "error": "工作台页面资源缺失，请核安装包。" if page else "未找到页面资源。",
+                        "error_code": "frontend_assets_missing" if page else "not_found"}, 503 if page else 404)
+            return True
+        data = path.read_bytes()
+        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        self.send_response(200)
+        self.send_header("Content-Type", content_type + ("; charset=utf-8" if content_type.startswith("text/") else ""))
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(data)
+        return True
+
     def do_GET(self):
         url = urlsplit(self.path)
-        if url.path in CAT_FILES:
-            name, content_type = CAT_FILES[url.path]
-            data = (STATIC / name).read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", content_type + "; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-cache")
-            self.end_headers()
-            self.wfile.write(data)
-            return
-        if url.path in {"/", "/index.html"}:
-            data = (STATIC / "index.html").read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+        if self._workbench_file(url):
             return
         try:
             parts = url.path.strip("/").split("/")
@@ -728,7 +739,7 @@ def main(argv: list[str] | None = None) -> int:
     except READ_ERRORS as exc:
         print(json.dumps(error_view(exc), ensure_ascii=False), file=sys.stderr)
         return 2
-    print(f"PAOS 画板：http://127.0.0.1:{server.server_port}/", flush=True)
+    print(f"POE 工作台：http://127.0.0.1:{server.server_port}/", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
