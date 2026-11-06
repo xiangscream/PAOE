@@ -1,0 +1,21 @@
+name: System baseline checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Core contracts
+        run: python Core/code/personal-agent-os/scripts/verify.py
+      - name: Optional board helpers
+        run: node --test Core/tests/board-ui.test.mjs
+      - name: System release and isolated upgrade contracts
+        run: python -B -m unittest discover -s tests -v

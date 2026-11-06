@@ -1,0 +1,20 @@
+# Machine configuration, state and private Homes are not release source.
+/Core/.git/
+/Core/config/local/
+/Core/data/
+/Core/config/installation.json
+/Core/config/library-roots.json
+/Core/config/AGENT-NUMBERS.*
+/rooter/*
+!/rooter/README.md
+/.obsidian/
+/.backups/
+/Learning/NOTES/*
+!/Learning/NOTES/README.md
+**/__pycache__/
+*.pyc
+*.pyo
+*.log
+node_modules/
+dist/
+build/
