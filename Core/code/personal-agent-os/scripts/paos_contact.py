@@ -602,8 +602,15 @@ def parse_team_payload(payload: dict[str, Any], lines: list[str]) -> None:
         todo = agent.get("workstation_todo") or {}
         runtime = agent.get("runtime_contact") or {}
         staff = agent.get('staff_number')
+        identity_label = agent.get('identity_id') or (
+            "registered Home"
+            if agent.get("membership_basis") == "fixed_workstation"
+            else "active session"
+            if agent.get("membership_basis") == "active_session"
+            else "unregistered"
+        )
         lines.append(
-            f"- {agent['agent_id']} ({agent.get('identity_id') or 'unregistered'})"
+            f"- {agent['agent_id']} ({identity_label})"
             + (f" [员工号={staff}]" if staff else "")
             + f"[session={agent.get('session_status') or 'unknown'}]"
         )

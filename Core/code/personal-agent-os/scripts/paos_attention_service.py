@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 import uuid
 from datetime import datetime, timezone
@@ -43,8 +44,11 @@ from paos_mail import (
     expected_mail_sha,
     _sha256_text,
     list_mail,
+    mail_archive_files,
     parse_mail_frontmatter,
     read_mail,
+    read_mail_archive,
+    record_mail_archive,
     send_mail,
     _atomic_create,
     _render_mail,
@@ -57,6 +61,7 @@ from paos_notice import (
     input_identity,
     list_notices,
     mark_notice_read,
+    notice_archive_files,
     organize_notice,
     notice_id_for,
     persist_mail_dispatch_notices,
@@ -200,8 +205,24 @@ def _deliver_external_mail_copy(
     home_path = Path(str(home_ref["home_path"]))
     recipient_id = str(home_ref["home_id"])
     target_mailbox = home_path / "mailbox"
-    target_mailbox.mkdir(parents=True, exist_ok=True)
     mail_path = target_mailbox / f"{message_id}.md"
+    target_root = Path(
+        str(home_ref.get("project_root") or home_path.parents[1])
+    )
+    archived = read_mail_archive(target_root, recipient_id, message_id)
+    if archived is not None:
+        return {
+            "recipient": recipient_id,
+            "home_kind": str(home_ref["home_kind"]),
+            "project_id": str(home_ref.get("project_id") or ""),
+            "mail_path": str(mail_path),
+            "mail_state": "archived",
+            "history_root": str(archived.get("history_root") or ""),
+            "notice_id": "",
+            "notice_state": "",
+            "created": False,
+        }
+    target_mailbox.mkdir(parents=True, exist_ok=True)
     mail_text = _render_mail(
         message_id=message_id,
         project_id=str(project.get("id") or ""),
@@ -1332,6 +1353,371 @@ def list_project_mail_inputs(
         "unresolved_count": pending_count + unmapped_count,
         "items": items,
     }
+
+def _history_root(project_root: Path, value: str | Path) -> Path:
+    raw = str(value or "").strip()
+    if not raw:
+        raise AttentionServiceProblem(
+            "attention_history_root_required",
+            "必须显式指定项目库外的历史批次目录。",
+        )
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        raise AttentionServiceProblem(
+            "attention_history_root_not_absolute",
+            "历史批次目录必须是绝对路径。",
+            {"history_root": raw},
+        )
+    candidate = candidate.resolve()
+    project_root = project_root.resolve()
+    try:
+        candidate.relative_to(project_root)
+    except ValueError:
+        return candidate
+    raise AttentionServiceProblem(
+        "attention_history_root_inside_project",
+        "历史批次目录不能位于当前项目库内；请显式指定库外批次。",
+        {"history_root": str(candidate), "project_root": str(project_root)},
+    )
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _history_plan(
+    *,
+    project_root: Path,
+    history_root: Path,
+    home_id: str,
+    sources: Iterable[Path],
+) -> list[dict[str, Any]]:
+    planned: list[dict[str, Any]] = []
+    for source in sources:
+        source = Path(source)
+        try:
+            relative = source.resolve().relative_to(project_root)
+        except ValueError as exc:
+            raise AttentionServiceProblem(
+                "attention_history_source_outside_project",
+                "待归档文件不在当前项目库内；拒绝移动。",
+                {"agent_id": home_id, "path": str(source)},
+            ) from exc
+        if relative.parts[:2] != ("Workstations", home_id):
+            raise AttentionServiceProblem(
+                "attention_history_source_outside_home",
+                "只能归档当前 Home 的 Mail/Notice 文件。",
+                {"agent_id": home_id, "path": str(source)},
+            )
+        destination = history_root / relative
+        if source.is_file() and destination.is_file():
+            if _file_sha256(source) != _file_sha256(destination):
+                raise AttentionServiceProblem(
+                    "attention_history_conflict",
+                    "历史批次中已有同路径但内容不同的文件；拒绝覆盖。",
+                    {"source": str(source), "destination": str(destination)},
+                )
+            state = "cleanup_verified_copy"
+        elif source.is_file():
+            state = "move"
+        elif destination.is_file():
+            state = "already_moved"
+        else:
+            raise AttentionServiceProblem(
+                "attention_history_source_missing",
+                "待归档原件与历史副本都不存在。",
+                {"source": str(source), "destination": str(destination)},
+            )
+        planned.append(
+            {
+                "source": source,
+                "destination": destination,
+                "relative_path": str(relative),
+                "state": state,
+            }
+        )
+    return planned
+
+
+def _move_history_file(source: Path, destination: Path) -> str:
+    source_sha = _file_sha256(source)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        if not destination.is_file() or _file_sha256(destination) != source_sha:
+            raise AttentionServiceProblem(
+                "attention_history_conflict",
+                "历史批次目标在移动前发生冲突；未删除源文件。",
+                {"source": str(source), "destination": str(destination)},
+            )
+    else:
+        temporary = destination.with_name(
+            f".{destination.name}.part-{uuid.uuid4().hex}"
+        )
+        try:
+            shutil.copy2(source, temporary)
+            if _file_sha256(temporary) != source_sha:
+                raise AttentionServiceProblem(
+                    "attention_history_copy_mismatch",
+                    "历史副本校验失败；未删除源文件。",
+                    {"source": str(source), "destination": str(destination)},
+                )
+            os.replace(temporary, destination)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+    try:
+        source.unlink()
+    except OSError as exc:
+        raise AttentionServiceProblem(
+            "attention_history_source_unlink_failed",
+            "历史副本已落盘但源文件未删除；请按进度现场处理。",
+            {
+                "source": str(source),
+                "destination": str(destination),
+                "cause": str(exc),
+            },
+        ) from exc
+    return "moved"
+
+
+def archive_input(
+    *,
+    home_ref: dict[str, Any],
+    history_root: str | Path,
+    message_id: str = "",
+    notice_id: str = "",
+) -> dict[str, Any]:
+    """Move one already-read, handled input to an explicit external batch.
+
+    The source files stay in place until each copy has been verified. Mail
+    dispatch remains at its original path so same-message-id reentry still
+    resolves the immutable envelope and cannot create a second delivery.
+    """
+    ref = _assert_home_current(home_ref)
+    message_id = str(message_id or "").strip()
+    notice_id = str(notice_id or "").strip()
+    if bool(message_id) == bool(notice_id):
+        raise AttentionServiceProblem(
+            "attention_history_target_required",
+            "必须且只能指定 --message-id 或 --notice-id 之一。",
+        )
+    project_root = Path(str(ref["project_root"])).resolve()
+    home_path = Path(str(ref["home_path"])).resolve()
+    batch = _history_root(project_root, history_root)
+    home_id = str(ref["home_id"])
+
+    if message_id:
+        existing_archive = read_mail_archive(project_root, home_id, message_id)
+        if existing_archive is not None:
+            return {
+                "schema": "paos-history-archive/v1",
+                "home": ref,
+                "history_root": str(existing_archive.get("history_root") or ""),
+                "message_id": message_id,
+                "notice_id": "",
+                "state": "already_archived",
+                "files": [],
+            }
+
+    sources: list[Path] = []
+    selected_notice: dict[str, Any]
+    source_ref = ""
+    if message_id:
+        mail_item = _find_mail_item(
+            root=project_root,
+            agent_id=home_id,
+            lookup=message_id,
+        )
+        _read_mail_item_file(mail_item, agent_id=home_id)
+        source_ref = _mail_item_source_ref(mail_item)
+        notice_id = _mail_notice_id(home_ref=ref, source_ref=source_ref)
+        selected_notice = read_notice(home_path, notice_id)
+        if (
+            selected_notice.get("source_kind") != "mail"
+            or selected_notice.get("source_ref") != source_ref
+        ):
+            raise AttentionServiceProblem(
+                "attention_history_notice_mismatch",
+                "Mail 对应的 Notice identity 不一致，拒绝归档。",
+                {"message_id": message_id, "source_ref": source_ref},
+            )
+        sources.extend(mail_archive_files(project_root, home_id, message_id))
+    else:
+        selected_notice = read_notice(home_path, notice_id)
+        if selected_notice.get("source_kind") == "mail":
+            raise AttentionServiceProblem(
+                "attention_history_mail_requires_message_id",
+                "Mail 来源的 Notice 必须用 --message-id 同时归档 Mail 与 Notice。",
+                {"notice_id": notice_id},
+            )
+
+    if selected_notice.get("read") is not True:
+        raise AttentionServiceProblem(
+            "attention_history_unread",
+            "Notice 尚未标记已读，拒绝移出活跃读面。",
+            {"notice_id": notice_id},
+        )
+    if selected_notice.get("state") != "handled":
+        raise AttentionServiceProblem(
+            "attention_history_unhandled",
+            "Notice 尚未处理完成，拒绝移出活跃读面。",
+            {"notice_id": notice_id, "state": selected_notice.get("state")},
+        )
+    if not notice_id:
+        notice_id = str(selected_notice.get("notice_id") or "")
+    sources.extend(notice_archive_files(home_path, notice_id))
+    if not sources:
+        raise AttentionServiceProblem(
+            "attention_history_source_missing",
+            "没有找到可归档的 Mail/Notice 原件。",
+            {"message_id": message_id, "notice_id": notice_id},
+        )
+
+    planned = _history_plan(
+        project_root=project_root,
+        history_root=batch,
+        home_id=home_id,
+        sources=sources,
+    )
+    moved: list[dict[str, str]] = []
+    for index, item in enumerate(planned):
+        try:
+            if item["state"] == "already_moved":
+                state = "already_moved"
+            elif item["state"] == "cleanup_verified_copy":
+                item["source"].unlink()
+                state = "cleanup_verified_copy"
+            else:
+                state = _move_history_file(item["source"], item["destination"])
+        except AttentionServiceProblem as problem:
+            remaining = [
+                str(entry["relative_path"]) for entry in planned[index:]
+            ]
+            raise AttentionServiceProblem(
+                problem.code,
+                str(problem),
+                {
+                    **dict(problem.details or {}),
+                    "moved": moved,
+                    "remaining": remaining,
+                    "history_root": str(batch),
+                },
+            ) from problem
+        except OSError as exc:
+            remaining = [
+                str(entry["relative_path"]) for entry in planned[index:]
+            ]
+            raise AttentionServiceProblem(
+                "attention_history_move_failed",
+                "历史归档中断；源文件未以删除掩盖失败。",
+                {
+                    "failed": planned[index]["relative_path"],
+                    "cause": str(exc),
+                    "moved": moved,
+                    "remaining": remaining,
+                    "history_root": str(batch),
+                },
+            ) from exc
+        moved.append(
+            {
+                "relative_path": item["relative_path"],
+                "destination": str(item["destination"]),
+                "state": state,
+            }
+        )
+
+    if message_id:
+        try:
+            record_mail_archive(
+                project_root,
+                home_id,
+                message_id,
+                history_root=str(batch),
+            )
+        except MailProblem as problem:
+            raise AttentionServiceProblem(
+                problem.code,
+                str(problem),
+                {
+                    **dict(problem.details or {}),
+                    "moved": moved,
+                    "remaining": [],
+                    "history_root": str(batch),
+                },
+            ) from problem
+
+    return {
+        "schema": "paos-history-archive/v1",
+        "home": ref,
+        "history_root": str(batch),
+        "message_id": message_id,
+        "notice_id": notice_id,
+        "state": "already_archived" if all(
+            item["state"] == "already_moved" for item in planned
+        ) else "archived",
+        "files": moved,
+    }
+
+
+def read_history_input(
+    *,
+    history_root: str | Path,
+    agent_id: str,
+    message_id: str = "",
+    notice_id: str = "",
+) -> dict[str, Any]:
+    """Read moved Mail/Notice by explicit batch root; never edits the batch."""
+    message_id = str(message_id or "").strip()
+    notice_id = str(notice_id or "").strip()
+    if bool(message_id) == bool(notice_id):
+        raise AttentionServiceProblem(
+            "attention_history_target_required",
+            "必须且只能指定 --message-id 或 --notice-id 之一。",
+        )
+    batch = Path(str(history_root or "")).expanduser()
+    if not batch.is_absolute() or not batch.is_dir():
+        raise AttentionServiceProblem(
+            "attention_history_root_invalid",
+            "历史批次目录不存在或不是绝对路径。",
+            {"history_root": str(batch)},
+        )
+    home_path = batch / "Workstations" / agent_id
+    if not home_path.is_dir():
+        raise AttentionServiceProblem(
+            "attention_history_home_missing",
+            "历史批次中没有该 Agent 的 Home 路径。",
+            {"history_root": str(batch), "agent_id": agent_id},
+        )
+    result: dict[str, Any] = {
+        "schema": "paos-history-read/v1",
+        "history_root": str(batch),
+        "agent_id": agent_id,
+        "home_path": str(home_path),
+    }
+    if message_id:
+        result["mail"] = read_mail(batch, agent_id, message_id)
+        try:
+            notice_listing = list_notices(home_path)
+        except NoticeProblem:
+            notice_listing = {"items": []}
+        legacy_refs = {
+            message_id,
+            f"legacy-mail-file:{message_id}",
+            f"legacy-mail-file:{message_id}.md",
+        }
+        for item in notice_listing.get("items") or []:
+            if (
+                item.get("source_kind") == "mail"
+                and item.get("source_ref") in legacy_refs
+            ):
+                result["notice"] = read_notice(
+                    home_path, str(item.get("notice_id") or "")
+                )
+                break
+    else:
+        result["notice"] = read_notice(home_path, notice_id)
+    return result
+
 
 def send_mail_source(
     *,

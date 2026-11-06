@@ -26,10 +26,10 @@
 │       │   ├── opencode.py # OpenCode 可执行入口
 │       │   └── wake_entry.py # 共用当前安装与本人工位校验
 │       └── Contact     # 如已配置，原生接收/STOP 等入口
-└── Archive/            # 退出当前视野但保留追溯的资料
+└── Archive/            # 可选历史导航；大批历史正文放在 Vault 外
 ```
 
-`Inbox`、`Materials`、`Works`、`Decisions`、`Workstations`、`Archive` 已是当前 `workstation init` 的标准目录；其他目录、源码库、`.git`、`.obsidian` 及业务文件按实际需要保留。当前业务正文可有多篇，只有各主题的“最新/正式”结论应有唯一权威原件。可选 `HISTORY.md` 仅作完成成果短索引，不复制 TODO 或 Git 历史。
+`Inbox`、`Materials`、`Works`、`Decisions`、`Workstations`、`Archive` 已是当前 `workstation init` 的标准目录；其他目录、源码库、`.git`、`.obsidian` 及业务文件按实际需要保留。当前业务正文可有多篇，只有各主题的“最新/正式”结论应有唯一权威原件。可选 `HISTORY.md` 仅作完成成果短索引，不复制 TODO 或 Git 历史。项目可在 Vault 旁建立 `<项目名>-History`，或采用安装指定的历史盘；INDEX 指向该库外位置，具体归位与历史规则见 [Project 文件与 Git](../Guide/guide-project-work-world.md#库外历史)。初始化产生 Archive 目录不代表应把全量历史堆在活跃库内。
 
 | 母版 | 原件职责 | 已有项目怎样更新 |
 | --- | --- | --- |

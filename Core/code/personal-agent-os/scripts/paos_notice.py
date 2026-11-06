@@ -198,6 +198,21 @@ def _organization_update_path(
     )
 
 
+def notice_archive_files(home_path: Path, notice_id: str) -> list[Path]:
+    """Return the Notice original and its existing handling/read/action files."""
+    home_path = Path(home_path)
+    paths = [
+        notice_path(home_path, notice_id),
+        _handled_record_path(home_path, notice_id),
+        _read_record_path(home_path, notice_id),
+    ]
+    for sidecar in (".organization", ".activation"):
+        directory = notice_dir(home_path) / sidecar / notice_id
+        if directory.is_dir():
+            paths.extend(sorted(path for path in directory.rglob("*") if path.is_file()))
+    return [path for path in paths if path.is_file()]
+
+
 def _read_organization_updates(
     home_path: Path,
     notice_id: str,

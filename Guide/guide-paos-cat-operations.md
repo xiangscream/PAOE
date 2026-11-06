@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 85
+version: 86
 ---
 
 # PAOS 操作指南
@@ -108,6 +108,8 @@ Core/bridge 的独立运行由 Rooter 和运行维护者处理；本人接收器
 
 CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。Room与同事从现行Project/联系入口取得。
 
+同一项目的集中协作用一个主题房间，使用真实 Home 入座。成员可以主动提问题、认领小批次并直接相互回复，不等主持人逐轮点名。先说清正在修改的范围，共享文件指定一位合成人；需要持续行动时写本人 TODO，成果与共同结论回项目 INDEX/正文。只有需要同桌接话或行动的新信息才提醒，避免空 ACK 和重复公告。明确收口后转旁听或关闭房间，历史仍可读。
+
 | 目的 | 命令 |
 | --- | --- |
 | 看房间概况 | `paos cat show <room>` |
@@ -152,6 +154,14 @@ Rooter Current 使用 `paos attention rooter-todo-update --set objective=... --s
 已发布字段合同：`updated_at` 属 Current；`todo-update` 与 `rooter-todo-update` 实际改动才刷新它，no-op 不刷新。任务层 `source_refs`（原输入）与 `acceptance_refs`（已接受成果的具体版本）随**完整 `todo-write` 载荷**维护，**不放入 Current**；只写本人当前页，不新增 `task-id`。字段可空，按需维护，不补写全部历史任务或造演示任务；引用存在不等于 PASS，PASS 仍按实际验证。Project 与 Rooter 的 `todo-update`、`todo-write` 都可带 `--expected-fingerprint` 做过期守卫；全量写入前从本人最新 TODO 原始字节取得 SHA-256，失配则回读并重新整理候选。
 
 需要改 Tasks 或恢复破损 TODO 时，在独立候选载荷文件中保留正确元数据和原责任，再经 `todo-write` 写回。按任务ID定位目标条目，写回后核该条目的勾选状态、result和成果引用；不再另写任务 `state` 字段。`trusted` 只说明格式可读，下一步按 Current 引用的项目状态和原件校准。不要先覆盖唯一 TODO 再校验。Notice 的展示归档不代处理，也不删除正文。只写本人当前页；任务完成和历史索引按工作循环归位。
+
+Tasks 引用采用缩进列表，不能把路径写在 `Source refs` 的同一行。例如：
+
+```markdown
+- [ ] **T-示例** · 本次行动
+  - **Source refs:**
+    - Materials/原始输入.md
+```
 
 ### 明确接手一条输入
 
