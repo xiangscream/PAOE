@@ -156,6 +156,23 @@ class HeadlessTests(unittest.TestCase):
         self.assertIn('project_agents', str(missing.get('details', {})))
 
 
+    def test_orient_read_rejects_unreadable_home_rules(self):
+        (self.vault / 'AGENTS.md').write_text('# Project rules', encoding='utf-8')
+        (self.vault / 'INDEX.md').write_text('# Project index', encoding='utf-8')
+        rules = self.vault / 'Workstations' / '3002-s001' / 'AGENTS.md'
+        rules.write_bytes(b'\xff')
+
+        code, result = self.call('orient', '3002', '3002-s001', '--read', ok=False)
+
+        self.assertNotEqual(code, 0)
+        self.assertEqual(result['error_code'], 'orient_read_source_unavailable')
+        errors = result['details']['documents']
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0]['path'], str(rules))
+        self.assertEqual(errors[0]['state'], 'unreadable')
+        self.assertTrue(errors[0]['error'])
+        self.assertEqual(rules.read_bytes(), b'\xff')
+
     def test_health_is_local_not_runtime_success(self):
         r=self.call('health')[1]
         self.assertEqual(r['backend'],'local_files')
