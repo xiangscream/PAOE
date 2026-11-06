@@ -15,7 +15,17 @@ jobs:
           persist-credentials: false
       - name: Core contracts
         run: python Core/code/personal-agent-os/scripts/verify.py
-      - name: Optional board helpers
-        run: node --test Core/tests/board-ui.test.mjs
+      - name: CAT content and recovery helpers
+        run: node --test Core/tests/cat-content.test.mjs Core/tests/cat-state.test.mjs Core/tests/cat-drafts.test.mjs
+      - name: Install locked frontend build dependencies
+        working-directory: Core/front/ui
+        run: npm ci --no-audit --no-fund
+      - name: Frontend contracts and production build
+        working-directory: Core/front/ui
+        run: |
+          npm test
+          npm run build
+      - name: Compiled frontend matches source
+        run: git diff --exit-code -- Core/front/dist
       - name: System release and isolated upgrade contracts
         run: python -B -m unittest discover -s tests -v
