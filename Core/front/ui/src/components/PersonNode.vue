@@ -28,9 +28,9 @@ const props = defineProps<{ data: { agent: AgentSummary; openLibrary?: (id: stri
     <div class="action" :title="actionText(props.data.agent)">{{ actionText(props.data.agent) }}</div>
     <div class="foot">
       <span class="status-dot" :class="{ warn: isPaused(props.data.agent), off: props.data.agent.ok === false || props.data.agent.registered === false }"></span>
-      <span>{{ statusLabel(props.data.agent) }}</span>
-      <span v-if="props.data.agent.pending_notices">· {{ props.data.agent.pending_notices }} 待处理</span>
-      <span v-if="props.data.agent.tasks?.doing">· {{ props.data.agent.tasks?.doing }} 进行中</span>
+      <span class="status-label" :title="statusLabel(props.data.agent)">{{ statusLabel(props.data.agent) }}</span>
+      <span v-if="props.data.agent.pending_notices" class="status-count">· {{ props.data.agent.pending_notices }} 待处理</span>
+      <span v-if="props.data.agent.tasks?.doing" class="status-count">· {{ props.data.agent.tasks?.doing }} 进行中</span>
     </div>
   </div>
 </template>
