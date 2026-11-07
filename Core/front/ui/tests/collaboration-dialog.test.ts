@@ -72,4 +72,27 @@ describe('collaboration request continuity',()=>{
     expect(api.collaborate).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('本地保存失败')
   })
+
+  it('explicitly ending local waiting keeps the uncertain id and starts a blank request without another POST',async()=>{
+    vi.mocked(api.collaborate).mockResolvedValue({ok:false,state:'unknown'})
+    vi.mocked(api.collaborationFact).mockResolvedValue({ok:true,state:'not_found'})
+    let wrapper=open()
+    await button(wrapper,'发起协作').trigger('click');await flushPromises()
+    const original=vi.mocked(api.collaborate).mock.calls[0][0].message_id
+    await button(wrapper,'核对原记录').trigger('click');await flushPromises()
+    await button(wrapper,'结束本地等待').trigger('click')
+    expect(saved().messageId).toBe(original)
+    await button(wrapper,'确认结束，开始新主题').trigger('click')
+    expect(api.collaborate).toHaveBeenCalledTimes(1)
+    expect(saved().messageId).not.toBe(original)
+    expect(saved().draft.topic).toBe('')
+    expect(saved().draft.note).toBe('')
+    expect(saved().endedRequests[0].messageId).toBe(original)
+    wrapper.unmount();wrappers=[]
+    wrapper=open();await flushPromises()
+    expect(wrapper.text()).toContain(original)
+    expect(wrapper.text()).toContain('保存结果仍未确认')
+    expect(wrapper.get('#topic').attributes('disabled')).toBeUndefined()
+    expect(api.collaborate).toHaveBeenCalledTimes(1)
+  })
 })

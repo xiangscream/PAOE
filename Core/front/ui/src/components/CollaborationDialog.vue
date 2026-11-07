@@ -26,6 +26,14 @@ interface SavedSession {
   state: CollabState | ''
   text: string
   result: CollabResult | null
+  endedRequests: EndedRequest[]
+}
+
+interface EndedRequest {
+  messageId: string
+  topic: string
+  mode: CollabMode
+  roomId?: string
 }
 
 const draft = ref<CollaborationDraft>({ ...props.initial })
@@ -39,6 +47,8 @@ const lastResult = ref<CollabResult | null>(null)
 const restored = ref(false)
 const resumedRoomId = ref('')
 const ownerProject = ref(props.project)
+const endedRequests = ref<EndedRequest[]>([])
+const endingWaiting = ref(false)
 
 const contactable = computed(() => props.agents.filter(agent => agent.can_contact !== false && agent.ok !== false))
 const otherParticipants=computed(()=>(draft.value.participants || []).filter(id=>id!==draft.value.provider && id!==draft.value.receiver))
@@ -68,6 +78,7 @@ function saveSession(phase: SavedSession['phase']): boolean {
       state: state.value,
       text: text.value,
       result: lastResult.value,
+      endedRequests: endedRequests.value,
     }
     localStorage.setItem(storageKey.value, JSON.stringify(value))
     storageError.value = ''
@@ -103,6 +114,7 @@ function resetTo(value: CollaborationDraft) {
   lastResult.value = null
   restored.value = false
   resumedRoomId.value = ''
+  endingWaiting.value = false
   saveSession('draft')
 }
 
@@ -111,6 +123,8 @@ function restoreOrReset() {
   ownerProject.value = props.project
   const saved = loadSession()
   if (saved === undefined) return
+  endedRequests.value = saved?.endedRequests || []
+  endingWaiting.value = false
   const unfinished = saved && saved.project === props.project &&
     (saved.phase === 'submitting' || saved.state === 'unknown' || saved.state === 'partial')
   if (unfinished) {
@@ -211,6 +225,12 @@ function startNew() {
   resetTo({ ...draft.value, topic: '', note: '', reference: null })
 }
 
+function endWaiting() {
+  if (state.value !== 'unknown' || submitting.value || checking.value) return
+  endedRequests.value.push({ messageId: messageId.value, topic: draft.value.topic, mode: draft.value.mode, roomId: lastResult.value?.room_id })
+  startNew()
+}
+
 function attachReference(reference: Reference) {
   if (locked.value) return
   draft.value.reference = reference
@@ -240,7 +260,7 @@ onMounted(() => {
     </header>
     <div class="body">
       <div v-if="restored" class="banner">
-        已恢复未完成的请求。请先核对原记录；核对前不能改对象或方式，也不会自动重发。
+        已恢复未完成的请求。可核对原记录，或明确结束本地等待并保留原编号；不会自动重发。
       </div>
       <div v-if="storageError" class="banner error">{{ storageError }}</div>
 
@@ -326,7 +346,20 @@ onMounted(() => {
         </button>
         <button v-if="lastResult?.room_id" class="btn ghost" :disabled="submitting || checking" @click="emit('open-room', lastResult!.room_id!)">打开房间</button>
         <button v-if="state === 'saved' || state === 'failed'" class="btn ghost" @click="startNew">新建另一个请求</button>
+        <button v-if="state === 'unknown' && !submitting" class="btn ghost" :disabled="checking" @click="endingWaiting = true">结束本地等待</button>
       </div>
+
+      <section v-if="endingWaiting && state === 'unknown'" class="card" aria-label="结束协作等待">
+        <p>原请求可能已保存，仍会保留编号。结束等待会清空本次主题和说明，服务器记录不会被撤销，也不会重发。</p>
+        <div class="row"><button class="btn ghost" @click="endingWaiting = false">继续核对</button><button class="btn" :disabled="checking" @click="endWaiting">确认结束，开始新主题</button></div>
+      </section>
+      <details v-if="endedRequests.length" class="card">
+        <summary>已结束等待的请求（{{ endedRequests.length }}）</summary>
+        <p v-for="item in endedRequests" :key="item.messageId" style="overflow-wrap: anywhere">
+          {{ item.topic }} · {{ item.mode }} · 保存结果仍未确认<br>请求编号：{{ item.messageId }}
+          <button v-if="item.roomId" class="btn ghost" @click="emit('open-room', item.roomId)">查看原房间</button>
+        </p>
+      </details>
 
       <details v-if="messageId" class="hint" style="margin-top: 8px">
         <summary>请求详情</summary>

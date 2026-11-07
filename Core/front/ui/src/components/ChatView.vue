@@ -11,7 +11,7 @@ const timeFormat = new Intl.DateTimeFormat('zh-CN', {hour:'2-digit',minute:'2-di
 const endpoint = (id, suffix='') => '/api/room/' + encodeURIComponent(id) + suffix;
 function newConversation(id) {
   return {id,title:'',status:'open',members:[],messages:[],cursor:0,draft:'',reply:'',pending:null,
-          feedback:'',outcome:'',loaded:false,expanded:{},position:null,atLatest:true,firstUnseen:''};
+          endedRequests:[],feedback:'',outcome:'',loaded:false,expanded:{},position:null,atLatest:true,firstUnseen:''};
 }
 async function request(path, options={}) {
   const controller = new AbortController();
@@ -31,12 +31,13 @@ export default {
   components:{CatIcon, MessageContent},
   data() {
     return {rooms:[],people:[],roomStates:{},roomId:'',filter:'',roomScope:'open',relatedOnly:true,sidebar:false,roomsLoading:true,roomListRequest:0,
-      seatLabels,selection:0,stream:null,storageError:'',active:true,
+      seatLabels,selection:0,stream:null,storageError:'',active:true,endingWaiting:false,
       connection:'正在连接',connectionError:false,unseen:0,highlight:'',checking:false,atLatest:true,
       searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false};
   },
   computed: {
     state() { return this.roomStates[this.roomId] || null; },
+    outsideProject() { return this.relatedOnly && !this.roomsLoading && this.state?.loaded && !this.rooms.some(room=>room.id===this.roomId); },
     reply() { return this.state?.messages.find(message=>message.id===this.state.reply); },
     searchResults() { return findMessages(this.state?.messages || [],this.searchQuery); },
     searchStatus() {
@@ -62,20 +63,17 @@ export default {
     },
   },
   watch: {
-    initialRoom(id) {if(id)this.selectRoom(id);},
+    initialRoom(id) {if(id && !this.roomsLoading)this.selectRoom(id);},
     relatedOnly() {this.refresh();},
     async project(value,previous) {
+      if(previous)this.clearRoom();
       try {
         await this.loadRooms();
-        if(!this.active)return;
+        if(!this.active || value!==this.project)return;
         if(!previous){if(!this.roomId)await this.openInitialRoom();return;}
         const first=this.rooms.find(room=>room.status==='open') || this.rooms[0];
         if(first)await this.selectRoom(first.id);
-        else {
-          this.stopStream();this.selection++;this.roomId='';this.connection='已连接';
-          const url=new URL(location.href);url.searchParams.delete('room');history.replaceState(null,'',url);
-          this.$emit('room-selected','');
-        }
+        else this.connection='已连接';
       }catch(error){this.connection=error.message;this.connectionError=true;}
     },
     searchQuery() {this.searchIndex=0;this.highlight='';this.locateSearchResult();},
@@ -191,7 +189,7 @@ export default {
       state.pending=null;state.draft='';state.reply='';state.outcome='saved';
       state.feedback='已核到原消息 · 消息已保存，提醒结果以原回执为准。';
       this.persistDraft(state);
-      if(this.state===state)this.$nextTick(this.resizeComposer);
+      if(this.state===state){this.endingWaiting=false;this.$nextTick(this.resizeComposer);}
     },
     async loadRooms() {
       const generation=++this.roomListRequest;
@@ -204,8 +202,15 @@ export default {
       }finally {if(generation===this.roomListRequest)this.roomsLoading=false;}
     },
     async loadPeople() { this.people=checked(await request('/api/cat/people')).people; },
+    clearRoom() {
+      this.stopStream();this.selection++;this.roomId='';this.endingWaiting=false;
+      document.title='CAT · POE';
+      const url=new URL(location.href);url.searchParams.delete('room');history.replaceState(null,'',url);
+      this.$emit('room-selected','');
+    },
     async selectRoom(id) {
       if(!this.active)return;
+      this.endingWaiting=false;
       this.sidebar=false;
       if (this.roomId===id && this.state?.loaded) return;
       if(this.state){this.state.position=this.readingPosition();this.state.atLatest=this.atLatest;}
@@ -268,10 +273,11 @@ export default {
     },
     async refresh() {
       if(this.refreshing)return;
+      const project=this.project;
       this.refreshing=true;
       try {
         await Promise.all([this.loadRooms(),this.loadPeople()]);
-        if(!this.active)return;
+        if(!this.active || project!==this.project)return;
         if(this.state) {
           const state=this.state,room=checked(await request(endpoint(state.id)));
           Object.assign(state,{title:room.title,status:room.status,members:room.members,loaded:true},readPage(state,room.messages));
@@ -321,15 +327,24 @@ export default {
       }catch(error){state.feedback='核对未完成：'+error.message;}
       finally{this.checking=false;}
     },
+    endWaiting() {
+      const state=this.state;
+      if(!state?.pending || state.pending.sending || this.checking)return;
+      state.endedRequests.push({...state.pending});
+      state.pending=null;state.draft='';state.reply='';state.outcome='';
+      state.feedback='已结束本地等待。原消息仍可能稍后出现，编号保留在下方。';
+      this.endingWaiting=false;this.persistDraft(state);this.$nextTick(this.resizeComposer);
+    },
     openCreator() {this.sidebar=false;this.$emit('new-discussion');},
   },
   async mounted() {
+    const project=this.project;
     document.addEventListener('visibilitychange',this.onVisibility);
     window.addEventListener('resize',this.resizeComposer);
     this.resizeComposer();
     try {
       await Promise.all([this.loadRooms(),this.loadPeople()]);
-      if(!this.active)return;
+      if(!this.active || project!==this.project)return;
       await this.openInitialRoom();
     }catch(error){this.connection='CAT暂不可用';this.connectionError=true;}
   },
@@ -375,6 +390,7 @@ export default {
         <button class="members-button" :disabled="!state?.loaded" :aria-label="state?.loaded?'查看 '+state.members.length+' 位同桌':'同桌详情'" @click="openMembers"><cat-icon name="people"></cat-icon><span v-if="state?.loaded">{{state.members.length}}<span class="desktop-only"> 位同桌</span></span><span v-else class="desktop-only">同桌</span></button>
       </div>
     </header>
+    <div v-if="outsideProject" class="connection-banner"><div><strong>正在查看链接指定的其他项目讨论</strong><span>此房间不在当前项目的相关列表中。</span></div><button class="secondary-button small" @click="relatedOnly=false">查看全部讨论</button></div>
     <div v-if="searchOpen" class="message-search" role="search">
       <label class="search-field"><cat-icon name="search"></cat-icon><input ref="messageSearch" type="search" maxlength="200" v-model="searchQuery" aria-label="搜索本房间消息" placeholder="搜索本房间消息…" @keydown.enter.prevent="stepSearch($event.shiftKey?-1:1)" @keydown.esc.prevent="closeSearch"></label>
       <span class="search-count" role="status" aria-live="polite">{{searchStatus}}</span>
@@ -410,7 +426,16 @@ export default {
           <textarea id="message-input" ref="input" :value="state?.draft || ''" @input="setDraft($event.target.value)" rows="1" maxlength="20000" :disabled="!canCompose" :placeholder="placeholder" @keydown="onComposerKey"></textarea>
           <div class="composer-footer"><span class="identity"><span class="human-dot"></span>你 · Human</span><div class="send-actions"><span class="keyboard-hint">Ctrl / ⌘ + Enter</span><button class="primary-button send-button" type="submit" :disabled="!canSend"><span>{{state?.pending?.sending?'发送中':'发送'}}</span><cat-icon name="send"></cat-icon></button></div></div>
         </form>
-        <div v-if="state?.feedback" class="send-feedback"><p :class="state.outcome" role="status" aria-live="polite">{{state.feedback}}</p><button v-if="state.pending && !state.pending.sending" class="text-button" :disabled="checking" @click="checkPending">{{checking?'核对中…':'核对原消息'}}</button></div>
+        <div v-if="state?.feedback" class="send-feedback"><p :class="state.outcome" role="status" aria-live="polite">{{state.feedback}}</p><template v-if="state.pending && !state.pending.sending"><button class="text-button" :disabled="checking" @click="checkPending">{{checking?'核对中…':'核对原消息'}}</button><button class="text-button" :disabled="checking" @click="endingWaiting=true">结束本地等待</button></template></div>
+        <section v-if="endingWaiting && state?.pending" class="waiting-confirm" aria-label="结束消息等待">
+          <p>原消息可能已保存，仍会保留编号。结束等待会清空本次输入，服务器消息不会被撤销，也不会重发。</p>
+          <button class="text-button" @click="endingWaiting=false">继续核对</button>
+          <button class="secondary-button small" :disabled="checking" @click="endWaiting">确认结束，写新消息</button>
+        </section>
+        <details v-if="state?.endedRequests.length" class="ended-requests">
+          <summary>已结束等待的消息（{{state.endedRequests.length}}）</summary>
+          <p v-for="item in state.endedRequests" :key="item.id">{{item.id}} · {{state.messages.some(message=>message.id===item.id)?'已读到原消息':'保存结果仍未确认'}}<br>{{item.body}}</p>
+        </details>
       </div>
     </section>
   </main>
@@ -589,7 +614,11 @@ button:focus-visible,a:focus-visible,select:focus-visible,[tabindex]:focus-visib
 .keyboard-hint{font-size:10px;color:color-mix(in oklch,var(--color-base-content) 40%,transparent)}
 .send-button{min-height:32px;padding:7px 12px;border-radius:8px;font-size:12px;gap:8px}
 .send-button .icon{width:14px;height:14px}
-.send-feedback{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 2px 0}
+.send-feedback{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:8px 2px 0}
+.waiting-confirm,.ended-requests{margin-top:10px;padding:10px 12px;border-radius:9px;background:var(--color-base-200);font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.waiting-confirm p,.ended-requests p{margin:0 0 8px;white-space:pre-wrap}
+.waiting-confirm button+button{margin-left:12px}
+.ended-requests{max-height:150px;overflow:auto}
 .send-feedback p{margin:0;font-size:12px;line-height:1.5;color:color-mix(in oklch,var(--color-base-content) 64%,transparent)}
 .send-feedback p.failed,.send-feedback p.unknown{color:var(--color-warning)}
 .send-feedback p.saved{color:color-mix(in oklch,var(--color-success) 70%,var(--color-base-content))}

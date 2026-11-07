@@ -189,6 +189,14 @@ function openChatRoomFromQuery() {
   tab.value=room || location.pathname.startsWith('/cat')?'chat':query.get('view')==='project'?'project':'board'
 }
 
+function changeProject() {
+  initialChatRoom.value = ''
+  const url = new URL(location.href)
+  url.searchParams.delete('room')
+  history.replaceState(null, '', url)
+  void load(project.value)
+}
+
 function onNodeContext(payload: { id: string }) {
   openLibrary(payload.id)
 }
@@ -328,7 +336,9 @@ watch(tab, value=>{
   url.pathname=value==='chat'?'/cat':'/'
   url.searchParams.delete('view')
   if(value==='chat') {
+    document.title='CAT · POE'
     if(initialChatRoom.value)url.searchParams.set('room',initialChatRoom.value)
+    else url.searchParams.delete('room')
   } else {
     url.searchParams.delete('room')
     if(value==='project')url.searchParams.set('view','project')
@@ -348,7 +358,7 @@ onMounted(() => {
   <div class="app-shell">
     <header class="topbar">
       <div class="brand"><span class="brand-symbol">P</span><span>POE<small>本地协作空间</small></span></div>
-      <select v-model="project" class="btn project-select" :disabled="collabOpen || libraryOpen" aria-label="选择项目" @change="load(project)">
+      <select v-model="project" class="btn project-select" :disabled="collabOpen || libraryOpen" aria-label="选择项目" @change="changeProject">
         <option v-for="item in projects" :key="item.id" :value="item.id">{{ item.id }} {{ item.name || '' }}</option>
       </select>
       <nav class="nav-tabs" aria-label="主导航">
