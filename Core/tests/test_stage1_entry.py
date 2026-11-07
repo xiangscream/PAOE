@@ -287,7 +287,8 @@ class StageOneEntryTests(unittest.TestCase):
 
     def test_windows_multiline_body_help_is_public(self):
         for argv in (["agent", "send", "--help"], ["mail", "send", "--help"],
-                     ["attention", "send", "--help"], ["agent", "chat", "--help"]):
+                     ["attention", "send", "--help"], ["agent", "chat", "--help"],
+                     ["mail", "reply", "--help"]):
             out = io.StringIO()
             with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as raised:
                 paos.main(["--installation-file", str(self.f.install), *argv])
