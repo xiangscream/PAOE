@@ -16,7 +16,7 @@ jobs:
       - name: Core contracts
         run: python Core/code/personal-agent-os/scripts/verify.py
       - name: CAT content and recovery helpers
-        run: node --test Core/tests/cat-content.test.mjs Core/tests/cat-state.test.mjs Core/tests/cat-drafts.test.mjs
+        run: node --test Core/tests/cat-content.test.mjs Core/tests/cat-ui.test.mjs Core/tests/cat-drafts.test.mjs
       - name: Install locked frontend build dependencies
         working-directory: Core/front/ui
         run: npm ci --no-audit --no-fund
