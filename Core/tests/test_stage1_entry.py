@@ -6,7 +6,9 @@ mocked; no model, production Home or real CAT service is required.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -282,6 +284,19 @@ class StageOneEntryTests(unittest.TestCase):
         b = self.run_generated_entry(home, "library", "search", "only-in-b",
                                      "--kind", "workflow", env=env)
         self.assertEqual(b["match_count"], 0)
+
+    def test_windows_multiline_body_help_is_public(self):
+        for argv in (["agent", "send", "--help"], ["mail", "send", "--help"],
+                     ["attention", "send", "--help"], ["agent", "chat", "--help"]):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as raised:
+                paos.main(["--installation-file", str(self.f.install), *argv])
+            self.assertEqual(raised.exception.code, 0)
+            text = " ".join(out.getvalue().split())
+            self.assertIn("Windows .cmd", text)
+            self.assertIn("UTF-8 @FILE", text)
+            self.assertIn("Python entry", text)
+
 
 if __name__ == "__main__":
     unittest.main()
