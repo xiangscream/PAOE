@@ -6,7 +6,9 @@ mocked; no model, production Home or real CAT service is required.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -76,8 +78,9 @@ class StageOneEntryTests(unittest.TestCase):
         self.assertIn("# Fixture", text)
         self.assertIn(normalized_path(self.guide / "README.md"), normalized_path(text))
         self.assertNotIn("wf-agent-work-cycle.md", text)
-        self.assertNotIn("C:/Users/remo", normalized_path(text))
-        self.assertNotIn("/home/remo", text)
+        # The actual interpreter location is legitimate and must be the one
+        # rendered from this test's runtime, not a guessed/hard-coded host.
+        self.assertIn(normalized_path(sys.executable), normalized_path(text))
         self.assertNotIn("## 工作约定", text)
         self.assertIn("当前工作与项目", text)
 
@@ -281,6 +284,20 @@ class StageOneEntryTests(unittest.TestCase):
         b = self.run_generated_entry(home, "library", "search", "only-in-b",
                                      "--kind", "workflow", env=env)
         self.assertEqual(b["match_count"], 0)
+
+    def test_windows_multiline_body_help_is_public(self):
+        for argv in (["agent", "send", "--help"], ["mail", "send", "--help"],
+                     ["attention", "send", "--help"], ["agent", "chat", "--help"],
+                     ["mail", "reply", "--help"]):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as raised:
+                paos.main(["--installation-file", str(self.f.install), *argv])
+            self.assertEqual(raised.exception.code, 0)
+            text = " ".join(out.getvalue().split())
+            self.assertIn("Windows .cmd", text)
+            self.assertIn("UTF-8 @FILE", text)
+            self.assertIn("Python entry", text)
+
 
 if __name__ == "__main__":
     unittest.main()

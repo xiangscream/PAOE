@@ -38,15 +38,21 @@ class CatBoardTests(unittest.TestCase):
 
     def test_page_and_assets_are_readable_without_cat_or_project_writes(self):
         with patch.object(self.board, "cat", side_effect=AssertionError("static read must not join or send")):
-            for path, content_type in (("/cat", "text/html"), ("/cat.css", "text/css"),
-                                       ("/cat.mjs", "text/javascript"), ("/cat-state.mjs", "text/javascript"),
-                                       ("/cat-vendor/vue.mjs", "text/javascript"), ("/cat-vendor/daisyui.css", "text/css"),
-                                       ("/cat-content.mjs", "text/javascript"), ("/cat-components.mjs", "text/javascript"),
-                                       ("/vendor/markdown-it-15.0.3.mjs", "text/javascript")):
+            for path, content_type in (("/", "text/html"), ("/cat", "text/html"), ("/cat/", "text/html"),
+                                       ("/assets/app.js", "javascript"), ("/assets/app.css", "text/css")):
                 with self.subTest(path=path), urlopen(self.origin + path) as response:
                     self.assertIn(content_type, response.headers["Content-Type"])
                     self.assertTrue(response.read())
         self.assertEqual(self.call("/cat/../installation.json")[0], 404)
+        self.assertEqual(self.call("/assets/%2e%2e/%2e%2e/installation.json")[0], 404)
+
+    def test_missing_ui_does_not_block_file_api_or_create_files(self):
+        (self.fixture.front_dist / "index.html").unlink()
+        status, missing = self.call("/cat")
+        self.assertEqual(status, 503)
+        self.assertEqual(missing["error_code"], "frontend_assets_missing")
+        self.assertTrue(self.call("/api/dashboard?project=1001")[1]["ok"])
+        self.assertFalse((self.fixture.front_dist / "index.html").exists())
 
     def test_rooms_roster_and_incremental_messages_forward_only_their_read(self):
         with patch.object(self.board, "cat", return_value={"ok": True, "rooms": []}) as call:
@@ -58,6 +64,29 @@ class CatBoardTests(unittest.TestCase):
         with patch.object(self.board, "cat", return_value={"ok": True, "members": []}) as call:
             self.call("/api/room/room-one/members")
             call.assert_called_once_with(["members", "room-one"])
+
+    def test_related_rooms_use_registered_members_and_never_load_or_write_messages(self):
+        rooms = [{"id": "one"}, {"id": "two"}]
+        replies = [{"ok": True, "rooms": rooms},
+                   {"ok": True, "members": [{"home_id": "1001-s001"}, {"home_id": "human"}]},
+                   {"ok": True, "members": [{"home_id": "2001-s009"}]}]
+        with patch.object(self.board, "cat", side_effect=replies) as call:
+            status, value = self.call("/api/cat/rooms?project=1001")
+        self.assertEqual(status, 200)
+        self.assertEqual(value["rooms"], [rooms[0]])
+        self.assertEqual([c.args[0] for c in call.call_args_list],
+                         [["list"], ["members", "one"], ["members", "two"]])
+        with patch.object(self.board, "cat", side_effect=[replies[0], {"ok": False, "error_code": "unreachable"}]):
+            self.assertFalse(self.call("/api/cat/rooms?project=1001")[1]["ok"])
+
+    def test_invalid_collaboration_status_input_does_not_call_cli(self):
+        with patch.object(self.board, "cat") as cat, patch.object(self.board, "run_paos") as cli:
+            status, value = self.call("/api/collaboration?project=1001&mode=invalid&message_id=original")
+            self.assertEqual(status, 422)
+            self.assertEqual(value["error_code"], "collaboration_mode_invalid")
+            self.assertEqual(self.call("/api/collaboration?project=3002&mode=chat&message_id=original")[0], 422)
+        cat.assert_not_called()
+        cli.assert_not_called()
 
     def test_human_reply_uses_one_existing_join_and_one_original_send(self):
         replies = [
@@ -71,8 +100,9 @@ class CatBoardTests(unittest.TestCase):
         self.assertEqual(receipt["dispatch"], "queued")
         self.assertEqual(call.call_args_list[0].args[0], ["join", "room-one", "--home", "human", "--label", "Human"])
         self.assertEqual(call.call_args_list[1].args[0],
-            ["send", "room-one", "--from", "human", "--body", "回复原讨论",
+            ["send", "room-one", "--from", "human", "--body", "-",
              "--message-id", "same-id", "--reply-to", "original"])
+        self.assertEqual(call.call_args_list[1].kwargs["input_text"], "回复原讨论")
 
     def test_page_cannot_choose_an_agent_signature(self):
         with patch.object(self.board, "cat") as call:

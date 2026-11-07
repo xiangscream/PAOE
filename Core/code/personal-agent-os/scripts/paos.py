@@ -125,6 +125,15 @@ from paos_contact import (  # noqa: E402
 from paos_cat_cli import add_cat_parser, execute_cat  # noqa: E402
 PEERS_SCHEMA = "paos-peers/v2"
 
+BODY_HELP = (
+    "Markdown body, @FILE, or '-' for stdin. Windows .cmd: use a UTF-8 "
+    "@FILE for multiline content; programmatic multiline literals must call "
+    "the Python entry directly, not the batch file.")
+CAT_BODY_HELP = (
+    "CAT message body, @FILE, or '-' for stdin. Windows .cmd: use a UTF-8 "
+    "@FILE for multiline content; programmatic multiline literals must call "
+    "the Python entry directly, not the batch file.")
+
 
 from paos_orient import (
     _orient_source_root, _orient_library_roots, _orient_next_action,
@@ -3063,7 +3072,7 @@ def build_parser() -> argparse.ArgumentParser:
     recipients.add_argument("--to", action="append", help="Exact target Agent id; repeatable")
     recipients.add_argument("--broadcast", action="store_true")
     x.add_argument("--subject", required=True)
-    x.add_argument("--body", required=True, help="Markdown body, @FILE, or '-' for stdin")
+    x.add_argument("--body", required=True, help=BODY_HELP)
     x.add_argument(
         "--sender-kind",
         default="human",
@@ -3276,7 +3285,7 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument(
         "--body",
         required=True,
-        help="Markdown body, @FILE, or '-' for stdin",
+        help=BODY_HELP,
     )
     x.add_argument(
         "--sender-kind",
@@ -3299,7 +3308,7 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("project_id")
     x.add_argument("--room", required=True, help="CAT Room id with activation_owner=paos")
     x.add_argument("--to", required=True, help="Exact stable target Agent id")
-    x.add_argument("--body", required=True, help="CAT message body, @FILE, or '-' for stdin")
+    x.add_argument("--body", required=True, help=CAT_BODY_HELP)
     x.add_argument("--from-agent", help="Stable sender Agent id; omit for human")
     x.add_argument("--message-id", help="Stable idempotency key for CAT send + Agent activation")
     x.add_argument("--reply-to", help="Optional exact CAT Exchange id being replied to")
@@ -3411,7 +3420,7 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument(
         "--body",
         required=True,
-        help="Markdown body, @FILE, or '-' for stdin",
+        help=BODY_HELP,
     )
     x.add_argument(
         "--sender-kind",
@@ -3426,7 +3435,7 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("project_id")
     x.add_argument("agent_id")
     x.add_argument("in_reply_to")
-    x.add_argument("--body", required=True, help="Markdown body, @FILE, or '-' for stdin")
+    x.add_argument("--body", required=True, help=BODY_HELP)
     x.add_argument("--subject", help="Override the default Re: subject")
     x.add_argument("--message-id", help="Stable idempotency key for retry")
     x.add_argument("--root")

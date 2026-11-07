@@ -1,1 +1,3 @@
 * -text
+Core/front/dist/** -whitespace linguist-generated=true
+Core/front/THIRD-PARTY-NOTICES.md -whitespace linguist-generated=true

@@ -58,6 +58,14 @@ class BoardTests(unittest.TestCase):
                     objective=f"维护项目 {project}", next_action="读取已交原件",
                     tasks=[{"id": "T-001", "title": "接续原件", "state": "doing"}]))
         self.board = Board(self.install)
+        self.front_dist = self.base / "compiled-ui"
+        (self.front_dist / "assets").mkdir(parents=True)
+        (self.front_dist / "index.html").write_text('<title>POE 工作台</title><script src="./assets/app.js"></script>', encoding="utf-8")
+        (self.front_dist / "assets/app.js").write_text('document.title="POE 工作台";', encoding="utf-8")
+        (self.front_dist / "assets/app.css").write_text('body{color:#234}', encoding="utf-8")
+        static_patch = patch("front.paos_front_server.DIST", self.front_dist)
+        static_patch.start()
+        self.addCleanup(static_patch.stop)
 
     def test_v4_and_registered_project_not_old_machine_defaults(self):
         with patch.dict(os.environ, {"PAOS_INSTALLATION_FILE": "missing-old-install.json",
@@ -145,7 +153,7 @@ class BoardTests(unittest.TestCase):
             data = json.load(response)
         self.assertEqual(data["coordinator"], "1001-s001")
         with urlopen(origin + "/") as response:
-            self.assertIn("PAOS 画板", response.read().decode("utf-8"))
+            self.assertIn("POE 工作台", response.read().decode("utf-8"))
         request = Request(origin + "/api/room", data=json.dumps(
             {"title": "只测未配置", "members": ["1001-s001", "1001-s002"]}).encode(),
             headers={"Content-Type": "application/json"})
@@ -153,6 +161,241 @@ class BoardTests(unittest.TestCase):
             failure = json.load(response)
         self.assertFalse(failure["ok"])
         self.assertEqual(failure["error_code"], "cat_not_configured")
+
+
+    def test_http_layout_and_document_routes(self):
+        server = make_server(self.board, port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 3)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        origin = f"http://127.0.0.1:{server.server_port}"
+        with urlopen(origin + "/api/layout?project=1001") as response:
+            self.assertEqual(json.load(response)["layout"]["nodes"], {})
+        request = Request(origin + "/api/layout", method="PUT", data=json.dumps({
+            "project": "1001",
+            "layout": {"nodes": {"1001-s001": {"x": 4, "y": 5}},
+                       "viewport": {"x": 0, "y": 0, "zoom": 1}},
+        }).encode(), headers={"Content-Type": "application/json"})
+        with urlopen(request) as response:
+            self.assertEqual(json.load(response)["layout"]["nodes"]["1001-s001"]["y"], 5)
+        with urlopen(origin + "/api/document?project=1001&path=INDEX.md") as response:
+            self.assertIn("唯一口径", json.load(response)["body"])
+
+
+    def test_existing_room_reuses_room_and_does_not_create_second(self):
+        with patch.object(self.board, "cat", side_effect=[
+            {"ok": True, "room": {"id": "room-existing", "status": "open", "title": "续接",
+                                   "members": [{"home_id": "1001-s001"}, {"home_id": "human"}]}},
+            {"ok": True},
+            {"ok": True},
+            {"ok": True},
+            {"ok": True, "dispatch": "queued"},
+        ]) as call:
+            result = self.board.collaboration({
+                "project": "1001", "mode": "chat",
+                "members": ["1001-s001", "1001-s002"], "room_id": "room-existing",
+                "topic": "续接", "body": "继续", "message_id": "ui-existing-001",
+            })
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["room_id"], "room-existing")
+        commands = [item.args[0][0] for item in call.call_args_list]
+        self.assertNotIn("create", commands)
+        self.assertEqual(call.call_count, 5)
+
+    def test_paused_member_is_rejected_before_any_cli_call(self):
+        root = self.roots["1001"]
+        (root / "TEAM.md").write_text(
+            "# TEAM\n\n## 当前成员\n\n### 1001-s001\n- 成员状态：暂停保留\n- 职责：暂停\n",
+            encoding="utf-8")
+        with patch.object(self.board, "run_paos") as run:
+            with self.assertRaises(BoardProblem) as raised:
+                self.board.collaboration({
+                    "project": "1001", "mode": "mail", "members": ["1001-s001"],
+                    "topic": "拒绝", "body": "不应发送", "message_id": "ui-paused-001",
+                })
+        self.assertEqual(raised.exception.code, "member_paused")
+        self.assertEqual(run.call_count, 0)
+
+    def test_unknown_cli_outcome_is_not_failed(self):
+        with patch.object(self.board, "run_paos", return_value={
+                "ok": False, "error_code": "cli_output_invalid", "error": "bad receipt"}):
+            result = self.board.collaboration({
+                "project": "1001", "mode": "mail", "members": ["1001-s002"],
+                "topic": "未知", "body": "保留", "message_id": "ui-unknown-001",
+            })
+        self.assertEqual(result["state"], "unknown")
+
+    def test_notification_maps_each_real_mail_recipient(self):
+        with patch.object(self.board, "run_paos", return_value={
+                "ok": True, "reminders": [{"state": "native_accepted", "accepted": True}]}):
+            mail = self.board.collaboration({
+                "project": "1001", "mode": "mail", "members": ["1001-s002"],
+                "topic": "通知", "body": "正文", "message_id": "ui-notify-001", "remind": True,
+            })
+        self.assertEqual(mail["notification"], "accepted")
+        with patch.object(self.board, "run_paos", return_value={
+                "ok": True, "reminders": [{"state": "native_accepted", "accepted": True}]}):
+            no_remind = self.board.collaboration({
+                "project": "1001", "mode": "mail", "members": ["1001-s002"],
+                "topic": "不提醒", "body": "正文", "message_id": "ui-notify-002", "remind": False,
+            })
+        self.assertEqual(no_remind["notification"], "not_requested")
+        for accepted in (False, None):
+            with self.subTest(second_recipient=accepted), patch.object(self.board, "run_paos", return_value={
+                    "ok": True, "reminders": [{"state": "native_accepted", "accepted": True},
+                                               {"state": "network_unconfirmed" if accepted is None else "native_rejected", "accepted": accepted}]}):
+                mixed = self.board.collaboration({
+                    "project": "1001", "mode": "mail", "members": ["1001-s001", "1001-s002"],
+                    "topic": "部分提醒", "body": "正文", "message_id": "ui-mixed-reminder", "remind": True,
+                })
+                self.assertEqual(mixed["state"], "saved")
+                self.assertEqual(mixed["notification"], "partial")
+
+    def test_cat_http_error_without_status_is_unknown(self):
+        with patch.object(self.board, "cat", return_value={
+                "ok": False, "error_code": "http_error", "error": "500"}):
+            result = self.board.collaboration({
+                "project": "1001", "mode": "chat", "members": ["1001-s001", "1001-s002"],
+                "topic": "主题", "body": "正文", "message_id": "ui-http-001",
+            })
+        self.assertEqual(result["state"], "unknown")
+        self.assertEqual(result["phase"], "create")
+
+    def test_cat_custom_server_error_stays_unknown(self):
+        with patch.object(self.board, "cat", return_value={
+                "ok": False, "status": 500, "error_code": "internal_error", "error": "receipt unavailable"}):
+            result = self.board.collaboration({
+                "project": "1001", "mode": "chat", "members": ["1001-s001", "1001-s002"],
+                "topic": "主题", "body": "正文", "message_id": "ui-server-unknown",
+            })
+        self.assertEqual(result["state"], "unknown")
+
+    def test_existing_room_with_unrelated_member_is_rejected(self):
+        with patch.object(self.board, "cat", return_value={
+                "ok": True, "room": {"id": "room-a", "status": "open", "title": "不匹配", "members": [
+                    {"home_id": "1001-s001"}, {"home_id": "2001-s009"}]}}) as call:
+            with self.assertRaises(BoardProblem) as raised:
+                self.board.collaboration({
+                    "project": "1001", "mode": "chat",
+                    "members": ["1001-s001", "1001-s002"], "room_id": "room-a",
+                    "topic": "不匹配", "body": "正文", "message_id": "ui-room-mismatch",
+                })
+        self.assertEqual(raised.exception.code, "collaboration_room_mismatch")
+        self.assertFalse(any(item.args[0][0] == "create" for item in call.call_args_list))
+
+    def test_missing_mail_dispatch_is_not_found(self):
+        with patch.object(self.board, "run_paos", return_value={
+                "ok": False, "error_code": "mail_dispatch_missing", "error": "missing"}):
+            result = self.board.collaboration_status("1001", "mail", "missing-id")
+        self.assertEqual(result["state"], "not_found")
+
+    def test_dashboard_is_summary_and_agent_detail_has_full_text(self):
+        dashboard = self.board.dashboard("1001")
+        row = next(item for item in dashboard["agents"] if item["id"] == "1001-s001")
+        self.assertNotIn("todo", row)
+        self.assertNotIn("mails", row)
+        detail = self.board.agent("1001-s001")
+        self.assertIn("todo", detail)
+        self.assertIn("mails", detail)
+
+    def test_mail_collaboration_status_uses_real_status_command(self):
+        sent = self.board.collaboration({
+            "project": "1001", "mode": "mail", "members": ["1001-s002"],
+            "topic": "状态", "body": "核对保存", "message_id": "ui-status-001",
+        })
+        self.assertEqual(sent["state"], "saved")
+        status = self.board.collaboration_status("1001", "mail", "ui-status-001")
+        self.assertEqual(status["state"], "saved")
+        self.assertTrue(status["result"].get("ok"))
+
+    def test_mail_body_cli_special_forms_are_literal_user_text(self):
+        for index, body in enumerate(("@S006 请补充当前主题的资料。", "-")):
+            with self.subTest(body=body):
+                message_id = f"ui-literal-{index}"
+                sent = self.board.collaboration({
+                    "project": "1001", "mode": "mail", "members": ["1001-s002"],
+                    "topic": "保留原文", "body": body, "message_id": message_id,
+                })
+                self.assertEqual(sent["state"], "saved", sent)
+                original = self.roots["1001"] / "Workstations/1001-s002/mailbox" / f"{message_id}.md"
+                self.assertIn(body, original.read_text(encoding="utf-8"))
+
+
+    def test_team_fields_paused_registered_and_team_only_are_visible(self):
+        root = self.roots["1001"]
+        (root / "TEAM.md").write_text(
+            "# TEAM\n\n## 当前成员\n\n### 1001-s001\n"
+            "- 成员状态：在队\n- 职责：协调\n- 名称：一号\n- 个人介绍/专长：擅长把资料交给需要的同事\n\n"
+            "### 1001-s002\n- 成员状态：暂停保留，不是当前执行者\n- 职责：暂停岗位\n\n"
+            "### 9999-s999\n- 成员状态：在队\n- 职责：未登记同事\n- 名称：外部同事\n",
+            encoding="utf-8")
+        dashboard = self.board.dashboard("1001")
+        self.assertTrue(dashboard["team"]["path"].endswith("TEAM.md"))
+        self.assertIn("当前成员", dashboard["team"]["body"])
+        rows = {item["id"]: item for item in dashboard["agents"]}
+        self.assertEqual(rows["1001-s001"]["name"], "一号")
+        self.assertEqual(rows["1001-s001"]["description"], "擅长把资料交给需要的同事")
+        self.assertTrue(rows["1001-s001"]["can_contact"])
+        self.assertFalse(rows["1001-s002"]["can_contact"])
+        self.assertTrue(rows["1001-s002"]["registered"])
+        self.assertFalse(rows["9999-s999"]["registered"])
+        self.assertFalse(rows["9999-s999"]["can_contact"])
+        self.assertEqual(self.board.agent("1001-s001")["role"], "协调")
+
+    def test_layout_is_ui_only_and_does_not_touch_team_or_todo(self):
+        root = self.roots["1001"]
+        team_before = (root / "Workstations/1001-s001/TODO.md").read_bytes()
+        empty = self.board.layout("1001")
+        self.assertEqual(empty["layout"]["nodes"], {})
+        with self.assertRaises(BoardProblem):
+            self.board.save_layout("1001", {"nodes": {"1001-s001": {"x": "bad", "y": 1}}})
+        saved = self.board.save_layout("1001", {"nodes": {"1001-s001": {"x": 10, "y": 20}},
+                                                "viewport": {"x": 1, "y": 2, "zoom": 0.8}})
+        self.assertEqual(saved["layout"]["nodes"]["1001-s001"]["x"], 10)
+        self.assertEqual(self.board.layout("1001")["layout"]["viewport"]["zoom"], 0.8)
+        self.assertEqual(team_before, (root / "Workstations/1001-s001/TODO.md").read_bytes())
+        self.assertFalse((root / "TEAM.md").exists())
+
+    def test_document_and_resource_are_read_only_and_bounded(self):
+        root = self.roots["1001"]
+        doc = self.board.document("1001", "INDEX.md")
+        self.assertIn("唯一口径", doc["body"])
+        with self.assertRaises(BoardProblem):
+            self.board.document("1001", "../2001/INDEX.md")
+        resource = self.board.resource("workflow", "guide-working")
+        self.assertEqual(resource["resource"]["id"], "guide-working")
+        with self.assertRaises(BoardProblem):
+            self.board.resource("workflow", "not-registered")
+
+    def test_mail_collaboration_uses_human_sender_stable_id_and_remind_flag(self):
+        with patch.object(self.board, "run_paos", return_value={"ok": True, "activation": {"state": "accepted"}}) as run:
+            result = self.board.collaboration({
+                "project": "1001", "mode": "mail", "members": ["1001-s002"],
+                "topic": "补充资料", "body": "请查看参考", "message_id": "ui-fixed-001",
+                "remind": True,
+            })
+        self.assertEqual(result["state"], "saved")
+        args = run.call_args.args[0]
+        self.assertIn("--sender-kind", args)
+        self.assertIn("human", args)
+        self.assertIn("--remind", args)
+        self.assertIn("ui-fixed-001", args)
+
+    def test_chat_collaboration_partial_join_returns_room_id(self):
+        with patch.object(self.board, "cat", side_effect=[
+            {"ok": True, "room": {"id": "room-x"}},
+            {"ok": True},
+            {"ok": False, "status": 422, "error": "join failed", "error_code": "join_failed"},
+        ]):
+            result = self.board.collaboration({
+                "project": "1001", "mode": "chat", "members": ["1001-s001", "1001-s002"],
+                "topic": "主题", "body": "正文", "message_id": "ui-chat-001",
+            })
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["state"], "partial")
+        self.assertEqual(result["room_id"], "room-x")
 
 
 if __name__ == "__main__":

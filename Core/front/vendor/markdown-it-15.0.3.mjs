@@ -3060,5 +3060,3 @@ D($, "Token", z), D($, "Ruler", B), D($, "Renderer", Ze), D($, "ParserCore", Et)
 var vr = Ae($);
 //#endregion
 export { vr as default };
-
-//# sourceMappingURL=markdown-it.esm.min.mjs.map
