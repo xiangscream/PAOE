@@ -204,7 +204,7 @@ export default {
     async loadPeople() { this.people=checked(await request('/api/cat/people')).people; },
     clearRoom() {
       this.stopStream();this.selection++;this.roomId='';this.endingWaiting=false;
-      document.title='CAT · POE';
+      document.title='CAT · PAOE';
       const url=new URL(location.href);url.searchParams.delete('room');history.replaceState(null,'',url);
       this.$emit('room-selected','');
     },

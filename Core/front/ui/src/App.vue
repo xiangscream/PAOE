@@ -336,13 +336,13 @@ watch(tab, value=>{
   url.pathname=value==='chat'?'/cat':'/'
   url.searchParams.delete('view')
   if(value==='chat') {
-    document.title='CAT · POE'
+    document.title='CAT · PAOE'
     if(initialChatRoom.value)url.searchParams.set('room',initialChatRoom.value)
     else url.searchParams.delete('room')
   } else {
     url.searchParams.delete('room')
     if(value==='project')url.searchParams.set('view','project')
-    document.title=(value==='board'?'团队画板':'项目概览')+' · POE'
+    document.title=(value==='board'?'团队画板':'项目概览')+' · PAOE'
   }
   history.replaceState(null,'',url)
 })
@@ -357,7 +357,7 @@ onMounted(() => {
 <template>
   <div class="app-shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-symbol">P</span><span>POE<small>本地协作空间</small></span></div>
+      <div class="brand"><span class="brand-symbol">P</span><span>PAOE<small>本地协作空间</small></span></div>
       <select v-model="project" class="btn project-select" :disabled="collabOpen || libraryOpen" aria-label="选择项目" @change="changeProject">
         <option v-for="item in projects" :key="item.id" :value="item.id">{{ item.id }} {{ item.name || '' }}</option>
       </select>
