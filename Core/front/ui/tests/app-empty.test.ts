@@ -46,7 +46,7 @@ it('changing project on the board forgets its previous room while explicit cross
   expect(wrapper.text()).not.toContain('原项目消息')
   expect(wrapper.text()).toContain('这里还没有讨论')
   expect(new URL(location.href).searchParams.has('room')).toBe(false)
-  expect(document.title).toBe('CAT · POE')
+  expect(document.title).toBe('CAT · PAOE')
   expect(fetch.mock.calls.filter(([path])=>path==='/api/room/room-a')).toHaveLength(previousReads)
   wrapper.unmount()
 
