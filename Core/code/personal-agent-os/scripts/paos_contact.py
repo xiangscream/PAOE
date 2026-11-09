@@ -577,31 +577,35 @@ def build_team_rows(
     }
 
 
-def _team_member_status(role_source: str, home_id: str) -> str:
-    """Read only the TEAM member-status line for a summary row."""
+def team_member_statuses(role_source: str, home_ids: list[str]) -> dict[str, str]:
+    """Read the current TEAM member-status lines once for selected Homes."""
     path = Path(role_source or "")
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError):
-        return ""
+        return {}
+    wanted = {str(item) for item in home_ids if str(item or "").strip()}
     active = False
-    target = False
-    section = "## 当前成员"
-    label = "成员状态"
+    current: str | None = None
+    result: dict[str, str] = {}
+    section = "## \u5f53\u524d\u6210\u5458"
+    label = "\u6210\u5458\u72b6\u6001"
     for line in lines:
         if line.startswith("## "):
             active = line.strip() == section
-            target = False
+            current = None
         elif active and line.startswith("### "):
-            target = line[4:].strip() == home_id
-        elif active and target:
-            match = re.match(r"^\s*-\s*" + label + r"\s*[：:]\s*(.+)$", line)
+            candidate = line[4:].strip()
+            current = candidate if candidate in wanted else None
+        elif active and current:
+            match = re.match(r"^\s*-\s*" + label + r"\s*[\uff1a:]\s*(.+)$", line)
             if match:
-                return match.group(1).strip()
-    return ""
+                result[current] = match.group(1).strip()
+    return result
 
 
-def summarize_team_row(entry: dict[str, Any], team_path: str = "") -> dict[str, Any]:
+
+def summarize_team_row(entry: dict[str, Any], member_statuses: dict[str, str] | None = None) -> dict[str, Any]:
     """Project a roster row to the fields needed for normal colleague lookup."""
     source = entry or {}
     todo = source.get("workstation_todo") or {}
@@ -615,8 +619,7 @@ def summarize_team_row(entry: dict[str, Any], team_path: str = "") -> dict[str, 
                     "role_summary", "role_source", "is_coordinator",
                     "membership_basis", "session_status")
     }
-    status = _team_member_status(
-        str(source.get("role_source") or team_path or ""), str(source.get("agent_id") or ""))
+    status = (member_statuses or {}).get(str(source.get("agent_id") or ""), "")
     if status:
         summary["member_status"] = status
     summary["workstation_todo"] = {

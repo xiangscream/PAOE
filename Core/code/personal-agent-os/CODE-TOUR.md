@@ -71,6 +71,7 @@ external Runtime, and a successful transport receipt is **not** task completion.
 | `paos_library.py`, `paos_guide.py` | Discover independent Workflow/Skill/Tool and support Guide diffs | Does not own the method documents |
 | `paos_agents_common.py` | Verify/distribute one marked AGENTS public region | Keep project-specific text verbatim |
 | `paos_team_overview.py` | Derive PROJECTS/TEAM overview from Registry and files | Read-derived, not manually duplicated roster |
+| `paos.py` team/peers `--summary` | Explicit compact structured roster for colleague lookup | Default full JSON/text unchanged; summary omits history and points to original paths |
 | `paos_cat_cli.py`, `paos_cat_activation.py`, `paos_external_contact.py` | Explicit CAT/cross-agent communication adapter | No implicit CAT server |
 | `paos_contact.py`, `paos_contact_package.py`, `paos_wakeup.py` | Registered native target, STOP, wake handling | Unknown delivery is not a negative receipt |
 | `runtime_injection.py`, `codex_receiver_session_start.py` | One explicit native submission and own-session preparation | Never borrow another Home's thread/token |
