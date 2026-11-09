@@ -1065,7 +1065,7 @@ def execute_team(
     numbers_map = _staff_numbers_map(args)
     agents = build_team_rows(project, root, numbers_map=numbers_map)["agents"]
     if bool(getattr(args, "summary", False)):
-        agents = [summarize_team_row(entry) for entry in agents]
+        agents = [summarize_team_row(entry, str(root / "TEAM.md")) for entry in agents]
     for entry in agents:
         if bool(getattr(args, "probe", False)):
             _apply_fresh_probe(root, entry)
@@ -1107,7 +1107,7 @@ def execute_peers(args: argparse.Namespace, registry: ProjectRegistry) -> Any:
     # （无 --probe 不探测/启动模型、online 状态保持未知）。读面不写数据。
     roster = build_team_rows(project, root, numbers_map=numbers_map)["agents"]
     if bool(getattr(args, "summary", False)):
-        roster = [summarize_team_row(entry) for entry in roster]
+        roster = [summarize_team_row(entry, str(root / "TEAM.md")) for entry in roster]
     peers: list[dict[str, Any]] = [
         entry
         for entry in roster

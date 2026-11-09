@@ -601,7 +601,7 @@ def _team_member_status(role_source: str, home_id: str) -> str:
     return ""
 
 
-def summarize_team_row(entry: dict[str, Any]) -> dict[str, Any]:
+def summarize_team_row(entry: dict[str, Any], team_path: str = "") -> dict[str, Any]:
     """Project a roster row to the fields needed for normal colleague lookup."""
     source = entry or {}
     todo = source.get("workstation_todo") or {}
@@ -615,7 +615,8 @@ def summarize_team_row(entry: dict[str, Any]) -> dict[str, Any]:
                     "role_summary", "role_source", "is_coordinator",
                     "membership_basis", "session_status")
     }
-    status = _team_member_status(str(source.get("role_source") or ""), str(source.get("agent_id") or ""))
+    status = _team_member_status(
+        str(source.get("role_source") or team_path or ""), str(source.get("agent_id") or ""))
     if status:
         summary["member_status"] = status
     summary["workstation_todo"] = {
@@ -624,24 +625,30 @@ def summarize_team_row(entry: dict[str, Any]) -> dict[str, Any]:
         "trusted": bool(todo.get("trusted")),
         "current_section": todo.get("current_section") or {},
         "facts": todo.get("facts") or {},
+        "annotations": todo.get("annotations") or {},
         "todo_summary": todo.get("todo_summary") or {},
         "counts": todo.get("counts") or {},
+        "reason": todo.get("reason") or "",
+        "trust_issues": todo.get("trust_issues") or [],
     }
     summary["runtime_contact"] = {
         key: contact.get(key)
         for key in ("configured", "target_status", "binding_status", "runtime", "driver",
-                    "online_state", "state_basis", "checked_at", "stop_present")
+                    "native_session_id", "attach", "online_state", "state_basis",
+                    "checked_at", "stop_present", "inflight_attempts", "uncertain_attempts")
     }
     receiver = contact.get("receiver")
     if isinstance(receiver, dict):
         summary["runtime_contact"]["receiver"] = {
             key: receiver.get(key)
-            for key in ("registered", "state", "prepared", "pid_alive", "checked_at", "reason")
+            for key in ("registered", "state", "file_state", "prepared", "pid_alive",
+                        "checked_at", "reason")
         }
     summary["home_read"] = {
         "available": bool(home.get("available")),
         "status_basis": str(home.get("status_basis") or ""),
         "error": home.get("error") or "",
+        "detail": home.get("detail") or "",
         "read_model": {
             "schema": str(model.get("schema") or ""),
             "observed_at": str(model.get("observed_at") or ""),

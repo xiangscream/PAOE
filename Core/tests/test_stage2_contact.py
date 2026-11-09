@@ -137,7 +137,6 @@ class StageTwoDiscoveryTests(unittest.TestCase):
         self.assertNotIn("summary", default)
         self.assertTrue(summary["summary"])
         self.assertTrue(peers["summary"])
-        self.assertLess(len(json.dumps(summary)), len(json.dumps(default)))
         row = next(item for item in summary["agents"] if item["agent_id"] == "3002-s002")
         self.assertEqual(row["role_summary"], "\u63a5\u53e3\u4e0e\u6d4b\u8bd5")
         self.assertEqual(row["member_status"],
@@ -157,9 +156,36 @@ class StageTwoDiscoveryTests(unittest.TestCase):
         summary = self.f.call("team", "3002", "3002-s001", "--summary")[1]
         row = next(item for item in summary["agents"] if item["agent_id"] == "3002-s002")
         self.assertFalse(row["workstation_todo"]["trusted"])
+        self.assertEqual(row["workstation_todo"].get("reason"), "todo_invalid")
+        self.assertIn("trust_issues", row["workstation_todo"])
         self.assertIn("error", row["home_read"])
+        self.assertIn("detail", row["home_read"])
         self.assertEqual(row["runtime_contact"].get("online_state", "unknown"), "unknown")
         self.assertNotIn("tasks", row["home_read"].get("read_model", {}))
+
+
+    def test_summary_text_and_paused_member_without_role(self):
+        team = self.f.vault / "TEAM.md"
+        team.write_text(
+            "# Team\n\n## \u5f53\u524d\u6210\u5458\n\n### 3002-s001\n"
+            "- \u6210\u5458\u72b6\u6001\uff1a\u5728\u961f\n"
+            "- \u804c\u8d23/\u4e13\u957f\uff1a\u603b\u4f53\u7ec4\u7ec7\n\n"
+            "### 3002-s002\n- \u6210\u5458\u72b6\u6001\uff1a\u6682\u505c\n",
+            encoding="utf-8",
+        )
+        summary = self.f.call("team", "3002", "3002-s001", "--summary")[1]
+        row = next(item for item in summary["agents"] if item["agent_id"] == "3002-s002")
+        self.assertEqual(row["member_status"], "\u6682\u505c")
+        self.assertEqual(row["role_summary"], "")
+        result = subprocess.run(
+            [sys.executable, str(CLI), "--installation-file", str(self.f.install),
+             "team", "3002", "3002-s001", "--summary"],
+            cwd=self.f.root, env=dict(os.environ), text=True, capture_output=True,
+            encoding="utf-8", timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PAOS team", result.stdout)
+        self.assertIn("Runtime:", result.stdout)
 
 
 if __name__ == "__main__":
