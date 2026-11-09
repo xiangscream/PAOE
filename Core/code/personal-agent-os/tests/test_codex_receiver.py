@@ -25,7 +25,8 @@ class ReceiverTests(unittest.TestCase):
         self.stop = Path(self.temp.name) / "STOP"
         self.client = Mock()
         self.client.thread_status.return_value = "idle"
-        self.reminder = SelfReminder(self.client, "target-self", self.stop)
+        self.reminder = SelfReminder(self.client, "target-self", self.stop,
+                                     process_identity="windows:123")
         self.payload = {"session_id": "target-self", "message": "new reminder"}
 
     def assert_refused(self, code, payload=None):
@@ -39,6 +40,7 @@ class ReceiverTests(unittest.TestCase):
         self.client.thread_status.assert_called_once_with("target-self")
         self.client.wake.assert_called_once_with("target-self", "new reminder")
         self.assertEqual(result, {"accepted": True, "session_id": "target-self", "completed": False,
+                                  "process_identity": "windows:123",
                                   "native_status_before_submit": "idle"})
 
     def test_wrong_target_never_reads_or_sends(self):
@@ -282,6 +284,27 @@ class ReceiverTests(unittest.TestCase):
             if process.poll() is None:
                 process.kill()
             process.communicate(timeout=5)
+
+    def test_status_endpoint_returns_authenticated_identity_without_desktop(self):
+        server = make_server(self.reminder, "local-grant")
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        origin = f"http://127.0.0.1:{server.server_port}"
+        opener = build_opener(ProxyHandler({}))
+        request = Request(origin + "/status",
+                          headers={"Authorization": "Bearer local-grant"}, method="GET")
+        with opener.open(request, timeout=3) as response:
+            result = json.load(response)
+        self.assertEqual(result, {"session_id": "target-self", "pid": os.getpid(),
+                                  "process_identity": "windows:123"})
+        self.client.thread_status.assert_not_called()
+        self.client.wake.assert_not_called()
+        with self.assertRaises(HTTPError) as unauthorized:
+            opener.open(Request(origin + "/status",
+                                headers={"Authorization": "Bearer wrong"}, method="GET"), timeout=3)
+        self.assertEqual(unauthorized.exception.code, 401)
 
     def test_real_http_authorization_and_exact_payload_gate(self):
         server = make_server(self.reminder, "local-grant")

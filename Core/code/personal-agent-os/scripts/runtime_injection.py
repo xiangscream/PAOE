@@ -11,6 +11,7 @@ import errno
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -29,6 +30,7 @@ from wakeup_native.codex_app_tools import (
     CodexTargetPipeRuntime,
 )
 from wakeup_native.diagnostics import exception_fields, transport_fields
+from wakeup_native.process_identity import valid_identity
 
 
 class InjectionError(RuntimeError):
@@ -130,60 +132,41 @@ def _origin(value):
 
 
 def _codex_extension_send(target, message, model):
-    """Sender side for S034's exact-code reminder receiver (414fd23a follow-up).
+    """Sender side for the exact-code receiver entry.
 
-    Contract fixed with S034 actual tests (final candidate 414fd23):
-    - runtime file schema: paos-codex-self-reminder/v1 with
-      {endpoint, session_id, token, pid, process_identity}; legacy identity
-      must be verified by the Owner before a sender may submit;
-    - delivery JSON ONLY {session_id, message} — no model/control fields;
-    - receiver exposes only one POST /send; sender STOP check stays before
-      the send; receipt identity must echo the same granted session_id;
-    - absolute single path: no auto-switch to any other injection method on
-      failure, no retries, no attempt records, no pipe/credential borrowing.
+    The authenticated target entry proves its own OS instance identity; the
+    caller reads only the grant locator and token. No caller-side process query
+    is required, so Windows sandbox/ACL differences cannot turn a valid target
+    entry into a false rejection. A target that cannot prove its identity is
+    still a definite no-send, never a fallback transport or a resend.
     """
     ext = target.get("extension")
     ext = ext if isinstance(ext, dict) else {}
     runtime_file = str(ext.get("receiver_runtime_file") or "").strip()
+    descriptor = None
+    expected_identity = None
     if runtime_file:
-        from paos_contact import _codex_receiver_view
-        view = _codex_receiver_view(target)
-        diagnostic = view.get("diagnostic")
-        repair_owner = view.get("repair_owner") or "target_owner"
-        next_action = view.get("next_action") or "原Owner核本人入口；不换路或自动重发。"
-        if view["reason"] == "process_host_not_local":
+        path = Path(posix_windows_drive_locator(runtime_file))
+        foreign_process_host = (
+            os.name != "nt" and (
+                re.match(r"^[A-Za-z]:[\\/]", runtime_file)
+                or str(path).startswith("/mnt/")
+                or runtime_file.startswith("\\\\")
+            )
+        )
+        if foreign_process_host:
             raise InjectionError("Receiver process host is not confirmed in this caller environment",
                                  code="receiver_host_unconfirmed", state="caller_environment_unavailable",
                                  repair_owner="caller_installation_owner",
-                                 next_action="按已知运行位置显式配置正常执行入口；不按盘符猜主机或失败后换路。")
-        if view["state"] == "process_not_running":
-            raise InjectionError("Codex receiver registration points to a dead process",
-                                 code="receiver_stale_registration", state="receiver_offline",
-                                 repair_owner=repair_owner, next_action=next_action,
-                                 diagnostic=diagnostic)
-        if view["state"] == "process_identity_mismatch":
-            raise InjectionError("Codex receiver registration belongs to a different process instance",
-                                 code="receiver_identity_mismatch", state="receiver_offline",
-                                 repair_owner=repair_owner, next_action=next_action,
-                                 diagnostic=diagnostic)
-        if view["file_state"] != "available":
-            raise InjectionError("Codex receiver runtime file missing/unreadable or invalid",
-                                 code=str(view["reason"]), state="receiver_not_prepared",
-                                 repair_owner=repair_owner, next_action=next_action,
-                                 diagnostic=diagnostic)
-        if view["prepared"] is not True:
-            raise InjectionError("Codex receiver OS instance identity is unverified; inspect the retained query diagnostic",
-                                 code="receiver_identity_unverified", state="receiver_not_prepared",
-                                 repair_owner=repair_owner, next_action=next_action,
-                                 diagnostic=diagnostic)
-        path = Path(posix_windows_drive_locator(runtime_file))
+                                 next_action="Configure the explicit Windows execution entry; do not guess the host or switch routes.")
         try:
             descriptor = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as exc:
-            raise InjectionError(
-                f"Codex receiver runtime file missing/unreadable at {path}: {exc}",
-                code="receiver_runtime_unreadable", state="receiver_not_prepared"
-            ) from exc
+        except OSError as exc:
+            raise InjectionError(f"Codex receiver runtime file missing/unreadable at {path}: {exc}",
+                                 code="receiver_runtime_unreadable", state="receiver_not_prepared") from exc
+        except (UnicodeError, ValueError) as exc:
+            raise InjectionError(f"Codex receiver runtime file invalid at {path}: {exc}",
+                                 code="receiver_runtime_invalid", state="receiver_not_prepared") from exc
         if not isinstance(descriptor, dict):
             raise InjectionError("Codex receiver runtime file must be a JSON object")
         if str(descriptor.get("schema") or "") != "paos-codex-self-reminder/v1":
@@ -191,6 +174,13 @@ def _codex_extension_send(target, message, model):
         granted = str(descriptor.get("session_id") or "")
         if granted != target["session_id"]:
             raise InjectionError("Codex receiver grant does not match this target session")
+        expected_identity = descriptor.get("process_identity")
+        if not valid_identity(expected_identity):
+            raise InjectionError(
+                "Codex receiver grant does not publish a verifiable OS instance identity",
+                code="receiver_identity_unverified", state="receiver_not_prepared",
+                next_action="Target owner must prepare a receiver that publishes process_identity; caller OS query is not a fallback.",
+            )
         endpoint = str(descriptor.get("endpoint") or "")
         token = str(descriptor.get("token") or "")
     else:
@@ -204,12 +194,76 @@ def _codex_extension_send(target, message, model):
     parsed = urlsplit(origin)
     if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not parsed.port:
         raise InjectionError("Codex target-side extension must be a 127.0.0.1 loopback origin")
+    _check_stop(target)
+    request_id = uuid.uuid4().hex
+    if runtime_file:
+        status_diagnostic = {"request_id": request_id, "phase": "status_read"}
+        try:
+            receiver, status = _request(target, origin, "GET", "/status", token=token,
+                                        request_id=request_id)
+        except HTTPError as exc:
+            status_diagnostic.update(exception_fields(exc), http_status=exc.code)
+            exc.close()
+            code = "receiver_status_rejected" if exc.code in {401, 403} else "receiver_status_unavailable"
+            raise InjectionError(
+                "Codex receiver status request was rejected; no reminder submitted",
+                code=code, state="receiver_not_prepared",
+                next_action="Target owner must check the grant and the receiver's /status identity entry; do not resend or reroute.",
+                diagnostic=status_diagnostic,
+            ) from exc
+        except (URLError, OSError) as exc:
+            reason = exc.reason if isinstance(exc, URLError) else exc
+            status_diagnostic.update(exception_fields(exc))
+            if isinstance(reason, ConnectionRefusedError) or (
+                    isinstance(reason, OSError) and reason.errno == errno.ECONNREFUSED):
+                raise InjectionError(
+                    "Codex receiver connection refused; no reminder delivered",
+                    code="receiver_connection_refused", state="receiver_offline",
+                    diagnostic=status_diagnostic,
+                ) from exc
+            raise InjectionError(
+                "Codex receiver status unavailable; no reminder submitted",
+                code="receiver_status_unavailable", state="receiver_not_prepared",
+                next_action="Target owner must restore the authenticated /status identity entry; do not resend or reroute.",
+                diagnostic=status_diagnostic,
+            ) from exc
+        except (HTTPException, ValueError, UnicodeError) as exc:
+            status_diagnostic.update(exception_fields(exc))
+            raise InjectionError(
+                "Codex receiver status response unreadable; no reminder submitted",
+                code="receiver_status_unavailable", state="receiver_not_prepared",
+                next_action="Target owner must restore the authenticated /status identity entry; do not resend or reroute.",
+                diagnostic=status_diagnostic,
+            ) from exc
+        if (status != 200 or not isinstance(receiver, dict)
+                or receiver.get("session_id") != target["session_id"]):
+            raise InjectionError(
+                "Codex receiver status identity is not confirmed; no reminder submitted",
+                code="receiver_status_unavailable", state="receiver_not_prepared",
+                next_action="Target owner must restore the authenticated /status identity entry; do not resend or reroute.",
+                diagnostic=status_diagnostic,
+            )
+        actual_identity = receiver.get("process_identity")
+        if not valid_identity(actual_identity):
+            raise InjectionError(
+                "Codex receiver status does not publish a verifiable OS instance identity; no reminder submitted",
+                code="receiver_identity_unverified", state="receiver_not_prepared",
+                next_action="Target owner must normal prepare the receiver; do not resend or reroute.",
+                diagnostic=status_diagnostic,
+            )
+        if actual_identity != expected_identity:
+            status_diagnostic["reason"] = "receiver_identity_mismatch"
+            raise InjectionError(
+                "Codex receiver status belongs to a different process instance; no reminder submitted",
+                code="receiver_identity_mismatch", state="receiver_offline",
+                next_action="Target owner must normal prepare the registered receiver; do not resend or reroute.",
+                diagnostic=status_diagnostic,
+            )
+        _check_stop(target)
     payload = {
         "session_id": target["session_id"],
         "message": message,
     }
-    _check_stop(target)
-    request_id = uuid.uuid4().hex
     diagnostic = {"request_id": request_id, "phase": "http_wait"}
     try:
         result, status = _request(target, origin, "POST", "/send", payload, token=token, request_id=request_id)
@@ -248,6 +302,13 @@ def _codex_extension_send(target, message, model):
                                  diagnostic={**diagnostic, **exception_fields(exc)}) from exc
     if status != 200 or not isinstance(result, dict) or result.get("session_id") != target["session_id"]:
         raise InjectionUncertain("Codex receiver send receipt identity not confirmed; do not resend", diagnostic=diagnostic)
+    if runtime_file:
+        receipt_identity = result.get("process_identity")
+        if not valid_identity(receipt_identity) or receipt_identity != expected_identity:
+            raise InjectionUncertain(
+                "Codex receiver send receipt instance identity not confirmed; do not resend",
+                diagnostic={**diagnostic, "reason": "receiver_identity_mismatch"},
+            )
     if result.get("accepted") is not True:
         raise InjectionUncertain("Codex receiver send receipt acceptance not confirmed; do not resend", diagnostic=diagnostic)
     bridge = result.get("bridge_result")

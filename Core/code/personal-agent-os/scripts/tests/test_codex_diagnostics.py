@@ -2,6 +2,7 @@
 import errno
 import io
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -19,11 +20,12 @@ class CodexDiagnosticsTests(unittest.TestCase):
     request_id = "a" * 32
 
     def setUp(self):
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
         self.client = Mock()
         self.client.thread_status.return_value = "idle"
-        self.reminder = SelfReminder(self.client, "fixture-self", Path(temp.name) / "STOP")
+        self.reminder = SelfReminder(self.client, "fixture-self", Path(self.temp.name) / "STOP",
+                                     process_identity="windows:123")
         self.log = io.StringIO()
         self.target = {"runtime": "codex", "session_id": "fixture-self",
                        "extension": {"endpoint": "http://127.0.0.1:12345", "token": "private-fixture-token"}}
@@ -61,6 +63,86 @@ class CodexDiagnosticsTests(unittest.TestCase):
                          "native_submit_started", "native_result_returned", "http_reply_returned"])
         self.assertTrue(all(r["request_id"] == self.request_id and r["elapsed_ms"] >= 0 for r in rows))
         self.assert_private_absent(rows)
+
+    def test_runtime_file_send_uses_target_status_without_caller_process_query(self):
+        self.server()
+        runtime = Path(self.temp.name) / "runtime.json"
+        runtime.write_text(json.dumps({
+            "schema": "paos-codex-self-reminder/v1",
+            "pid": os.getpid(),
+            "session_id": "fixture-self",
+            "endpoint": self.target["extension"]["endpoint"],
+            "token": "private-fixture-token",
+            "process_identity": "windows:123",
+        }), encoding="utf-8")
+        target = {"runtime": "codex", "session_id": "fixture-self",
+                  "extension": {"receiver_runtime_file": str(runtime)}}
+        with patch("paos_contact._codex_receiver_view",
+                   side_effect=AssertionError("caller process query must not run")):
+            result = injection._codex_extension_send(target, "private-fixture-prompt", None)
+        self.assertTrue(result["accepted"])
+        self.client.wake.assert_called_once_with("fixture-self", "private-fixture-prompt")
+
+    def test_runtime_file_send_rejects_target_status_identity_mismatch_before_send(self):
+        self.server()
+        runtime = Path(self.temp.name) / "runtime.json"
+        runtime.write_text(json.dumps({
+            "schema": "paos-codex-self-reminder/v1",
+            "pid": os.getpid(),
+            "session_id": "fixture-self",
+            "endpoint": self.target["extension"]["endpoint"],
+            "token": "private-fixture-token",
+            "process_identity": "windows:999",
+        }), encoding="utf-8")
+        target = {"runtime": "codex", "session_id": "fixture-self",
+                  "extension": {"receiver_runtime_file": str(runtime)}}
+        with self.assertRaises(injection.InjectionError) as raised:
+            injection._codex_extension_send(target, "private-fixture-prompt", None)
+        self.assertEqual(raised.exception.code, "receiver_identity_mismatch")
+        self.client.wake.assert_not_called()
+
+    def test_runtime_file_post_receipt_identity_mismatch_is_uncertain(self):
+        runtime = Path(self.temp.name) / "runtime.json"
+        runtime.write_text(json.dumps({
+            "schema": "paos-codex-self-reminder/v1",
+            "pid": os.getpid(),
+            "session_id": "fixture-self",
+            "endpoint": "http://127.0.0.1:1",
+            "token": "private-fixture-token",
+            "process_identity": "windows:123",
+        }), encoding="utf-8")
+        target = {"runtime": "codex", "session_id": "fixture-self",
+                  "extension": {"receiver_runtime_file": str(runtime)}}
+        responses = [
+            ({"session_id": "fixture-self", "process_identity": "windows:123"}, 200),
+            ({"session_id": "fixture-self", "accepted": True,
+              "process_identity": "windows:999"}, 200),
+        ]
+        with patch.object(injection, "_request", side_effect=responses):
+            with self.assertRaises(injection.InjectionUncertain) as raised:
+                injection._codex_extension_send(target, "private-fixture-prompt", None)
+        self.assertEqual(raised.exception.code, "delivery_not_confirmed")
+        self.assertEqual(raised.exception.diagnostic["reason"], "receiver_identity_mismatch")
+
+    def test_runtime_file_without_target_status_entry_does_not_send(self):
+        runtime = Path(self.temp.name) / "runtime.json"
+        runtime.write_text(json.dumps({
+            "schema": "paos-codex-self-reminder/v1",
+            "pid": os.getpid(),
+            "session_id": "fixture-self",
+            "endpoint": "http://127.0.0.1:1",
+            "token": "private-fixture-token",
+            "process_identity": "windows:123",
+        }), encoding="utf-8")
+        target = {"runtime": "codex", "session_id": "fixture-self",
+                  "extension": {"receiver_runtime_file": str(runtime)}}
+        missing_status = HTTPError("http://fixture/status", 404, "not found", {},
+                                   io.BytesIO(b"{}"))
+        with patch.object(injection, "_request", side_effect=missing_status):
+            with self.assertRaises(injection.InjectionError) as raised:
+                injection._codex_extension_send(target, "private-fixture-prompt", None)
+        self.assertEqual(raised.exception.code, "receiver_status_unavailable")
+        self.client.wake.assert_not_called()
 
     def test_unknown_status_remains_rejected_and_never_submits(self):
         self.server()
