@@ -100,11 +100,14 @@ def _windows_snapshot(pid, runtime_file, stop_file):
     kernel.OpenProcess.restype = wintypes.HANDLE
     kernel.GetProcessTimes.argtypes = (wintypes.HANDLE,) + (ctypes.POINTER(wintypes.FILETIME),) * 4
     kernel.GetProcessTimes.restype = wintypes.BOOL
-    kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
-    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    kernel.GetExitCodeProcess.restype = wintypes.BOOL
     kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
     kernel.CloseHandle.restype = wintypes.BOOL
-    handle = kernel.OpenProcess(0x101000, False, pid)  # QUERY_LIMITED_INFORMATION | SYNCHRONIZE
+    # GetProcessTimes and GetExitCodeProcess both support QUERY_LIMITED_INFORMATION.
+    # SYNCHRONIZE is only needed for WaitForSingleObject and can make an otherwise
+    # readable receiver process look unverified to an external caller.
+    handle = kernel.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
     if not handle:
         return {"alive": False if ctypes.get_last_error() == 87 else None}
     try:
@@ -114,10 +117,10 @@ def _windows_snapshot(pid, runtime_file, stop_file):
             return {"alive": None}
         identity = f"windows:{(created.dwHighDateTime << 32) | created.dwLowDateTime}"
         argv = _windows_argv(pid) if runtime_file else None
-        state = kernel.WaitForSingleObject(handle, 0)
-        if state not in {0, 258}:
+        code = wintypes.DWORD()
+        if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
             return {"alive": None}
-        return {"alive": state == 258, "identity": identity,
+        return {"alive": code.value == 259, "identity": identity,
                 "invocation_matches": receiver_invocation(argv, runtime_file, stop_file) if argv is not None else None}
     finally:
         kernel.CloseHandle(handle)
