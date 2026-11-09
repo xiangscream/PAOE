@@ -11,7 +11,7 @@
 | 每日经历、主题、带日期的项目摘要、TEAM 快照 | 两端已确认的 Syncthing 内容目录 | 各机同步维护 Agent 与原内容 Owner |
 | 本机安装位置、Registry、工位与原生连接 | 本机安装和对应 Home | 本机 Rooter、Coordinator 和本人 |
 
-System 与 Libraries 分别采用明确版本。另一台电脑保留自己的数据根、项目与员工身份，按[升级采用](../UPGRADE.md)更新 System；Libraries 沿其 README 更新正文并重建本机 Catalog。GitHub 变更已发布、各机已采用、业务已实际使用分别记录。
+System 与 Libraries 分别采用明确版本。另一台电脑保留自己的数据根、项目与员工身份，按[升级采用](guide-upgrade-adoption.md)更新 System；Libraries 沿其 README 更新正文并重建本机 Catalog。GitHub 变更已发布、各机已采用、业务已实际使用分别记录。
 
 ## 经历库与 TEAM
 
