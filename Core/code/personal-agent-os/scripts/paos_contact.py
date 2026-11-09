@@ -577,6 +577,96 @@ def build_team_rows(
     }
 
 
+def team_member_statuses(role_source: str, home_ids: list[str]) -> dict[str, str]:
+    """Read the current TEAM member-status lines once for selected Homes."""
+    path = Path(role_source or "")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return {}
+    wanted = {str(item) for item in home_ids if str(item or "").strip()}
+    active = False
+    current: str | None = None
+    result: dict[str, str] = {}
+    section = "## \u5f53\u524d\u6210\u5458"
+    label = "\u6210\u5458\u72b6\u6001"
+    for line in lines:
+        if line.startswith("## "):
+            active = line.strip() == section
+            current = None
+        elif active and line.startswith("### "):
+            candidate = line[4:].strip()
+            current = candidate if candidate in wanted else None
+        elif active and current:
+            match = re.match(r"^\s*-\s*" + label + r"\s*[\uff1a:]\s*(.+)$", line)
+            if match:
+                result[current] = match.group(1).strip()
+    return result
+
+
+
+def summarize_team_row(entry: dict[str, Any], member_statuses: dict[str, str] | None = None) -> dict[str, Any]:
+    """Project a roster row to the fields needed for normal colleague lookup."""
+    source = entry or {}
+    todo = source.get("workstation_todo") or {}
+    contact = source.get("runtime_contact") or {}
+    home = source.get("home_read") or {}
+    model = home.get("read_model") or {}
+    recovery = model.get("recovery") or {}
+    summary: dict[str, Any] = {
+        key: source.get(key)
+        for key in ("agent_id", "identity_id", "staff_number", "agent_label",
+                    "role_summary", "role_source", "is_coordinator",
+                    "membership_basis", "session_status")
+    }
+    status = (member_statuses or {}).get(str(source.get("agent_id") or ""), "")
+    if status:
+        summary["member_status"] = status
+    summary["workstation_todo"] = {
+        "available": bool(todo.get("available")),
+        "path": str(todo.get("path") or ""),
+        "trusted": bool(todo.get("trusted")),
+        "current_section": todo.get("current_section") or {},
+        "facts": todo.get("facts") or {},
+        "annotations": todo.get("annotations") or {},
+        "todo_summary": todo.get("todo_summary") or {},
+        "counts": todo.get("counts") or {},
+        "reason": todo.get("reason") or "",
+        "trust_issues": todo.get("trust_issues") or [],
+    }
+    summary["runtime_contact"] = {
+        key: contact.get(key)
+        for key in ("configured", "target_status", "binding_status", "runtime", "driver",
+                    "native_session_id", "attach", "online_state", "state_basis",
+                    "checked_at", "stop_present", "inflight_attempts", "uncertain_attempts")
+    }
+    receiver = contact.get("receiver")
+    if isinstance(receiver, dict):
+        summary["runtime_contact"]["receiver"] = {
+            key: receiver.get(key)
+            for key in ("registered", "state", "file_state", "prepared", "pid_alive",
+                        "checked_at", "reason")
+        }
+    summary["home_read"] = {
+        "available": bool(home.get("available")),
+        "status_basis": str(home.get("status_basis") or ""),
+        "error": home.get("error") or "",
+        "detail": home.get("detail") or "",
+        "read_model": {
+            "schema": str(model.get("schema") or ""),
+            "observed_at": str(model.get("observed_at") or ""),
+            "home": model.get("home") or {},
+            "current": model.get("current") or {},
+            "sources": model.get("sources") or {},
+            "reachability": model.get("reachability") or {},
+            "filter_scope": model.get("filter_scope") or {},
+            "consistency": str(model.get("consistency") or ""),
+            "recovery": {"counts": recovery.get("counts") or {}} if recovery else {},
+        },
+    }
+    return summary
+
+
 def contact_entry(
     root: Path,
     agent_id: str,

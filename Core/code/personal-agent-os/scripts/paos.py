@@ -119,6 +119,8 @@ from paos_agent_numbers import (
 from paos_contact import (  # noqa: E402
     CONTACT_SCHEMA,
     build_team_rows,
+    summarize_team_row,
+    team_member_statuses,
     parse_team_payload,
     runtime_contact,
 )
@@ -1063,6 +1065,10 @@ def execute_team(
     root, project = _roster_root(args, registry)
     numbers_map = _staff_numbers_map(args)
     agents = build_team_rows(project, root, numbers_map=numbers_map)["agents"]
+    if bool(getattr(args, "summary", False)):
+        statuses = team_member_statuses(
+            str(root / "TEAM.md"), [str(entry.get("agent_id") or "") for entry in agents])
+        agents = [summarize_team_row(entry, statuses) for entry in agents]
     for entry in agents:
         if bool(getattr(args, "probe", False)):
             _apply_fresh_probe(root, entry)
@@ -1088,6 +1094,8 @@ def execute_team(
             ),
         },
     }
+    if bool(getattr(args, "summary", False)):
+        payload["summary"] = True
     if args.json_output:
         return payload
     return render_contact(payload, include_self=True)
@@ -1101,6 +1109,10 @@ def execute_peers(args: argparse.Namespace, registry: ProjectRegistry) -> Any:
     # （completed/abandoned 但正式 Home 在 → 仍列出）；名册在场不冒称在线
     # （无 --probe 不探测/启动模型、online 状态保持未知）。读面不写数据。
     roster = build_team_rows(project, root, numbers_map=numbers_map)["agents"]
+    if bool(getattr(args, "summary", False)):
+        statuses = team_member_statuses(
+            str(root / "TEAM.md"), [str(entry.get("agent_id") or "") for entry in roster])
+        roster = [summarize_team_row(entry, statuses) for entry in roster]
     peers: list[dict[str, Any]] = [
         entry
         for entry in roster
@@ -1121,6 +1133,8 @@ def execute_peers(args: argparse.Namespace, registry: ProjectRegistry) -> Any:
         "team_source": {"path": str(root / "TEAM.md"), "exists": (root / "TEAM.md").is_file()},
         "installation_support": _installation_support_contacts(registry),
     }
+    if bool(getattr(args, "summary", False)):
+        payload["summary"] = True
     if args.json_output:
         return payload
     return render_contact(payload, include_self=False)
@@ -3236,6 +3250,7 @@ def build_parser() -> argparse.ArgumentParser:
     peers.add_argument("agent_id")
     peers.add_argument("--root", help="Override Project root when root_path is missing")
     peers.add_argument("--probe", action="store_true", help="Compatibility no-op: no native probe is performed; runtime state remains unverified")
+    peers.add_argument("--summary", action="store_true", help="Return the compact colleague summary without full task/input history")
 
     team = sub.add_parser(
         "team",
@@ -3246,6 +3261,7 @@ def build_parser() -> argparse.ArgumentParser:
     team.add_argument("agent_id")
     team.add_argument("--root", help="Override Project root when root_path is missing")
     team.add_argument("--probe", action="store_true", help="Compatibility no-op: no native probe is performed; runtime state remains unverified")
+    team.add_argument("--summary", action="store_true", help="Return the compact colleague summary without full task/input history")
 
     agent = sub.add_parser(
         "agent",
