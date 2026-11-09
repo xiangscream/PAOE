@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -259,7 +258,7 @@ def derive_attach(target: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _local_pid_alive_impl(pid: int) -> tuple[bool | None, dict[str, Any] | None]:
+def _local_pid_alive(pid: int) -> tuple[bool | None, dict[str, Any] | None]:
     """Read process existence only; retain the caller-side query failure."""
     if os.name == "nt":
         import ctypes
@@ -299,23 +298,6 @@ def _local_pid_alive_impl(pid: int) -> tuple[bool | None, dict[str, Any] | None]
             "reason": "process_query_failed", "exception_type": type(exc).__name__,
         }
     return True, None
-
-
-_local_pid_alive_state = threading.local()
-
-
-def _local_pid_alive(pid: int) -> bool | None:
-    """Read process existence only. Never use os.kill(pid, 0) on Windows."""
-    alive, diagnostic = _local_pid_alive_impl(pid)
-    _local_pid_alive_state.diagnostic = diagnostic
-    return alive
-
-
-def _local_pid_alive_probe(pid: int) -> tuple[bool | None, dict[str, Any] | None]:
-    """Keep the boolean compatibility wrapper while retaining this thread's failure."""
-    _local_pid_alive_state.diagnostic = None
-    alive = _local_pid_alive(pid)
-    return alive, getattr(_local_pid_alive_state, "diagnostic", None)
 
 
 def _codex_receiver_view(target: dict[str, Any]) -> dict[str, Any]:
@@ -382,7 +364,7 @@ def _codex_receiver_view(target: dict[str, Any]) -> dict[str, Any]:
     if foreign_process_host:
         view["reason"] = "process_host_not_local"
         return view
-    alive, query_diagnostic = _local_pid_alive_probe(pid)
+    alive, query_diagnostic = _local_pid_alive(pid)
     if query_diagnostic:
         view["diagnostic"] = query_diagnostic
     view.update(pid_alive=alive, reason="process_check_unknown")

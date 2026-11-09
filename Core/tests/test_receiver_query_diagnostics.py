@@ -43,9 +43,23 @@ class ReceiverQueryDiagnosticTests(unittest.TestCase):
         return patch.object(process_identity.ctypes, "WinDLL", return_value=kernel), \
             patch.object(process_identity.ctypes, "get_last_error", return_value=5)
 
+    def test_first_stage_open_process_failure_keeps_diagnostic(self):
+        kernel = MagicMock()
+        kernel.OpenProcess.return_value = 0
+        with patch("ctypes.WinDLL", return_value=kernel), \
+                patch("ctypes.get_last_error", return_value=5):
+            view = paos_contact._codex_receiver_view(self.target)
+        self.assertEqual(view["state"], "process_unknown")
+        self.assertEqual(view["reason"], "process_check_unknown")
+        self.assertEqual(view["repair_owner"], "caller_installation_owner")
+        self.assertEqual(view["diagnostic"]["phase"], "process_query")
+        self.assertEqual(view["diagnostic"]["operation"], "OpenProcess")
+        self.assertEqual(view["diagnostic"]["reason"], "process_access_denied")
+        self.assertEqual(view["diagnostic"]["winerror"], 5)
+
     def test_receiver_view_keeps_caller_query_failure_and_ownership(self):
         win_dll, last_error = self.failed_open_process()
-        with patch.object(paos_contact, "_local_pid_alive_probe", return_value=(True, None)), \
+        with patch.object(paos_contact, "_local_pid_alive", return_value=(True, None)), \
                 win_dll, last_error:
             view = paos_contact._codex_receiver_view(self.target)
         self.assertEqual(view["state"], "process_unknown")
@@ -58,7 +72,7 @@ class ReceiverQueryDiagnosticTests(unittest.TestCase):
 
     def test_reminder_receipt_keeps_caller_query_failure(self):
         win_dll, last_error = self.failed_open_process()
-        with patch.object(paos_contact, "_local_pid_alive_probe", return_value=(True, None)), \
+        with patch.object(paos_contact, "_local_pid_alive", return_value=(True, None)), \
                 win_dll, last_error:
             with self.assertRaises(runtime_injection.InjectionError) as raised:
                 runtime_injection._codex_extension_send(self.target, "message", None)
