@@ -12,6 +12,7 @@
 | Runtime 压缩、接班及在途输入 | [Runtime 接班](guide-runtime-handoff.md) |
 | 安装、故障与维修 | [Rooter 安装](guide-rooter-installation.md) |
 | 发布、采用和回退 | [升级采用](guide-upgrade-adoption.md) |
+| 两机采用、个人经历、TEAM 快照与同步维护者转接 | [跨机协作](guide-cross-machine-experience.md) |
 | 工具行为差异和排障 | [工具陷阱](guide-tool-pitfalls.md) |
 | Coordinator 专项协调、责任与验收 | [Coordinator](wf-coordinator-governance-cycle.md) |
 | 夜间补漏和经验回用 | [夜间整理](wf-night-maintenance.md) |

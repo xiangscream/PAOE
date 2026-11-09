@@ -1,12 +1,14 @@
 # 采用固定 System 基线
 
-本页用于已有机器升级。先从 GitHub Releases 取得已冻结的 ZIP 或离线 Git Bundle，核对包旁的 `RELEASE.md`、两个源码提交和校验哈希。`RELEASE.md`、Bundle 与校验文件随 ZIP 一起交付，不在 ZIP 内循环记录自身哈希。公开旧 main、审阅快照和本机运行目录都不能代替发布源。
+本页用于已有机器升级。从 GitHub Releases 取得准确版本的 ZIP、同页的 `.zip.sha256` 和 `FILES.json`，核对发布包与文件清单；解包后读 `VERSION`、`SOURCE.lock.json`，分别记录 System tag/提交和纳入的 Core 来源。离线 Git Bundle 按交付者指定的 tag 与来源采用。审阅快照和本机运行目录不作为发布源。
 
 ## 保留边界
 
 保留本机安装数据、Registry、Rooter/项目 ENTRY 与 TODO、Mail/Notice、Contact、Session、模型、STOP、Libraries、业务资料和 Obsidian 配置。只采用新代码与公共规则；不因模板变化重建身份或覆盖工位。
 
 Rooter 公共入口是 `rooter/README.md`；实例由本机安装描述定位。发布中的 `PROJECTS.md` 是中性入口，实际成员页仍由本机 Registry、TEAM、ENTRY 生成。
+
+独立 Libraries 从[方法仓库](https://github.com/xiangscream/PAOE-Libraries)采用已发布正文，按其 README 登记本机库根并重建 Catalog。个人经历和 TEAM 快照沿两端确认的 Syncthing 内容目录共享；跨机入口见[跨机协作](Guide/guide-cross-machine-experience.md)。
 
 ## 实施顺序
 
