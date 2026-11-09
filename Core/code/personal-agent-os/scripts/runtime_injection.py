@@ -148,6 +148,9 @@ def _codex_extension_send(target, message, model):
     if runtime_file:
         from paos_contact import _codex_receiver_view
         view = _codex_receiver_view(target)
+        diagnostic = view.get("diagnostic")
+        repair_owner = view.get("repair_owner") or "target_owner"
+        next_action = view.get("next_action") or "原Owner核本人入口；不换路或自动重发。"
         if view["reason"] == "process_host_not_local":
             raise InjectionError("Receiver process host is not confirmed in this caller environment",
                                  code="receiver_host_unconfirmed", state="caller_environment_unavailable",
@@ -155,17 +158,24 @@ def _codex_extension_send(target, message, model):
                                  next_action="按已知运行位置显式配置正常执行入口；不按盘符猜主机或失败后换路。")
         if view["state"] == "process_not_running":
             raise InjectionError("Codex receiver registration points to a dead process",
-                                 code="receiver_stale_registration", state="receiver_offline")
+                                 code="receiver_stale_registration", state="receiver_offline",
+                                 repair_owner=repair_owner, next_action=next_action,
+                                 diagnostic=diagnostic)
         if view["state"] == "process_identity_mismatch":
             raise InjectionError("Codex receiver registration belongs to a different process instance",
-                                 code="receiver_identity_mismatch", state="receiver_offline")
+                                 code="receiver_identity_mismatch", state="receiver_offline",
+                                 repair_owner=repair_owner, next_action=next_action,
+                                 diagnostic=diagnostic)
         if view["file_state"] != "available":
             raise InjectionError("Codex receiver runtime file missing/unreadable or invalid",
                                  code=str(view["reason"]), state="receiver_not_prepared",
-                                 next_action=view["next_action"])
+                                 repair_owner=repair_owner, next_action=next_action,
+                                 diagnostic=diagnostic)
         if view["prepared"] is not True:
-            raise InjectionError("Codex receiver OS instance identity is unverified; original Owner must prepare",
-                                 code="receiver_identity_unverified", state="receiver_not_prepared")
+            raise InjectionError("Codex receiver OS instance identity is unverified; inspect the retained query diagnostic",
+                                 code="receiver_identity_unverified", state="receiver_not_prepared",
+                                 repair_owner=repair_owner, next_action=next_action,
+                                 diagnostic=diagnostic)
         path = Path(posix_windows_drive_locator(runtime_file))
         try:
             descriptor = json.loads(path.read_text(encoding="utf-8"))

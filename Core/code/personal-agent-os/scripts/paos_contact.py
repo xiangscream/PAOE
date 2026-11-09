@@ -258,11 +258,12 @@ def derive_attach(target: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _local_pid_alive(pid: int) -> bool | None:
-    """Read process existence only. Never use os.kill(pid, 0) on Windows."""
+def _local_pid_alive(pid: int) -> tuple[bool | None, dict[str, Any] | None]:
+    """Read process existence only; retain the caller-side query failure."""
     if os.name == "nt":
         import ctypes
         from ctypes import wintypes
+        from wakeup_native.process_identity import _query_diagnostic
 
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
@@ -273,21 +274,30 @@ def _local_pid_alive(pid: int) -> bool | None:
         kernel.CloseHandle.restype = wintypes.BOOL
         handle = kernel.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
         if not handle:
-            return False if ctypes.get_last_error() == 87 else None
+            code = ctypes.get_last_error()
+            reason = "process_not_found" if code == 87 else (
+                "process_access_denied" if code == 5 else "process_query_failed")
+            error = ctypes.WinError(code) if code else None
+            return False if code == 87 else None, _query_diagnostic("OpenProcess", reason, error)
         try:
             code = wintypes.DWORD()
             if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
-                return None
-            return code.value == 259  # STILL_ACTIVE
+                winerror = ctypes.get_last_error()
+                error = ctypes.WinError(winerror) if winerror else None
+                return None, _query_diagnostic("GetExitCodeProcess", "process_exit_status_unavailable", error)
+            return code.value == 259, None  # STILL_ACTIVE
         finally:
             kernel.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
-        return False
-    except (OSError, OverflowError):
-        return None
-    return True
+        return False, None
+    except (OSError, OverflowError) as exc:
+        return None, {
+            "phase": "process_query", "operation": "os.kill",
+            "reason": "process_query_failed", "exception_type": type(exc).__name__,
+        }
+    return True, None
 
 
 def _codex_receiver_view(target: dict[str, Any]) -> dict[str, Any]:
@@ -354,18 +364,30 @@ def _codex_receiver_view(target: dict[str, Any]) -> dict[str, Any]:
     if foreign_process_host:
         view["reason"] = "process_host_not_local"
         return view
-    alive = _local_pid_alive(pid)
+    alive, query_diagnostic = _local_pid_alive(pid)
+    if query_diagnostic:
+        view["diagnostic"] = query_diagnostic
     view.update(pid_alive=alive, reason="process_check_unknown")
     if alive is False:
         view.update(state="process_not_running", reason="process_not_running")
+    elif alive is None:
+        view.update(state="process_unknown", reason="process_check_unknown",
+                    repair_owner="caller_installation_owner",
+                    next_action="Inspect the retained process-query diagnostic and caller permissions; the target identity is not judged.")
     elif alive is True:
         from wakeup_native.process_identity import process_snapshot, valid_identity
         expected = descriptor.get("process_identity")
         snapshot = process_snapshot(pid, str(path) if "process_identity" not in descriptor else None,
                                     target.get("stop_file") if "process_identity" not in descriptor else None)
+        if snapshot.get("diagnostic"):
+            view["diagnostic"] = snapshot["diagnostic"]
         view.update(pid_alive=snapshot["alive"], prepared=None, reason="process_identity_query_unavailable")
         if snapshot["alive"] is False:
             view.update(state="process_not_running", prepared=False, reason="process_not_running")
+        elif snapshot["alive"] is None:
+            view.update(state="process_unknown", reason="process_identity_query_unavailable",
+                        repair_owner="caller_installation_owner",
+                        next_action="Inspect the retained process-query diagnostic and caller permissions; the target identity is not judged.")
         elif snapshot["alive"] is True and "process_identity" not in descriptor:
             if snapshot.get("invocation_matches") is False:
                 view.update(state="process_identity_mismatch", prepared=False, reason="receiver_invocation_mismatch")

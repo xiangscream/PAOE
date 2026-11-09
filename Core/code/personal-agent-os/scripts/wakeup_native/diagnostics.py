@@ -23,8 +23,12 @@ def transport_fields(value):
     request_id = value.get("request_id")
     if isinstance(request_id, str) and len(request_id) == 32 and all(c in "0123456789abcdef" for c in request_id):
         result["request_id"] = request_id
-    if isinstance(value.get("phase"), str) and value["phase"] in {"http_wait", "status_read", "native_submit", "http_reply"}:
+    if isinstance(value.get("phase"), str) and value["phase"] in {"http_wait", "status_read", "process_query", "native_submit", "http_reply"}:
         result["phase"] = value["phase"]
+    for name in ("operation", "reason"):
+        field = value.get(name)
+        if isinstance(field, str) and len(field) <= 80 and field.isidentifier():
+            result[name] = field
     native_status = value.get("native_status")
     if isinstance(native_status, str) and native_status in _NATIVE_STATUS_VALUES:
         result["native_status"] = native_status

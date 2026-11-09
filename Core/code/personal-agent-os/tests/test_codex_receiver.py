@@ -205,7 +205,7 @@ class ReceiverTests(unittest.TestCase):
             self.assertNotEqual(new["token"], old["token"])
         server.serve_forever.side_effect = ready
         with patch.object(SelfReminder, "from_desktop", return_value=self.reminder), \
-                patch("paos_contact._local_pid_alive", return_value=False), \
+                patch("paos_contact._local_pid_alive", return_value=(False, None)), \
                 patch("wakeup_native.codex_receiver.make_server", return_value=server):
             serve(runtime_file, self.stop)
         archives = list(runtime_file.parent.glob(runtime_file.name + ".stale-*.json"))
@@ -222,7 +222,7 @@ class ReceiverTests(unittest.TestCase):
                    "process_identity": "windows:123"}
             runtime_file.write_text(json.dumps(old), encoding="utf-8")
             with patch.object(SelfReminder, "from_desktop", return_value=self.reminder), \
-                    patch("paos_contact._local_pid_alive", return_value=alive), \
+                    patch("paos_contact._local_pid_alive", return_value=(alive, None)), \
                     patch("wakeup_native.process_identity.process_snapshot", return_value={"alive": alive, "identity": "windows:123"}), \
                     patch("wakeup_native.codex_receiver.make_server") as make:
                 with self.assertRaises(ReceiverError) as error:
