@@ -577,6 +577,86 @@ def build_team_rows(
     }
 
 
+def _team_member_status(role_source: str, home_id: str) -> str:
+    """Read only the TEAM member-status line for a summary row."""
+    path = Path(role_source or "")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return ""
+    active = False
+    target = False
+    section = "## 当前成员"
+    label = "成员状态"
+    for line in lines:
+        if line.startswith("## "):
+            active = line.strip() == section
+            target = False
+        elif active and line.startswith("### "):
+            target = line[4:].strip() == home_id
+        elif active and target:
+            match = re.match(r"^\s*-\s*" + label + r"\s*[：:]\s*(.+)$", line)
+            if match:
+                return match.group(1).strip()
+    return ""
+
+
+def summarize_team_row(entry: dict[str, Any]) -> dict[str, Any]:
+    """Project a roster row to the fields needed for normal colleague lookup."""
+    source = entry or {}
+    todo = source.get("workstation_todo") or {}
+    contact = source.get("runtime_contact") or {}
+    home = source.get("home_read") or {}
+    model = home.get("read_model") or {}
+    recovery = model.get("recovery") or {}
+    summary: dict[str, Any] = {
+        key: source.get(key)
+        for key in ("agent_id", "identity_id", "staff_number", "agent_label",
+                    "role_summary", "role_source", "is_coordinator",
+                    "membership_basis", "session_status")
+    }
+    status = _team_member_status(str(source.get("role_source") or ""), str(source.get("agent_id") or ""))
+    if status:
+        summary["member_status"] = status
+    summary["workstation_todo"] = {
+        "available": bool(todo.get("available")),
+        "path": str(todo.get("path") or ""),
+        "trusted": bool(todo.get("trusted")),
+        "current_section": todo.get("current_section") or {},
+        "facts": todo.get("facts") or {},
+        "todo_summary": todo.get("todo_summary") or {},
+        "counts": todo.get("counts") or {},
+    }
+    summary["runtime_contact"] = {
+        key: contact.get(key)
+        for key in ("configured", "target_status", "binding_status", "runtime", "driver",
+                    "online_state", "state_basis", "checked_at", "stop_present")
+    }
+    receiver = contact.get("receiver")
+    if isinstance(receiver, dict):
+        summary["runtime_contact"]["receiver"] = {
+            key: receiver.get(key)
+            for key in ("registered", "state", "prepared", "pid_alive", "checked_at", "reason")
+        }
+    summary["home_read"] = {
+        "available": bool(home.get("available")),
+        "status_basis": str(home.get("status_basis") or ""),
+        "error": home.get("error") or "",
+        "read_model": {
+            "schema": str(model.get("schema") or ""),
+            "observed_at": str(model.get("observed_at") or ""),
+            "home": model.get("home") or {},
+            "current": model.get("current") or {},
+            "sources": model.get("sources") or {},
+            "reachability": model.get("reachability") or {},
+            "filter_scope": model.get("filter_scope") or {},
+            "consistency": str(model.get("consistency") or ""),
+            "recovery": {"counts": recovery.get("counts") or {}} if recovery else {},
+        },
+    }
+    return summary
+
+
 def contact_entry(
     root: Path,
     agent_id: str,

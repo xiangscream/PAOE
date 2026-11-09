@@ -118,5 +118,49 @@ class StageTwoDiscoveryTests(unittest.TestCase):
                     self.assertIn(term, result.stdout)
 
 
+    def test_team_and_peers_summary_is_explicit_compact_and_lossless_for_lookup(self):
+        team = self.f.vault / "TEAM.md"
+        team.write_text(
+            "# Team\n\n## \u5f53\u524d\u6210\u5458\n\n### 3002-s001\n"
+            "- \u6210\u5458\u72b6\u6001\uff1a\u5728\u961f\n"
+            "- \u804c\u8d23/\u4e13\u957f\uff1a\u603b\u4f53\u7ec4\u7ec7\n\n"
+            "### 3002-s002\n"
+            "- \u6210\u5458\u72b6\u6001\uff1a\u6682\u505c\u4fdd\u7559\uff0c"
+            "\u4e0d\u662f\u5f53\u524d\u6267\u884c\u8005\n"
+            "- \u804c\u8d23/\u4e13\u957f\uff1a\u63a5\u53e3\u4e0e\u6d4b\u8bd5\n",
+            encoding="utf-8",
+        )
+        original = self.snapshot()
+        default = self.f.call("team", "3002", "3002-s001")[1]
+        summary = self.f.call("team", "3002", "3002-s001", "--summary")[1]
+        peers = self.f.call("peers", "3002", "3002-s001", "--summary")[1]
+        self.assertNotIn("summary", default)
+        self.assertTrue(summary["summary"])
+        self.assertTrue(peers["summary"])
+        self.assertLess(len(json.dumps(summary)), len(json.dumps(default)))
+        row = next(item for item in summary["agents"] if item["agent_id"] == "3002-s002")
+        self.assertEqual(row["role_summary"], "\u63a5\u53e3\u4e0e\u6d4b\u8bd5")
+        self.assertEqual(row["member_status"],
+                         "\u6682\u505c\u4fdd\u7559\uff0c\u4e0d\u662f\u5f53\u524d\u6267\u884c\u8005")
+        self.assertEqual(row["workstation_todo"]["current_section"],
+                         default["agents"][1]["workstation_todo"]["current_section"])
+        self.assertIn("current", row["home_read"]["read_model"])
+        self.assertNotIn("tasks", row["home_read"]["read_model"])
+        self.assertEqual(row["home_read"]["read_model"]["recovery"].keys(), {"counts"})
+        self.assertEqual([item["agent_id"] for item in peers["peers"]], ["3002-s002"])
+        self.assertNotIn("tasks", peers["peers"][0]["home_read"]["read_model"])
+        self.assertEqual(original, self.snapshot())
+
+    def test_summary_remains_on_read_failure_and_unknown_online_state(self):
+        home = self.f.vault / "Workstations/3002-s002"
+        (home / "TODO.md").write_text("broken old todo", encoding="utf-8")
+        summary = self.f.call("team", "3002", "3002-s001", "--summary")[1]
+        row = next(item for item in summary["agents"] if item["agent_id"] == "3002-s002")
+        self.assertFalse(row["workstation_todo"]["trusted"])
+        self.assertIn("error", row["home_read"])
+        self.assertEqual(row["runtime_contact"].get("online_state", "unknown"), "unknown")
+        self.assertNotIn("tasks", row["home_read"].get("read_model", {}))
+
+
 if __name__ == "__main__":
     unittest.main()
