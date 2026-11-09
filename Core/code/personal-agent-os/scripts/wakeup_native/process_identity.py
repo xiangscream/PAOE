@@ -93,6 +93,28 @@ def _windows_argv(pid):
         kernel.LocalFree(pointer)
 
 
+def _query_diagnostic(operation, reason, error=None):
+    """Keep a bounded, machine-readable process-query failure for both read surfaces."""
+    diagnostic = {"phase": "process_query", "operation": operation, "reason": reason}
+    if error is None:
+        code = ctypes.get_last_error()
+        if code:
+            diagnostic["winerror"] = code
+    else:
+        for name in ("errno", "winerror"):
+            value = getattr(error, name, None)
+            if type(value) is int:
+                diagnostic[name] = value
+        diagnostic["exception_type"] = type(error).__name__
+    return diagnostic
+
+
+def _windows_query_error(operation, reason, code=None):
+    code = ctypes.get_last_error() if code is None else code
+    error = ctypes.WinError(code) if code else None
+    return _query_diagnostic(operation, reason, error)
+
+
 def _windows_snapshot(pid, runtime_file, stop_file):
     from ctypes import wintypes
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -109,17 +131,23 @@ def _windows_snapshot(pid, runtime_file, stop_file):
     # readable receiver process look unverified to an external caller.
     handle = kernel.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
     if not handle:
-        return {"alive": False if ctypes.get_last_error() == 87 else None}
+        code = ctypes.get_last_error()
+        reason = "process_not_found" if code == 87 else (
+            "process_access_denied" if code == 5 else "process_query_failed")
+        return {"alive": False if code == 87 else None,
+                "diagnostic": _windows_query_error("OpenProcess", reason, code)}
     try:
         created, exited, kernel_time, user_time = (wintypes.FILETIME() for _ in range(4))
         if not kernel.GetProcessTimes(handle, ctypes.byref(created), ctypes.byref(exited),
                                       ctypes.byref(kernel_time), ctypes.byref(user_time)):
-            return {"alive": None}
+            return {"alive": None,
+                    "diagnostic": _windows_query_error("GetProcessTimes", "process_times_unavailable")}
         identity = f"windows:{(created.dwHighDateTime << 32) | created.dwLowDateTime}"
         argv = _windows_argv(pid) if runtime_file else None
         code = wintypes.DWORD()
         if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
-            return {"alive": None}
+            return {"alive": None,
+                    "diagnostic": _windows_query_error("GetExitCodeProcess", "process_exit_status_unavailable")}
         return {"alive": code.value == 259, "identity": identity,
                 "invocation_matches": receiver_invocation(argv, runtime_file, stop_file) if argv is not None else None}
     finally:
@@ -148,11 +176,13 @@ def process_snapshot(pid, runtime_file=None, stop_file=None):
         if sys.platform.startswith("linux"):
             return _linux_snapshot(pid, runtime_file, stop_file)
         return {"alive": None}
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         gone = os.name != "nt" and Path("/proc").is_dir() and not (Path("/proc") / str(pid)).exists()
-        return {"alive": False if gone else None}
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        return {"alive": None}
+        return {"alive": False if gone else None,
+                "diagnostic": _query_diagnostic("process_snapshot", "process_not_found" if gone else "process_query_failed", exc)}
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        return {"alive": None,
+                "diagnostic": _query_diagnostic("process_snapshot", "process_query_failed", exc)}
 
 
 def stop_windows_instance(pid, expected_identity):

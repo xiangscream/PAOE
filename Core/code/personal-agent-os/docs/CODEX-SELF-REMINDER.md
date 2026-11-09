@@ -56,7 +56,7 @@ agent send的runtime_wake_performed只聚合本次调用：有确证受理成员
 
 接收器在运行文件旁追加 `<运行文件名>.lifecycle.jsonl`，记录 UTC 时间、PID，以及 `starting`、`ready`、`exit`。启动记录包含父PID和Python路径，就绪记录包含本人Thread和回环地址；退出记录只保存正常返回或异常类型、已定义错误码，不保存异常正文、消息、token或Desktop pipe。每条记录立即flush，历史记录保留；启动/退出生命周期日志写入失败直接报错。
 
-正常发送方为每次实际HTTP调用生成32位十六进制 `request_id`，通过 `X-PAOS-Request-ID` 头传给receiver，原生payload仍只有session_id/message，不将编号、异常或凭据放入模型消息。缺少该头时receiver只生成本地关联编号；它不是授权或去重凭据。成功技术回执包含request_id；错误回执的diagnostic只包含request_id、phase、exception_type、errno/winerror、http_status和native_status等机器字段，WSL→Windows回包保留这些字段。状态拒绝的`native_status`为`systemError`、`not_returned`（宿主未返回状态）或`unrecognized`（宿主返回协议未识别值）；不复制原始状态文本。异常自由文本不进入diagnostic。
+正常发送方为每次实际HTTP调用生成32位十六进制 `request_id`，通过 `X-PAOS-Request-ID` 头传给receiver，原生payload仍只有session_id/message，不将编号、异常或凭据放入模型消息。缺少该头时receiver只生成本地关联编号；它不是授权或去重凭据。成功技术回执包含request_id；错误回执的diagnostic只包含request_id、phase、exception_type、errno/winerror、http_status和native_status等机器字段，WSL→Windows回包保留这些字段。状态拒绝的`native_status`为`systemError`、`not_returned`（宿主未返回状态）或`unrecognized`（宿主返回协议未识别值）；不复制原始状态文本。异常自由文本不进入diagnostic。调用方进程查询失败时，`wake status`与原生回执保留`phase=process_query`、`operation`、`reason`、`winerror/errno`及异常类型；调用方查询能力不足归`caller_installation_owner`，目标已退出或实例确实失配仍归`target_owner`，未知不在POST前冒充目标问题。
 
 同一生命周期日志按该编号记录 `request_received`、`status_read_started/returned`、`native_submit_started`、`native_result_returned/unknown`、`request_rejected` 及 `http_reply_returned/failed`，附本次请求起算的elapsed_ms。native_submit_started只表示开始调用原生发送封装，不证明其中某个底层pipe请求已被受理；http_reply_returned只表示本端写入返回，不证明调用方收到。回写断连只记机器错误，不重复原生发送。请求诊断日志写入失败时，在既有stderr写request_log_failed与机器错误；不改变已发生的提交结果、不重投，也不因此停止接收器。
 
