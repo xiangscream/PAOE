@@ -30,11 +30,11 @@ Installed communication details are documented in System/Guide; this receiver on
 
 空消息验证失败、超时、实例变化或STOP出现时保留原登记，不重启旧进程、不发布另一个入口。旧HTTP服务正处理在途提交时，验证可能超时；待该自然提交结束后由原Owner正常prepare，不重投业务。OS权限/执行位置无法核定时，从原Owner正常Windows入口恢复或交Rooter查准确失败，禁止force、手改grant或借凭据。自定义启动方式不作为已安装调用合同的替代。
 
-`wake status`复用Contact读面，不发HTTP/原生探针。prepared要求PID与OS实例相符；process_identity_mismatch可同时是pid_alive=true/prepared=false。旧身份未验证或查询失败为unknown，sender在POST前拒绝。WSL沿登记Windows执行入口核Windows实例，不把Windows PID当Linux PID。启动参数只在旧登记判定时读取，不进入读面、回执或日志。
+`wake status`复用Contact读面，不发HTTP/原生探针。prepared要求PID与OS实例相符；process_identity_mismatch可同时是pid_alive=true/prepared=false。本地身份未验证或查询失败为unknown；这不等于目标失配。实际提醒的发送方不再用调用方OS查询决定是否发送：读取runtime grant后，先向目标已鉴权的`GET /status`核对`session_id`与`process_identity`，再`POST /send`；目标在自身进程内自证身份并回执`process_identity`。旧receiver无`/status`、缺少身份或身份不匹配时确定不发送，不用调用方查询权限兜底，也不换路径。WSL沿登记Windows执行入口核Windows实例，不把Windows PID当Linux PID。启动参数只在旧登记判定时读取，不进入读面、回执或日志。
 
 一次提醒明确区分receiver_offline（陈旧死进程或连接明确拒绝）、receiver_not_prepared（未登记/无有效grant）、native_busy、native_stopped、native_rejected与delivery_uncertain。使用协议error_code而非错误字符串猜状态；Windows子回执和两CLI保留原因、负责Owner、动作及retry=false。未知仍accepted=null，不自动换路或重发。
 
-`POST <endpoint>/send`，请求头 `Authorization: Bearer <本人入口授权>`，JSON 恰为 `{"session_id":"<目标本人>","message":"<一次提醒>"}`。多余字段、错目标或空消息都在原生调用前拒绝；不接受 model/caller/tool/method/pipe 参数。调用方不持有 Desktop 凭据，不能向入口索取历史或调用其他工具。
+`GET <endpoint>/status`，请求头同样是 `Authorization: Bearer <本人入口授权>`，只返回 `session_id`、目标自身 `pid` 和 `process_identity`；不读取消息、Desktop、token 或调用方凭据。`POST <endpoint>/send`，请求头 `Authorization: Bearer <本人入口授权>`，JSON 恰为 `{"session_id":"<目标本人>","message":"<一次提醒>"}`。两者都在原生调用前拒绝错目标；`/send` 成功回执还带同一 `process_identity`，供发送方确认状态核验与提交仍是同一 OS 实例。多余字段、空消息或不匹配身份都拒绝；不接受 model/caller/tool/method/pipe 参数。调用方不持有 Desktop 凭据，不能向入口索取历史或调用其他工具。
 
 目标状态明确为active、idle或notLoaded时，入口向既有 `send_message_to_thread` 提交一次已授权提醒；未知状态仍在提交前拒绝。它不传queue、model或设置覆盖，宿主决定如何处理跟进。成功为 HTTP 200、`accepted:true`、准确 `session_id`、`completed:false`，并含 `native_status_before_submit`。该字段只是提交前观察，不保证加入当前turn或下一turn排队。[官方提示说明](https://learn.chatgpt.com/docs/prompting#steering-and-queuing)区分两者；App Server的turn/steer不是本入口调用合同。
 

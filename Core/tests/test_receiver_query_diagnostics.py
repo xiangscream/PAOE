@@ -70,19 +70,19 @@ class ReceiverQueryDiagnosticTests(unittest.TestCase):
         self.assertEqual(view["diagnostic"]["reason"], "process_access_denied")
         self.assertEqual(view["diagnostic"]["winerror"], 5)
 
-    def test_reminder_receipt_keeps_caller_query_failure(self):
-        win_dll, last_error = self.failed_open_process()
-        with patch.object(paos_contact, "_local_pid_alive", return_value=(True, None)), \
-                win_dll, last_error:
-            with self.assertRaises(runtime_injection.InjectionError) as raised:
-                runtime_injection._codex_extension_send(self.target, "message", None)
-        details = raised.exception.details()
-        self.assertEqual(details["error_code"], "receiver_identity_unverified")
-        self.assertEqual(details["repair_owner"], "caller_installation_owner")
-        self.assertEqual(details["diagnostic"]["phase"], "process_query")
-        self.assertEqual(details["diagnostic"]["operation"], "OpenProcess")
-        self.assertEqual(details["diagnostic"]["reason"], "process_access_denied")
-        self.assertEqual(details["diagnostic"]["winerror"], 5)
+    def test_sender_uses_target_status_instead_of_caller_process_query(self):
+        responses = [
+            ({"session_id": "session-fixture", "process_identity": "windows:123"}, 200),
+            ({"session_id": "session-fixture", "accepted": True,
+              "process_identity": "windows:123", "native_status_before_submit": "idle"}, 200),
+        ]
+        with patch("paos_contact._codex_receiver_view",
+                   side_effect=AssertionError("caller process query must not run")), \
+                patch.object(runtime_injection, "_request", side_effect=responses) as request:
+            result = runtime_injection._codex_extension_send(self.target, "message", None)
+        self.assertTrue(result["accepted"])
+        self.assertEqual([call.args[2] for call in request.call_args_list], ["GET", "POST"])
+        self.assertEqual([call.args[3] for call in request.call_args_list], ["/status", "/send"])
 
 
 if __name__ == "__main__":

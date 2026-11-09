@@ -42,10 +42,16 @@ def _native_status(value):
 
 
 class SelfReminder:
-    def __init__(self, client, session_id, stop_file):
+    def __init__(self, client, session_id, stop_file, process_identity=None):
         self.client = client
         self.session_id = session_id
         self.stop_file = Path(stop_file)
+        self.process_identity = process_identity
+
+    def status(self):
+        """Return only the authenticated target's own session/instance proof."""
+        return {"session_id": self.session_id, "pid": os.getpid(),
+                "process_identity": self.process_identity}
 
     @classmethod
     def from_desktop(cls, stop_file):
@@ -94,6 +100,7 @@ class SelfReminder:
         if observe:
             observe("native_result_returned")
         return {"accepted": True, "session_id": self.session_id, "completed": False,
+                "process_identity": self.process_identity,
                 "native_status_before_submit": status}
 
 
@@ -133,6 +140,17 @@ def make_server(reminder, token, lifecycle=None):
                                         "diagnostic": {"request_id": self.request_id, **exc.diagnostic}})
                 return
             self.reply(200, {**result, "request_id": self.request_id})
+
+        def do_GET(self):
+            self.request_id = None
+            self.started_at = time.monotonic()
+            if self.path != "/status":
+                self.reply(404, {"error": "unknown_endpoint"})
+                return
+            if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + token):
+                self.reply(401, {"error": "authorization_required"})
+                return
+            self.reply(200, reminder.status())
 
         def observe(self, event, **fields):
             if lifecycle is None or self.request_id is None:
@@ -219,6 +237,7 @@ def publish_owned_runtime(runtime_file, reminder, lifecycle=None):
     process = process_snapshot(os.getpid())
     if process["alive"] is not True or not valid_identity(process.get("identity")):
         raise ReceiverError("process_identity_unavailable", "Own OS process instance is not verified", 503)
+    reminder.process_identity = process["identity"]
     token = secrets.token_urlsafe(32)
     server = make_server(reminder, token, lifecycle)
     runtime = {"schema": "paos-codex-self-reminder/v1", "pid": os.getpid(),
