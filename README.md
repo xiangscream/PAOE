@@ -36,6 +36,10 @@
 
 先保存并提交本机改动，再 fetch 和比较差异；冲突按原件合并，保留人工内容。GitHub 版本已发布与本机已采用分别记录，不能用一次 push 代替运行或 Agent 消费验收。
 
+## 两机经历与协作
+
+个人经历和项目背景沿两机已确认的 Syncthing 内容库共享。各机复制真实项目的 TEAM 页，标明机器、Project、来源与采集时间，方便查同事和职责；具体合作由各机同步维护 Agent 转接，再调用接收端自己的原生提醒。采用与验证见[跨机协作](Guide/guide-cross-machine-experience.md)。
+
 ## 新安装
 
 在 Windows、Python 3.10 及以上环境，从 System 根目录执行：

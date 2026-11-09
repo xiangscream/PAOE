@@ -1,19 +1,20 @@
 # PAOE 体系
 
 <!-- paoe:human-intro:start -->
-> 三类库各管一类事情：System 管运行环境，Libraries 管方法，项目库管具体工作。
+> System 管运行环境，Libraries 管方法；项目库保存业务，个人经历库保存跨项目经历和团队背景。
 <!-- paoe:human-intro:end -->
 
 <!-- paoe:agent-reference -->
 ## 操作与参考
 
-## 三类库的边界
+## 库的边界
 
 | 库 | 保存什么 |
 | --- | --- |
 | **System** | 硬基座、Rooter 工位、CAT、通用运行规则 SSOT、项目库母版及系统入口。 |
 | **Libraries** | 可复用的任务 Workflow、专业 Skill、Tool。 |
 | **独立项目库** | 各项目的最新业务口径、材料、成果及项目成员工位。 |
+| **个人经历库** | 每日经历、主题、带日期的项目摘要、机器责任与 TEAM 快照；沿已有 Syncthing 内容目录共享。 |
 
 System 的规则说明 Agent 怎样在 PAOE 中工作；Libraries 的方法说明某类任务怎样完成。项目使用各自的独立目录、Obsidian 库和 Git 历史。新建或登记 Project 由 Human 明确决定。
 
@@ -21,6 +22,8 @@ System 的规则说明 Agent 怎样在 PAOE 中工作；Libraries 的方法说�
 flowchart LR
   S[System：环境、规则与母版] --> P[独立项目库：业务与成员工位]
   L[Libraries：方法与工具] --> P
+  P -->|有来源的经历与进展摘要| E[个人经历与团队快照]
+  E <-->|Syncthing| E2[另一台电脑的同一内容库]
   R[System 内的 Rooter] -->|维护运行环境| P
 ```
 

@@ -5,5 +5,5 @@
   "machine_state": "not release source; retain on each machine",
   "platform": "Windows",
   "schema": "paoe-system-source/v1",
-  "system_version": "0.2.12"
+  "system_version": "0.2.13"
 }
