@@ -28,6 +28,7 @@ sys.path.insert(0, str(SCRIPTS))
 import paos
 from paos_todo import parse_todo, render_todo
 from paos_library import ensure_workflow_library, ensure_skill_library, register_library_roots
+from paos_workstation import LIBRARY_NAV_PLACEHOLDER
 
 
 def normalized_path(value):
@@ -137,6 +138,31 @@ class StageOneEntryTests(unittest.TestCase):
             matching = [row for row in text.splitlines() if normalized_path(self.f.vault / name) in row]
             self.assertTrue(matching, name)
             self.assertTrue(any("不可读" in row for row in matching), matching)
+
+    def test_workstation_init_fills_library_navigation_and_preserves_human_text(self):
+        agents = self.f.vault / 'AGENTS.md'
+        agents.write_text(
+            '## Libraries 与工具\n\n' + LIBRARY_NAV_PLACEHOLDER + '\n\n'
+            '## Human note\n\nKeep this line.\n',
+            encoding='utf-8',
+        )
+        (self.workflow / 'CATALOG.md').write_text('# Workflow Catalog\n', encoding='utf-8')
+        (self.skill / 'CATALOG.md').write_text('# Skill Catalog\n', encoding='utf-8')
+        self.new_home()
+        text = agents.read_text(encoding='utf-8')
+        for label, path in (
+            ('Libraries', self.f.root),
+            ('Workflow Catalog', self.workflow / 'CATALOG.md'),
+            ('Skill Catalog', self.skill / 'CATALOG.md'),
+            ('Tool Catalog', self.f.tools),
+        ):
+            destination = str(path.resolve()).replace('\\', '/')
+            self.assertIn(f'[{label}](<{destination}>)', text)
+        self.assertIn('Keep this line.', text)
+        self.assertNotIn(LIBRARY_NAV_PLACEHOLDER, text)
+        before = agents.read_bytes()
+        self.f.call('workstation', 'init', '3002', '3002-s003', '--guide-root', str(self.guide))
+        self.assertEqual(before, agents.read_bytes())
 
     def test_initial_todo_routes_to_recovery_without_forcing_all_catalogs(self):
         todo = parse_todo((self.new_home() / "TODO.md").read_text(encoding="utf-8"))

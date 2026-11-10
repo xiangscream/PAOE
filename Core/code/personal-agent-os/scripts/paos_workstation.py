@@ -93,6 +93,72 @@ V11_PROJECT_VAULT_DIRS = (
     "Archive",
 )
 
+LIBRARY_NAV_PLACEHOLDER = (
+    "<创建者从本机已登记的Library roots填写 Libraries、Workflow Catalog、"
+    "Skill Catalog、Tool Catalog 四个直接链接；库根变更时同步本机导航。>"
+)
+
+
+def _direct_path_link(label: str, path: Path) -> str:
+    destination = str(path.resolve()).replace("\\", "/")
+    return f"[{label}](<{destination}>)"
+
+
+def sync_project_agents_navigation(
+    root: Path,
+    *,
+    workflow_root: str = "",
+    skill_root: str = "",
+    tool_catalog: str = "",
+) -> bool:
+    """Fill the project-local library navigation only when the mother placeholder remains.
+
+    The project AGENTS file is outside the shared public block. Existing human
+    navigation is never replaced; four links are filled only when all four
+    registered targets currently exist.
+    """
+    agents = Path(root) / "AGENTS.md"
+    if not agents.is_file():
+        return False
+    try:
+        original = agents.read_bytes()
+        text = original.decode("utf-8-sig")
+    except (OSError, UnicodeError):
+        return False
+    if LIBRARY_NAV_PLACEHOLDER not in text:
+        return False
+
+    workflow = Path(posix_windows_drive_locator(str(workflow_root))).expanduser()
+    skill = Path(posix_windows_drive_locator(str(skill_root))).expanduser()
+    tool = Path(posix_windows_drive_locator(str(tool_catalog))).expanduser()
+    libraries = workflow.parent if workflow.parent == skill.parent else None
+    workflow_catalog = workflow / "CATALOG.md"
+    skill_catalog = skill / "CATALOG.md"
+    if (libraries is None or not libraries.is_dir()
+            or not workflow_catalog.is_file() or not skill_catalog.is_file()
+            or not tool.is_file()):
+        return False
+
+    navigation = " · ".join((
+        _direct_path_link("Libraries", libraries),
+        _direct_path_link("Workflow Catalog", workflow_catalog),
+        _direct_path_link("Skill Catalog", skill_catalog),
+        _direct_path_link("Tool Catalog", tool),
+    ))
+    updated = text.replace(LIBRARY_NAV_PLACEHOLDER, navigation, 1).encode("utf-8")
+    if updated == original:
+        return False
+    staging = agents.with_name(f".{agents.name}.staging-{uuid.uuid4().hex}")
+    try:
+        staging.write_bytes(updated)
+        if agents.read_bytes() != original:
+            return False
+        os.replace(staging, agents)
+    finally:
+        staging.unlink(missing_ok=True)
+    return True
+
+
 def _single_line(value: Any) -> str:
     return " ".join(str(value or "").split())
 
@@ -1211,6 +1277,12 @@ def ensure_fixed_workstation(
     )
 
     vault = ensure_project_vault(root)
+    sync_project_agents_navigation(
+        root,
+        workflow_root=workflow_library,
+        skill_root=skill_library,
+        tool_catalog=tool_index_ref,
+    )
     created: list[str] = []
     if not workstation.exists():
         stage = workstation.parent / f".{agent_id}.staging-{uuid.uuid4().hex}"
