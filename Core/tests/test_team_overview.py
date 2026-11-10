@@ -86,10 +86,11 @@ class TeamOverviewTests(unittest.TestCase):
         tools.write_text('# Tools\n', encoding='utf-8')
         evidence = works / 'RESULT-S002.md'
         evidence.write_text('# Result\n', encoding='utf-8')
+        absolute = (self.project / 'absolute.md').resolve().as_uri()
         self.team.write_text(
             '## 当前成员\n### 3002-s001\n'
             '- 职责/专长：维护[工具 速查](Works/source/TOOLS-QUICKSTART.md#usage)，'
-            '并保留[远端](https://example.com/a#b)和[绝对](C:/Users/remo/x.md)。\n'
+            f'并保留[远端](https://example.com/a#b)和[绝对](<{absolute}>)。\n'
             '- Harness：来源为[工位 ENTRY](Workstations/3002-s001/ENTRY.md)及'
             '[证据](<Works/source/RESULT-S002.md#result> "证据标题")。\n',
             encoding='utf-8')
@@ -105,7 +106,7 @@ class TeamOverviewTests(unittest.TestCase):
         self.assertIn(
             f'[证据](<{evidence.resolve().as_uri()}#result> "证据标题")', text)
         self.assertIn('[远端](https://example.com/a#b)', text)
-        self.assertIn('[绝对](C:/Users/remo/x.md)', text)
+        self.assertIn(f'[绝对](<{absolute}>)', text)
 
     def test_human_page_and_invalid_registration_are_never_overwritten(self):
         self.output.write_text('人工内容', encoding='utf-8')
