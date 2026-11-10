@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 93
+version: 94
 ---
 
 # PAOS 操作指南
@@ -169,6 +169,8 @@ paos attention rooter-history-read --history-root <同批次> --message-id <原�
 ```
 
 Rooter 的独立 Notice 同样用 `--notice-id`；沿原 Home 与原标记定位，不创建临时 Project 或新身份。
+
+旧的无frontmatter Mail，`--message-id`使用磁盘实际原文件名（可含中文和`.md`），同名用于`history-read`，后者不带Project/Agent位置参数。交接名单取实际目录；完成回报给准确批次、处理状态及原始读回路径，不手抄正文标作原件。
 
 多条已确认的历史输入，可在同一次执行中循环现有接口，例如每批20条，无需逐条发起对话或先等新命令。首批用`history-read`读回处理状态与实际归档位置，一致后继续同类余件；具体异常保留源件和首个断点。当前任务、未完责任与在途操作仍依赖的输入继续保留。
 
