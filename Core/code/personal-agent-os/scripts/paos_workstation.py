@@ -129,28 +129,39 @@ def sync_project_agents_navigation(
     if LIBRARY_NAV_PLACEHOLDER not in text:
         return {**result, "status": "preserved", "reason": "human_navigation_present"}
 
-    workflow = Path(posix_windows_drive_locator(str(workflow_root))).expanduser()
-    skill = Path(posix_windows_drive_locator(str(skill_root))).expanduser()
-    tool = Path(posix_windows_drive_locator(str(tool_catalog))).expanduser()
-    libraries = workflow.parent if workflow.parent == skill.parent else None
+    def registered_path(locator: str) -> Path | None:
+        locator = posix_windows_drive_locator(str(locator).strip())
+        if not locator:
+            return None
+        path = Path(locator).expanduser()
+        return path if path.is_absolute() else None
+
+    workflow = registered_path(workflow_root)
+    skill = registered_path(skill_root)
+    tool = registered_path(tool_catalog)
+    roots_exist = (workflow is not None and skill is not None
+                   and workflow.is_dir() and skill.is_dir())
+    libraries = workflow.parent if roots_exist and workflow.parent == skill.parent else None
     links: list[str] = []
     missing: list[str] = []
     if libraries is not None and libraries.is_dir():
         links.append(_direct_path_link("Libraries", libraries))
+    elif not roots_exist:
+        missing.append("Libraries 总入口（Workflow/Skill 根未完整登记为可读绝对目录）")
     elif libraries is None:
         missing.append("Libraries 总入口（Workflow/Skill 根不共用父目录，需补唯一 Libraries 根）")
     else:
         missing.append("Libraries 总入口（父目录不存在）")
 
     for label, path in (
-        ("Workflow Catalog", workflow / "CATALOG.md"),
-        ("Skill Catalog", skill / "CATALOG.md"),
+        ("Workflow Catalog", workflow / "CATALOG.md" if workflow is not None else None),
+        ("Skill Catalog", skill / "CATALOG.md" if skill is not None else None),
         ("Tool Catalog", tool),
     ):
-        if path.is_file():
+        if path is not None and path.is_file():
             links.append(_direct_path_link(label, path))
         else:
-            missing.append(f"{label}（未登记或不可读）")
+            missing.append(f"{label}（未登记、非绝对路径或不可读）")
 
     if not links:
         return {**result, "status": "unavailable", "missing": missing,
