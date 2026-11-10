@@ -36,6 +36,34 @@ from paos_agent_numbers import staff_number
 from paos_contact import _team_role_summaries
 
 
+# Workbench assets must not depend on the host MIME database. Windows registries
+# can map .js to text/plain; browsers then refuse the module/script.
+STATIC_CONTENT_TYPES = {
+    ".html": "text/html",
+    ".css": "text/css",
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+    ".map": "application/json",
+}
+
+
+def static_content_type(name: str) -> str:
+    suffix = Path(name).suffix.lower()
+    if suffix in STATIC_CONTENT_TYPES:
+        return STATIC_CONTENT_TYPES[suffix]
+    return mimetypes.guess_type(name)[0] or "application/octet-stream"
+
 class BoardProblem(ValueError):
     def __init__(self, code: str, message: str):
         super().__init__(message)
@@ -623,7 +651,7 @@ class Handler(BaseHTTPRequestHandler):
                         "error_code": "frontend_assets_missing" if page else "not_found"}, 503 if page else 404)
             return True
         data = path.read_bytes()
-        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        content_type = static_content_type(path.name)
         self.send_response(200)
         self.send_header("Content-Type", content_type + ("; charset=utf-8" if content_type.startswith("text/") else ""))
         self.send_header("Content-Length", str(len(data)))

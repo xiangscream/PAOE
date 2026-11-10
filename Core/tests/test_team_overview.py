@@ -79,6 +79,35 @@ class TeamOverviewTests(unittest.TestCase):
         self.assertIn('TEAM 原件缺失', missing)
         self.assertIn('3002-s001', missing)
 
+    def test_relative_team_links_are_relocated_from_team_source(self):
+        works = self.project / 'Works/source'
+        works.mkdir(parents=True)
+        tools = works / 'TOOLS-QUICKSTART.md'
+        tools.write_text('# Tools\n', encoding='utf-8')
+        evidence = works / 'RESULT-S002.md'
+        evidence.write_text('# Result\n', encoding='utf-8')
+        absolute = (self.project / 'absolute.md').resolve().as_uri()
+        self.team.write_text(
+            '## 当前成员\n### 3002-s001\n'
+            '- 职责/专长：维护[工具 速查](Works/source/TOOLS-QUICKSTART.md#usage)，'
+            f'并保留[远端](https://example.com/a#b)和[绝对](<{absolute}>)。\n'
+            '- Harness：来源为[工位 ENTRY](Workstations/3002-s001/ENTRY.md)及'
+            '[证据](<Works/source/RESULT-S002.md#result> "证据标题")。\n',
+            encoding='utf-8')
+        before = self.team.read_bytes()
+
+        text = render_overview(self.install, self.output)
+
+        self.assertEqual(self.team.read_bytes(), before)
+        self.assertIn(
+            f'[工具 速查](<{tools.resolve().as_uri()}#usage>)', text)
+        self.assertIn(
+            f'[工位 ENTRY](<{(self.home / "ENTRY.md").resolve().as_uri()}>)', text)
+        self.assertIn(
+            f'[证据](<{evidence.resolve().as_uri()}#result> "证据标题")', text)
+        self.assertIn('[远端](https://example.com/a#b)', text)
+        self.assertIn(f'[绝对](<{absolute}>)', text)
+
     def test_human_page_and_invalid_registration_are_never_overwritten(self):
         self.output.write_text('人工内容', encoding='utf-8')
         self.assertEqual(self.call('--write'), 2)
