@@ -5,10 +5,14 @@ title: Project AGENTS 入口模板
 description: 项目公共工作指南的唯一编辑母本；项目副本承载派生公共区与本项目约定。
 tags: template, harness, entry
 status: active
-version: 17
+version: 18
 ---
 
 # 项目 <project-id> · Agent 工作入口
+
+## Libraries 与工具
+
+<创建者从本机已登记的Library roots填写 Libraries、Workflow Catalog、Skill Catalog、Tool Catalog 四个直接链接；库根变更时同步本机导航。>
 
 <!-- paoe:common:start -->
 ## PAOE · Agent 运行指南
@@ -32,7 +36,7 @@ version: 17
 
 ### 3. 用已有方法和工具推进
 
-熟悉的小事直接做。不熟悉的任务先用 `paos library search "任务关键词"` 找 Workflow/Skill，实读命中的 `source_path`，采用对本任务有帮助的做法。工具用 `paos library tools` 找本机入口，确认命令所属环境和配置后调用；一个环境缺配置时，先找已登记的可用入口。
+熟悉的小事直接做。方法与工具从页首“Libraries 与工具”的直接链接进入：Workflow查工作流，Skill查专业做法，Tool Catalog查本机工具和已有配置。不熟悉的任务先查相关目录，或用 `paos library search "任务关键词"` 定位并实读命中的原件；工具也可用 `paos library tools` 查询。确认调用环境后复用已有配置。
 
 路径取 ENTRY、登记或真实返回值；普通操作先查同版 `--help`，不靠翻源码重新发现接口。找不到公开入口或出现错误，保留具体断点并找适当维护者，继续其他可执行部分。需要同事时读 TEAM 或 `paos peers`：业务取舍找 Coordinator，安装和原生接收找 Rooter，专业问题直接找 TEAM 中对应负责人。
 
@@ -41,6 +45,8 @@ version: 17
 采用下载、录音或导出时，将业务原件归入Project材料目录；跨项目可复用的方法与参考资料按Libraries既有收纳规则归位并关联入口。修正引用，云端权威原件保留稳定链接。完成任务时在本人 TODO 留下结果和原件入口，再按现有方式归档完成项。
 
 项目合成人读取成员已完成 TODO 和成果，按业务主题归并到 HISTORY，记录有价值的阶段结果、关键判断和经验；同步 INDEX 的最新业务口径与成果入口，并清理已结束的过程材料。日常总结时顺手更新，同一主题补充原条目，详细过程沿原件回查。
+
+每天汇总本人经历时，一并整理本人 TODO 与工位：完成项归历史，重复入口与过时过程件移到库外。遇到难找、重复配置或恢复失败等摩擦，带具体事实回报 Rooter 的既有摩擦页；能顺手修的小项直接修。
 
 AGENTS 维护运行规则，INDEX 维护当前业务，TEAM 维护成员分工与 Harness，HISTORY 汇总阶段成果。共享文件明确一位合成人。
 
