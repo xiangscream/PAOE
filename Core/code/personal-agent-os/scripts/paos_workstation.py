@@ -110,53 +110,74 @@ def sync_project_agents_navigation(
     workflow_root: str = "",
     skill_root: str = "",
     tool_catalog: str = "",
-) -> bool:
-    """Fill the project-local library navigation only when the mother placeholder remains.
+) -> dict[str, Any]:
+    """Fill project-local library navigation and report the real outcome.
 
-    The project AGENTS file is outside the shared public block. Existing human
-    navigation is never replaced; four links are filled only when all four
-    registered targets currently exist.
+    Only the mother placeholder is replaced. Existing human navigation is
+    preserved. A non-sibling Workflow/Skill layout is reported as partial with
+    the links that can be proved; no physical Libraries root is guessed.
     """
     agents = Path(root) / "AGENTS.md"
+    result: dict[str, Any] = {"path": str(agents)}
     if not agents.is_file():
-        return False
+        return {**result, "status": "not_applicable", "reason": "agents_missing"}
     try:
         original = agents.read_bytes()
         text = original.decode("utf-8-sig")
-    except (OSError, UnicodeError):
-        return False
+    except (OSError, UnicodeError) as exc:
+        return {**result, "status": "unreadable", "reason": type(exc).__name__}
     if LIBRARY_NAV_PLACEHOLDER not in text:
-        return False
+        return {**result, "status": "preserved", "reason": "human_navigation_present"}
 
     workflow = Path(posix_windows_drive_locator(str(workflow_root))).expanduser()
     skill = Path(posix_windows_drive_locator(str(skill_root))).expanduser()
     tool = Path(posix_windows_drive_locator(str(tool_catalog))).expanduser()
     libraries = workflow.parent if workflow.parent == skill.parent else None
-    workflow_catalog = workflow / "CATALOG.md"
-    skill_catalog = skill / "CATALOG.md"
-    if (libraries is None or not libraries.is_dir()
-            or not workflow_catalog.is_file() or not skill_catalog.is_file()
-            or not tool.is_file()):
-        return False
+    links: list[str] = []
+    missing: list[str] = []
+    if libraries is not None and libraries.is_dir():
+        links.append(_direct_path_link("Libraries", libraries))
+    elif libraries is None:
+        missing.append("Libraries 总入口（Workflow/Skill 根不共用父目录，需补唯一 Libraries 根）")
+    else:
+        missing.append("Libraries 总入口（父目录不存在）")
 
-    navigation = " · ".join((
-        _direct_path_link("Libraries", libraries),
-        _direct_path_link("Workflow Catalog", workflow_catalog),
-        _direct_path_link("Skill Catalog", skill_catalog),
-        _direct_path_link("Tool Catalog", tool),
-    ))
+    for label, path in (
+        ("Workflow Catalog", workflow / "CATALOG.md"),
+        ("Skill Catalog", skill / "CATALOG.md"),
+        ("Tool Catalog", tool),
+    ):
+        if path.is_file():
+            links.append(_direct_path_link(label, path))
+        else:
+            missing.append(f"{label}（未登记或不可读）")
+
+    if not links:
+        return {**result, "status": "unavailable", "missing": missing,
+                "reason": "no_registered_library_entry"}
+
+    navigation = " · ".join(links)
+    if missing:
+        navigation += "\n\n" + "；".join(missing) + "。"
     updated = text.replace(LIBRARY_NAV_PLACEHOLDER, navigation, 1).encode("utf-8")
     if updated == original:
-        return False
+        return {**result, "status": "preserved", "reason": "content_unchanged",
+                "links": links, "missing": missing}
     staging = agents.with_name(f".{agents.name}.staging-{uuid.uuid4().hex}")
     try:
         staging.write_bytes(updated)
         if agents.read_bytes() != original:
-            return False
+            return {**result, "status": "concurrent_change",
+                    "reason": "agents_changed_before_publish", "links": links,
+                    "missing": missing}
         os.replace(staging, agents)
+    except OSError as exc:
+        return {**result, "status": "write_failed", "reason": type(exc).__name__,
+                "links": links, "missing": missing}
     finally:
         staging.unlink(missing_ok=True)
-    return True
+    return {**result, "status": "updated" if not missing else "partial",
+            "links": links, "missing": missing}
 
 
 def _single_line(value: Any) -> str:
@@ -1277,7 +1298,7 @@ def ensure_fixed_workstation(
     )
 
     vault = ensure_project_vault(root)
-    sync_project_agents_navigation(
+    agents_navigation = sync_project_agents_navigation(
         root,
         workflow_root=workflow_library,
         skill_root=skill_library,
@@ -1350,6 +1371,7 @@ def ensure_fixed_workstation(
         "created_paths": created,
         "retired_legacy_entry": retired_legacy_entry,
         "project_vault": vault,
+        "agents_navigation": agents_navigation,
     }
 
 

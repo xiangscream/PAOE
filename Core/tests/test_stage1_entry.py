@@ -164,6 +164,55 @@ class StageOneEntryTests(unittest.TestCase):
         self.f.call('workstation', 'init', '3002', '3002-s003', '--guide-root', str(self.guide))
         self.assertEqual(before, agents.read_bytes())
 
+    def test_workstation_init_reports_partial_library_navigation_without_guessing_root(self):
+        first = self.f.root / 'libraries-a' / 'workflow'
+        second = self.f.root / 'libraries-b' / 'skill'
+        ensure_workflow_library(first)
+        ensure_skill_library(second)
+        (first / 'CATALOG.md').write_text('# Workflow Catalog\n', encoding='utf-8')
+        (second / 'CATALOG.md').write_text('# Skill Catalog\n', encoding='utf-8')
+        register_library_roots(
+            self.f.libconfig,
+            workflow_root=first,
+            skill_root=second,
+            tool_catalog=str(self.f.tools),
+        )
+        agents = self.f.vault / 'AGENTS.md'
+        agents.write_text(
+            '## Libraries 与工具\n\n' + LIBRARY_NAV_PLACEHOLDER + '\n\n'
+            '## Human note\n\nKeep this line.\n',
+            encoding='utf-8',
+        )
+        fingerprint = hashlib.sha256(self.f.record.read_bytes()).hexdigest()
+        self.f.call('project', 'home-add', '3002', '3002-s003',
+                    '--expected-fingerprint', fingerprint)
+        result = self.f.call('workstation', 'init', '3002', '3002-s003',
+                             '--guide-root', str(self.guide))[1]
+        navigation = result['agents_navigation']
+        self.assertEqual(navigation['status'], 'partial')
+        self.assertIn('Libraries 总入口', '；'.join(navigation['missing']))
+        text = agents.read_text(encoding='utf-8')
+        self.assertNotIn(LIBRARY_NAV_PLACEHOLDER, text)
+        self.assertIn('[Workflow Catalog](<', text)
+        self.assertIn('[Skill Catalog](<', text)
+        self.assertIn('[Tool Catalog](<', text)
+        self.assertNotIn('[Libraries](<', text)
+        self.assertIn('Keep this line.', text)
+        self.assertIn('需补唯一 Libraries 根', text)
+
+    def test_workstation_init_reports_unreadable_agents_navigation(self):
+        agents = self.f.vault / 'AGENTS.md'
+        agents.write_bytes(b'\xff')
+        fingerprint = hashlib.sha256(self.f.record.read_bytes()).hexdigest()
+        self.f.call('project', 'home-add', '3002', '3002-s003',
+                    '--expected-fingerprint', fingerprint)
+        result = self.f.call('workstation', 'init', '3002', '3002-s003',
+                             '--guide-root', str(self.guide))[1]
+        navigation = result['agents_navigation']
+        self.assertEqual(navigation['status'], 'unreadable')
+        self.assertEqual(navigation['reason'], 'UnicodeDecodeError')
+        self.assertEqual(agents.read_bytes(), b'\xff')
+
     def test_initial_todo_routes_to_recovery_without_forcing_all_catalogs(self):
         todo = parse_todo((self.new_home() / "TODO.md").read_text(encoding="utf-8"))
         self.assertEqual(todo["schema"], "paos-todo/v4")
