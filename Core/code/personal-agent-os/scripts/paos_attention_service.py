@@ -1031,6 +1031,34 @@ def _mail_item_source_ref(item: dict[str, Any]) -> str:
     return f"legacy-mail-file:{filename}"
 
 
+def _mail_lookup_token(value: str) -> str:
+    """Normalize the legacy filename form used by archive/history callers."""
+    text = str(value or "").strip()
+    if (
+        text
+        and not text.startswith("legacy-mail-file:")
+        and not MAIL_ID_RE.fullmatch(text)
+        and text.endswith(".md")
+    ):
+        return text[:-3]
+    return text
+
+
+def _mail_archive_id(item: dict[str, Any]) -> str:
+    """Use the declared ID, or the original filename stem for legacy Mail."""
+    declared = str(item.get("declared_message_id") or "").strip()
+    if declared and MAIL_ID_RE.fullmatch(declared):
+        return declared
+    filename = str(item.get("filename") or "").strip()
+    if not filename:
+        raise AttentionServiceProblem(
+            "attention_mail_source_unmapped",
+            "Mail 条目缺少可用于归档的 filename。",
+            {"item": item},
+        )
+    return Path(filename).stem
+
+
 def _find_mail_item(
     *,
     root: Path,
@@ -1045,6 +1073,7 @@ def _find_mail_item(
         candidates = {
             str(item.get("message_id") or ""),
             str(item.get("declared_message_id") or ""),
+            str(item.get("filename") or ""),
             Path(str(item.get("filename") or "")).stem,
             _mail_item_source_ref(item),
         }
@@ -1629,7 +1658,7 @@ def archive_input(
     resolves the immutable envelope and cannot create a second delivery.
     """
     ref = _assert_home_current(home_ref)
-    message_id = str(message_id or "").strip()
+    message_id = _mail_lookup_token(str(message_id or "").strip())
     notice_id = str(notice_id or "").strip()
     if bool(message_id) == bool(notice_id):
         raise AttentionServiceProblem(
@@ -1641,8 +1670,10 @@ def archive_input(
     batch = _history_root(project_root, history_root)
     home_id = str(ref["home_id"])
 
-    if message_id:
-        existing_archive = read_mail_archive(project_root, home_id, message_id)
+    if message_id and not message_id.startswith("legacy-mail-file:"):
+        existing_archive = read_mail_archive(
+            project_root, home_id, message_id, allow_legacy=True
+        )
         if existing_archive is not None:
             return {
                 "schema": "paos-history-archive/v1",
@@ -1657,6 +1688,7 @@ def archive_input(
     sources: list[Path] = []
     selected_notice: dict[str, Any]
     source_ref = ""
+    archive_id = message_id
     if message_id:
         mail_item = _find_mail_item(
             root=project_root,
@@ -1665,6 +1697,20 @@ def archive_input(
         )
         _read_mail_item_file(mail_item, agent_id=home_id)
         source_ref = _mail_item_source_ref(mail_item)
+        archive_id = _mail_archive_id(mail_item)
+        existing_archive = read_mail_archive(
+            project_root, home_id, archive_id, allow_legacy=True
+        )
+        if existing_archive is not None:
+            return {
+                "schema": "paos-history-archive/v1",
+                "home": ref,
+                "history_root": str(existing_archive.get("history_root") or ""),
+                "message_id": archive_id,
+                "notice_id": "",
+                "state": "already_archived",
+                "files": [],
+            }
         notice_id = _mail_notice_id(home_ref=ref, source_ref=source_ref)
         selected_notice = read_notice(home_path, notice_id)
         if (
@@ -1674,9 +1720,13 @@ def archive_input(
             raise AttentionServiceProblem(
                 "attention_history_notice_mismatch",
                 "Mail 对应的 Notice identity 不一致，拒绝归档。",
-                {"message_id": message_id, "source_ref": source_ref},
+                {"message_id": archive_id, "source_ref": source_ref},
             )
-        sources.extend(mail_archive_files(project_root, home_id, message_id))
+        sources.extend(
+            mail_archive_files(
+                project_root, home_id, archive_id, allow_legacy=True
+            )
+        )
     else:
         selected_notice = read_notice(home_path, notice_id)
         if selected_notice.get("source_kind") == "mail":
@@ -1721,8 +1771,9 @@ def archive_input(
             record_mail_archive(
                 project_root,
                 home_id,
-                message_id,
+                archive_id,
                 history_root=str(batch),
+                allow_legacy=True,
             )
         except MailProblem as problem:
             raise AttentionServiceProblem(
@@ -1740,7 +1791,7 @@ def archive_input(
         "schema": "paos-history-archive/v1",
         "home": ref,
         "history_root": str(batch),
-        "message_id": message_id,
+        "message_id": archive_id,
         "notice_id": notice_id,
         "state": "already_archived" if all(
             item["state"] == "already_moved" for item in planned
@@ -1764,7 +1815,7 @@ def archive_rooter_input(
             "archive_rooter_input 只接受已登记 Rooter Home。",
             {"home_kind": ref.get("home_kind")},
         )
-    message_id = str(message_id or "").strip()
+    message_id = _mail_lookup_token(str(message_id or "").strip())
     notice_id = str(notice_id or "").strip()
     if bool(message_id) == bool(notice_id):
         raise AttentionServiceProblem(
@@ -1775,7 +1826,9 @@ def archive_rooter_input(
     home_id = str(ref["home_id"])
     batch = _history_root_home(home_path, history_root)
     if message_id:
-        existing_archive = read_mail_archive_home(home_path, home_id, message_id)
+        existing_archive = read_mail_archive_home(
+            home_path, home_id, message_id, allow_legacy=True
+        )
         if existing_archive is not None:
             return {
                 "schema": "paos-history-archive/v1",
@@ -1875,6 +1928,7 @@ def archive_rooter_input(
                 home_id,
                 message_id,
                 history_root=str(batch),
+                allow_legacy=True,
             )
         except MailProblem as problem:
             raise AttentionServiceProblem(
@@ -1908,7 +1962,7 @@ def read_history_input(
     notice_id: str = "",
 ) -> dict[str, Any]:
     """Read moved Mail/Notice by explicit batch root; never edits the batch."""
-    message_id = str(message_id or "").strip()
+    message_id = _mail_lookup_token(str(message_id or "").strip())
     notice_id = str(notice_id or "").strip()
     if bool(message_id) == bool(notice_id):
         raise AttentionServiceProblem(
@@ -1936,7 +1990,9 @@ def read_history_input(
         "home_path": str(home_path),
     }
     if message_id:
-        result["mail"] = read_mail(batch, agent_id, message_id)
+        result["mail"] = read_mail(
+            batch, agent_id, message_id, allow_legacy=True
+        )
         try:
             notice_listing = list_notices(home_path)
         except NoticeProblem:
