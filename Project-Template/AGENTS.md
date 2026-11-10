@@ -5,7 +5,7 @@ title: Project AGENTS 入口模板
 description: 项目公共工作指南的唯一编辑母本；项目副本承载派生公共区与本项目约定。
 tags: template, harness, entry
 status: active
-version: 19
+version: 20
 ---
 
 # 项目 <project-id> · Agent 工作入口
@@ -21,11 +21,11 @@ version: 19
 
 新会话、接班或压缩后，从本人 ENTRY 取得 CLI 前缀，直接执行 `orient <project> <home> --read`，将当前 AGENTS、项目 INDEX、本人 ENTRY/TODO 的完整输出读入本轮上下文；再读当前任务需要的输入与成果，继续行动。摘要只帮助定位。Rooter 直接读本人工位和 System 入口，不虚构项目。
 
-从本人 TODO 和发给本人的输入确定下一动作，同事记录用于补事实。新消息未明确替换原任务时，处理后回到原主线；已完成的旧议题只按需查结果。
+从本人TODO和当前有效输入确定下一动作，同事记录用于补事实。普通通知和维护并入原责任，不打断Human明确的当前优先级；改变目标、解除阻碍的输入及时接续。已完成的旧议题只按需查结果。
 
 ### 2. 把责任落到 TODO
 
-需要行动的新输入或返修，先写入本人 TODO 的一个未完成 Task，校准 Current，再推进。Pinned 留持续要求，Tasks 留行动和结果，Current 只写现在要做的事：
+需要行动的新输入或返修，先接入本人TODO的相应未完Task；确有新责任时再新增，校准Current后推进。Pinned 留持续要求，Tasks 留行动和结果，Current 只写现在要做的事：
 
 - 目标：本次要取得什么结果。
 - 下一步：一项能直接开始的动作。
@@ -36,9 +36,9 @@ version: 19
 
 ### 3. 用已有方法和工具推进
 
-熟悉的小事直接做。方法与工具从页首“Libraries 与工具”的直接链接进入：Workflow查工作流，Skill查专业做法，Tool Catalog查本机工具和已有配置。不熟悉的任务先查相关目录，或用 `paos library search "任务关键词"` 定位并实读命中的原件；工具也可用 `paos library tools` 查询。确认调用环境后复用已有配置。
+已授权的简单直接修改，由执行者自查后直接完成，不增加前置审核。方法与工具从页首“Libraries 与工具”的直接链接进入：Workflow查工作流，Skill查专业做法，Tool Catalog查本机工具和已有配置。不熟悉的任务先查相关目录，或用 `paos library search "任务关键词"` 定位并实读命中的原件；工具也可用 `paos library tools` 查询。确认调用环境后复用已有配置。
 
-路径取 ENTRY、登记或真实返回值；普通操作先查同版 `--help`，不靠翻源码重新发现接口。找不到公开入口或出现错误，保留具体断点并找适当维护者，继续其他可执行部分。需要同事时读 TEAM 或 `paos peers`：业务取舍找 Coordinator，安装和原生接收找 Rooter，专业问题直接找 TEAM 中对应负责人。
+路径取 ENTRY、登记或真实返回值；普通操作先查同版 `--help`，不靠翻源码重新发现接口。找不到公开入口或出现错误，保留具体断点并找适当维护者，继续其他可执行部分。需要同事时读TEAM或`paos peers`。Coordinator主要负责总体安排、优先级、方向和跨成员配合；成员自主推进，普通修改不逐项等批。需要方向取舍或解决协作阻碍时找Coordinator，安装和原生接收找Rooter，专业问题直接找对应负责人。
 
 ### 4. 产出时一并整理
 
