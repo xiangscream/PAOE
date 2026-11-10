@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import sys
 import tempfile
+from urllib.parse import unquote
 
 from paos_contact import _team_role_summaries
 from paos_installation import effective_data_root, load_installation_descriptor
@@ -18,6 +19,116 @@ from paos_registry import ProjectRegistry
 from paos_workstation import posix_windows_drive_locator
 
 MARKER = '<!-- paoe:team-overview:generated -->'
+
+
+def _find_matching(text: str, start: int, opener: str, closer: str) -> int:
+    """Find a balanced closing delimiter, ignoring escaped characters."""
+    depth = 0
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if escaped:
+            escaped = False
+        elif char == '\\':
+            escaped = True
+        elif char == opener:
+            depth += 1
+        elif char == closer:
+            depth -= 1
+            if depth == 0:
+                return index
+    return -1
+
+
+def _find_link_end(text: str, start: int) -> int:
+    """Find the closing parenthesis of an inline link or image destination."""
+    depth = 1
+    in_angle = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_angle:
+            if char == '>':
+                in_angle = False
+        elif char == '<':
+            in_angle = True
+        elif char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+            if depth == 0:
+                return index
+    return -1
+
+
+def _is_absolute_or_remote(destination: str) -> bool:
+    if destination.startswith(('#', '?', '/', '\\')):
+        return True
+    if re.match(r'^[A-Za-z]:[\\/]', destination):
+        return True
+    return bool(re.match(r'^[A-Za-z][A-Za-z0-9+.-]*:', destination))
+
+
+def _relocate_source_links(value: str, source: Path) -> str:
+    """Make relative Markdown destinations resolve from the source file.
+
+    TEAM role and Harness cells are copied into a generated overview in another
+    directory.  Relative links in those cells must therefore be made
+    source-relative before rendering.  Labels, anchors, titles, absolute paths,
+    remote URLs and URI schemes are retained.
+    """
+    if not value or '](' not in value:
+        return value
+    base = source.resolve().parent
+    out: list[str] = []
+    index = 0
+    while index < len(value):
+        if value[index] != '[' or (index and value[index - 1] == '!'):
+            out.append(value[index])
+            index += 1
+            continue
+        label_end = _find_matching(value, index, '[', ']')
+        if label_end < 0 or label_end + 1 >= len(value) or value[label_end + 1] != '(':
+            out.append(value[index])
+            index += 1
+            continue
+        link_end = _find_link_end(value, label_end + 2)
+        if link_end < 0:
+            out.append(value[index])
+            index += 1
+            continue
+        raw = value[label_end + 2:link_end].strip()
+        if raw.startswith('<'):
+            close = raw.find('>')
+            if close < 0:
+                out.append(value[index:link_end + 1])
+                index = link_end + 1
+                continue
+            destination = raw[1:close]
+            title = raw[close + 1:]
+        else:
+            match = re.match(r'(\S+)(.*)$', raw, re.S)
+            if not match:
+                out.append(value[index:link_end + 1])
+                index = link_end + 1
+                continue
+            destination = match.group(1)
+            title = match.group(2)
+        if not destination or _is_absolute_or_remote(destination):
+            out.append(value[index:link_end + 1])
+            index = link_end + 1
+            continue
+        filename, separator, fragment = destination.partition('#')
+        try:
+            target = (base / unquote(filename)).resolve().as_uri()
+        except (OSError, ValueError):
+            out.append(value[index:link_end + 1])
+            index = link_end + 1
+            continue
+        if separator:
+            target += '#' + fragment
+        out.append(f'{value[index:label_end + 1]}(<{target}>{title})')
+        index = link_end + 1
+    return ''.join(out)
 
 
 def _powershell(*args: str) -> str:
@@ -86,7 +197,8 @@ def render_overview(installation_file: Path, output: Path) -> str:
 
     members: list[tuple[str, Path]] = []
 
-    def row(home_id: str, home: Path, role: str, harness: str, source: str) -> str:
+    def row(home_id: str, home: Path, role: str, harness: str, source: str,
+            source_path: Path) -> str:
         entry = home / 'ENTRY.md'
         read(entry)
         contact = home / 'contact.py'
@@ -97,8 +209,10 @@ def render_overview(installation_file: Path, output: Path) -> str:
             wake = f'[命令](#{home_id})'
         else:
             wake = '联系入口未配置，状态和接续见ENTRY'
-        harness_cell = cell(harness) if harness else f'未注明，读 {source}'
-        return (f'| {home_id} | {cell(role)} | {harness_cell} | '
+        role_text = _relocate_source_links(role, source_path)
+        harness_cell = (cell(_relocate_source_links(harness, source_path))
+                        if harness else f'未注明，读 {source}')
+        return (f'| {home_id} | {cell(role_text)} | {harness_cell} | '
                 f'{link("ENTRY", entry)} · {link("TODO", home / "TODO.md")} | {wake} |')
 
     project_table = ['| Agent | 职责 / 专长 | Harness（TEAM） | 工位 | 唤醒 |',
@@ -120,7 +234,7 @@ def render_overview(installation_file: Path, output: Path) -> str:
         for home_id in record['homes']:
             lines.append(row(home_id, root / 'Workstations' / home_id,
                              roles.get(home_id) or '未识别，打开 TEAM 原文',
-                             harnesses.get(home_id) or '', 'TEAM'))
+                             harnesses.get(home_id) or '', 'TEAM', team))
         lines.append('')
 
     raw_rooter = str(installation.get('rooter_home') or '')
@@ -132,7 +246,8 @@ def render_overview(installation_file: Path, output: Path) -> str:
                         '| --- | --- | --- | --- | --- |']
         lines += ['## 安装级支持', '', *rooter_table,
                   row('rooter-001', home, '职责见本人 ENTRY；不属于 Project',
-                      rooter_harness.group(1) if rooter_harness else '', 'ENTRY'), '']
+                      rooter_harness.group(1) if rooter_harness else '', 'ENTRY',
+                      home / 'ENTRY.md'), '']
 
     lines += ['## 外部唤醒', '',
               '适用于获准在本机执行命令的 Agent。下列命令只提醒原会话；持久留信按 OPS 的正式 Mail 入口。',
