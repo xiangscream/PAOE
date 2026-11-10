@@ -5,7 +5,7 @@ title: Project 文件与 Git
 description: 成果归项目、当前入口清楚、历史可读，文本版本使用现有 Git。
 tags: project, files, git, current
 status: active
-version: 20
+version: 21
 ---
 
 # Project 文件与 Git
@@ -34,13 +34,13 @@ version: 20
 | 工具绑定、缓存、原生聊天 | Runtime/安装配置，不混进正文 |
 | 结束的过程件、旧版本、已归档通信记录 | 库外项目历史目录；Project 内 HISTORY/Archive 只留简短导航 |
 
-PROJECT 根的 INDEX 指向一篇唯一最新口径和必要原件，TEAM 指当前同事。最新口径服务 Agent 对齐；不另填 human/generated 或项目简介。目录按真实用途建，不为模板创建空树。Working Memory 有用内容成为普通文件；同一结论已经在报告里就引用它。
+Project 根的 INDEX 保存最新业务口径并链接必要原件，AGENTS 保存运行规则，TEAM 集中成员职责、Harness 和工位。最新口径服务 Agent 对齐；不另填 human/generated 或项目简介。目录按真实用途建，不为模板创建空树。Working Memory 有用内容成为普通文件；同一结论已经在报告里就引用它。
 
 ## 当前页与历史
 
 本人负责自己的当前入口。替换文稿时更新 INDEX/成果引用，让旧稿退出 current；长过程从 TODO 移到已有报告或历史。无法判断哪个正文生效时找 Coordinator，不按文件名或修改时间猜。
 
-Project 根可按需要使用 HISTORY 作为完成项短索引，每项只留日期、负责人、结果和原件链接，例如“2026-10-14 · S043 · 排程已接受 · 结果文件链接”。共同成果引用同一份，个人只补新的发现；不在索引重写完整过程、参数和工具回执。历史正文过长时移到库外历史目录，工位 ENTRY 与项目 INDEX 指向同一简短历史入口。
+Project 根的 HISTORY 按业务主题汇总阶段成果、关键判断和经验。项目合成人读取成员已完成 TODO 与实际成果，将同一主题的多轮修改合并，保留日期或阶段及原件链接。日常总结或阶段交付时同步 INDEX 的最新业务口径与成果入口，清理已结束且无在途依赖的过程材料。详细历史放库外，工位 ENTRY 与项目 INDEX 指向同一 HISTORY。
 
 任务行动与进展在对应工位 TODO，项目共识在唯一最新口径；不在 Project JSON 维护第二份进展。任务完成与成果接受按实际结果区分。参考快照注明来源即可，不给普通资料增加逐文件哈希和必填 provenance 账本。
 
