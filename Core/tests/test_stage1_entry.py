@@ -28,6 +28,7 @@ sys.path.insert(0, str(SCRIPTS))
 import paos
 from paos_todo import parse_todo, render_todo
 from paos_library import ensure_workflow_library, ensure_skill_library, register_library_roots
+from paos_workstation import LIBRARY_NAV_PLACEHOLDER, sync_project_agents_navigation
 
 
 def normalized_path(value):
@@ -132,11 +133,143 @@ class StageOneEntryTests(unittest.TestCase):
     def test_missing_project_notes_are_visible_not_created_for_navigation(self):
         home = self.new_home()
         text = normalized_path((home / "ENTRY.md").read_text(encoding="utf-8"))
-        for name in ("INDEX.md", "TEAM.md", "AGENTS.md"):
+        for name in ("INDEX.md", "TEAM.md", "AGENTS.md", "HISTORY.md"):
             self.assertFalse((self.f.vault / name).exists())
             matching = [row for row in text.splitlines() if normalized_path(self.f.vault / name) in row]
             self.assertTrue(matching, name)
             self.assertTrue(any("不可读" in row for row in matching), matching)
+
+    def test_workstation_init_fills_library_navigation_and_preserves_human_text(self):
+        agents = self.f.vault / 'AGENTS.md'
+        agents.write_text(
+            '## Libraries 与工具\n\n' + LIBRARY_NAV_PLACEHOLDER + '\n\n'
+            '## Human note\n\nKeep this line.\n',
+            encoding='utf-8',
+        )
+        (self.workflow / 'CATALOG.md').write_text('# Workflow Catalog\n', encoding='utf-8')
+        (self.skill / 'CATALOG.md').write_text('# Skill Catalog\n', encoding='utf-8')
+        self.new_home()
+        text = agents.read_text(encoding='utf-8')
+        for label, path in (
+            ('Libraries', self.f.root),
+            ('Workflow Catalog', self.workflow / 'CATALOG.md'),
+            ('Skill Catalog', self.skill / 'CATALOG.md'),
+            ('Tool Catalog', self.f.tools),
+        ):
+            destination = str(path.resolve()).replace('\\', '/')
+            self.assertIn(f'[{label}](<{destination}>)', text)
+        self.assertIn('Keep this line.', text)
+        self.assertNotIn(LIBRARY_NAV_PLACEHOLDER, text)
+        before = agents.read_bytes()
+        self.f.call('workstation', 'init', '3002', '3002-s003', '--guide-root', str(self.guide))
+        self.assertEqual(before, agents.read_bytes())
+
+    def test_workstation_init_reports_partial_library_navigation_without_guessing_root(self):
+        first = self.f.root / 'libraries-a' / 'workflow'
+        second = self.f.root / 'libraries-b' / 'skill'
+        ensure_workflow_library(first)
+        ensure_skill_library(second)
+        (first / 'CATALOG.md').write_text('# Workflow Catalog\n', encoding='utf-8')
+        (second / 'CATALOG.md').write_text('# Skill Catalog\n', encoding='utf-8')
+        register_library_roots(
+            self.f.libconfig,
+            workflow_root=first,
+            skill_root=second,
+            tool_catalog=str(self.f.tools),
+        )
+        agents = self.f.vault / 'AGENTS.md'
+        agents.write_text(
+            '## Libraries 与工具\n\n' + LIBRARY_NAV_PLACEHOLDER + '\n\n'
+            '## Human note\n\nKeep this line.\n',
+            encoding='utf-8',
+        )
+        fingerprint = hashlib.sha256(self.f.record.read_bytes()).hexdigest()
+        self.f.call('project', 'home-add', '3002', '3002-s003',
+                    '--expected-fingerprint', fingerprint)
+        result = self.f.call('workstation', 'init', '3002', '3002-s003',
+                             '--guide-root', str(self.guide))[1]
+        navigation = result['agents_navigation']
+        self.assertEqual(navigation['status'], 'partial')
+        self.assertIn('Libraries 总入口', '；'.join(navigation['missing']))
+        text = agents.read_text(encoding='utf-8')
+        self.assertNotIn(LIBRARY_NAV_PLACEHOLDER, text)
+        self.assertIn('[Workflow Catalog](<', text)
+        self.assertIn('[Skill Catalog](<', text)
+        self.assertIn('[Tool Catalog](<', text)
+        self.assertNotIn('[Libraries](<', text)
+        self.assertIn('Keep this line.', text)
+        self.assertIn('需补唯一 Libraries 根', text)
+
+    def test_workstation_init_reports_unreadable_agents_navigation(self):
+        agents = self.f.vault / 'AGENTS.md'
+        agents.write_bytes(b'\xff')
+        fingerprint = hashlib.sha256(self.f.record.read_bytes()).hexdigest()
+        self.f.call('project', 'home-add', '3002', '3002-s003',
+                    '--expected-fingerprint', fingerprint)
+        result = self.f.call('workstation', 'init', '3002', '3002-s003',
+                             '--guide-root', str(self.guide))[1]
+        navigation = result['agents_navigation']
+        self.assertEqual(navigation['status'], 'unreadable')
+        self.assertEqual(navigation['reason'], 'UnicodeDecodeError')
+        self.assertEqual(agents.read_bytes(), b'\xff')
+
+    def navigation_fixture(self):
+        agents = self.f.vault / 'AGENTS.md'
+        agents.write_text(LIBRARY_NAV_PLACEHOLDER + '\nHuman text.\n', encoding='utf-8')
+        (self.workflow / 'CATALOG.md').write_text('# Workflow\n', encoding='utf-8')
+        (self.skill / 'CATALOG.md').write_text('# Skill\n', encoding='utf-8')
+        return agents, dict(workflow_root=str(self.workflow),
+                            skill_root=str(self.skill), tool_catalog=str(self.f.tools))
+
+    def test_navigation_missing_or_relative_roots_never_use_cwd(self):
+        agents = self.f.vault / 'AGENTS.md'
+        for locator in ('', '.', 'relative'):
+            with self.subTest(locator=locator):
+                agents.write_text(LIBRARY_NAV_PLACEHOLDER, encoding='utf-8')
+                before = agents.read_bytes()
+                result = sync_project_agents_navigation(
+                    self.f.vault, workflow_root=locator,
+                    skill_root=locator, tool_catalog=locator)
+                self.assertEqual(result['status'], 'unavailable')
+                self.assertEqual(result['reason'], 'no_registered_library_entry')
+                self.assertEqual(agents.read_bytes(), before)
+
+    def test_navigation_one_missing_root_keeps_only_registered_links(self):
+        agents, args = self.navigation_fixture()
+        result = sync_project_agents_navigation(self.f.vault, **{**args, 'skill_root': ''})
+        text = agents.read_text(encoding='utf-8')
+        self.assertEqual(result['status'], 'partial')
+        self.assertIn('[Workflow Catalog](<', text)
+        self.assertIn('[Tool Catalog](<', text)
+        self.assertNotIn('[Libraries](<', text)
+        self.assertNotIn('[Skill Catalog](<', text)
+
+    def test_navigation_publish_failure_preserves_original(self):
+        agents, args = self.navigation_fixture()
+        before = agents.read_bytes()
+        with patch('paos_workstation.os.replace', side_effect=PermissionError('blocked')):
+            result = sync_project_agents_navigation(self.f.vault, **args)
+        self.assertEqual(result['status'], 'write_failed')
+        self.assertEqual(result['reason'], 'PermissionError')
+        self.assertEqual(agents.read_bytes(), before)
+        self.assertEqual(list(agents.parent.glob('.AGENTS.md.staging-*')), [])
+
+    def test_navigation_concurrent_human_edit_is_not_overwritten(self):
+        agents, args = self.navigation_fixture()
+        real_write = Path.write_bytes
+        human_edit = b'# Human concurrent edit\n'
+
+        def write_with_human_edit(path, data):
+            written = real_write(path, data)
+            if path.parent == agents.parent and path.name.startswith('.AGENTS.md.staging-'):
+                real_write(agents, human_edit)
+            return written
+
+        with patch.object(Path, 'write_bytes', new=write_with_human_edit):
+            result = sync_project_agents_navigation(self.f.vault, **args)
+        self.assertEqual(result['status'], 'concurrent_change')
+        self.assertEqual(agents.read_bytes(), human_edit)
+        self.assertEqual(list(agents.parent.glob('.AGENTS.md.staging-*')), [])
 
     def test_initial_todo_routes_to_recovery_without_forcing_all_catalogs(self):
         todo = parse_todo((self.new_home() / "TODO.md").read_text(encoding="utf-8"))

@@ -8,4 +8,4 @@
 
 按实际变更填写，通用流程沿 [发布采用](../guide-upgrade-adoption.md) 和项目生效 AGENTS 公共区，不复制第二份规则。
 
-项目库母版（AGENTS / INDEX / TEAM / 工位 ENTRY / TODO / 公告）在 [Project-Template](../../Project-Template/README.md)。
+项目库母版（AGENTS / INDEX / TEAM / HISTORY / 工位 ENTRY / TODO / 公告）在 [Project-Template](../../Project-Template/README.md)。

@@ -46,7 +46,7 @@ class HeadlessTests(unittest.TestCase):
         self.entry_template.write_text("""# Fixture {{home_id}} · 员工号 {{staff_number}}
 ## 当前工作与项目
 {{project_id}} {{home_path}}
-{{project_index_link}} {{project_agents_link}} {{project_team_link}}
+{{project_index_link}} {{project_agents_link}} {{project_team_link}} {{project_history_link}}
 {{installation_file}} {{library_roots_config}}
 {{cli_block}}
 {{guide_index_link}} {{guide_link}} {{ops_link}}

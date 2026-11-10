@@ -8,9 +8,10 @@
 
 ```text
 <Project Vault>/
-├── AGENTS.md           # 生效公共运行区 + 项目人工约定
+├── AGENTS.md           # 生效公共运行区 + 项目特殊运行约定
 ├── INDEX.md            # 最新业务口径与资料/成果导航
-├── TEAM.md             # 项目真实成员、职责与专长
+├── TEAM.md             # 项目真实成员、职责、Harness 与工位
+├── HISTORY.md          # 按业务主题归并的阶段成果与经验
 ├── Inbox/              # 尚未归位的项目输入
 ├── Materials/          # 原始资料、引用、参考、项目经验
 ├── Works/              # 正在形成的正文、报告和成果
@@ -29,19 +30,20 @@
 └── Archive/            # 可选历史导航；大批历史正文放在 Vault 外
 ```
 
-`Inbox`、`Materials`、`Works`、`Decisions`、`Workstations`、`Archive` 已是当前 `workstation init` 的标准目录；其他目录、源码库、`.git`、`.obsidian` 及业务文件按实际需要保留。当前业务正文可有多篇，只有各主题的“最新/正式”结论应有唯一权威原件。可选 `HISTORY.md` 仅作完成成果短索引，不复制 TODO 或 Git 历史。项目可在 Vault 旁建立 `<项目名>-History`，或采用安装指定的历史盘；INDEX 指向该库外位置，具体归位与历史规则见 [Project 文件与 Git](../Guide/guide-project-work-world.md#库外历史)。初始化产生 Archive 目录不代表应把全量历史堆在活跃库内。
+`Inbox`、`Materials`、`Works`、`Decisions`、`Workstations`、`Archive` 已是当前 `workstation init` 的标准目录；其他目录、源码库、`.git`、`.obsidian` 及业务文件按实际需要保留。当前业务正文可有多篇，只有各主题的“最新/正式”结论应有唯一权威原件。`HISTORY.md` 从成员已完成 TODO 和成果中提炼阶段进展、关键判断与经验；同一业务主题合并记录，详细过程沿原件回查。项目可在 Vault 旁建立 `<项目名>-History`，或采用安装指定的历史盘；INDEX 指向该库外位置，具体归位与历史规则见 [Project 文件与 Git](../Guide/guide-project-work-world.md#库外历史)。初始化产生 Archive 目录不代表应把全量历史堆在活跃库内。
 
 | 母版 | 原件职责 | 已有项目怎样更新 |
 | --- | --- | --- |
 | [AGENTS](AGENTS.md) | 公共运行区唯一母本；项目约定在公共区外 | 只分发公共区，保留项目约定 |
 | [INDEX](INDEX.md) | 项目最新口径、业务原件、仓库及认证取用入口 | 由项目维护；不以母版覆盖业务内容 |
-| [TEAM](TEAM.md) | 项目成员职责与专长 | 修改本项目原件后刷新 PROJECTS 聚合 |
+| [TEAM](TEAM.md) | 项目成员职责、专长、Harness 与工位 | 按真实分工维护，修改原件后刷新 PROJECTS 聚合 |
+| [HISTORY](HISTORY.md) | 有价值的阶段成果、判断与经验 | 归并已完成 TODO，联动 INDEX 与库外清理 |
 | [ENTRY](Workstations/_workstation/ENTRY.md) | 分开说明流程约束与本人业务入口，CLI直接读取 | 生成器只填数据；已有入口按受影响部分合并，重复初始化不覆盖 |
 | [TODO](Workstations/_workstation/TODO.md) | TODO v4 的合法样例 | 只校验格式与身份；当前行动由本人维护，不复制样例任务 |
 | [入职与唤醒说明](Workstations/_workstation/notices/README.md) | 入职四项要求及 Codex / OpenCode 使用入口 | 创建者须补入 notices 的 README、codex.py、opencode.py、wake_entry.py，并沿 TODO v4 写入 ONBOARD；当前 CLI 不自动带入，已有人工内容不覆盖 |
 | [采用公告](../Guide/Templates/project-announcement.md) | 一次真实采用事项的消息样板 | 需要时使用；不作为持续规则或任务状态 |
 
-页面可以互相导航；同一条规则、业务事实和运行定位各有唯一原件。正文只在其归属处维护，导航引用原件，派生区通过现有工具更新。
+页面可以互相导航；运行规则归 AGENTS，当前业务口径归 INDEX，成员与分工归 TEAM，阶段成果归 HISTORY。正文只在其归属处维护，导航引用原件，派生区通过现有工具更新。完成项汇总和归位随日常交付一起进行，不另抄一份任务流水账。
 
 ## 公共区编辑与同步
 
@@ -55,7 +57,7 @@ Human 已编辑或确认的正文作为后续修改基线。更新只改当前�
 
 ## 新项目和工位的创建
 
-1. Human 明确授权建立独立目录及 Obsidian Vault、登记项目；使用母版建立 AGENTS、INDEX、TEAM，按实际业务填写项目约定；ENTRY 由正常初始化入口读取母本展开，TODO 使用现行写者初始化。不得由示例虚构成员、任务、凭据或业务结论。
+1. Human 明确授权建立独立目录及 Obsidian Vault、登记项目；使用母版建立 AGENTS、INDEX、TEAM、HISTORY；当前业务写 INDEX，分工写 TEAM，特殊运行约定写 AGENTS；ENTRY 由正常初始化入口读取母本展开，TODO 使用现行写者初始化。不得由示例虚构成员、任务、凭据或业务结论。
 2. 新Project用 `project register` 登记；加入已有Project用 `project home-add` 增加获准的真实Home，再用 `workstation init` 创建工位。参数读各自同版 `--help`；已有ENTRY/TODO保留人工内容。身份登记、工位创建和原生绑定分别完成，详见[接口参考](../Guide/guide-paos-interface-reference.md#项目与当前口径)。
 3. 使用[已安装机器入口](../README.md#已安装机器上的首次使用)取得真实CLI，不用包内示例配置覆盖本机登记。下面`paos`代表该完整前缀；Project根取当前登记：
 

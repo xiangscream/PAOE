@@ -93,6 +93,104 @@ V11_PROJECT_VAULT_DIRS = (
     "Archive",
 )
 
+LIBRARY_NAV_PLACEHOLDER = (
+    "<创建者从本机已登记的Library roots填写 Libraries、Workflow Catalog、"
+    "Skill Catalog、Tool Catalog 四个直接链接；库根变更时同步本机导航。>"
+)
+
+
+def _direct_path_link(label: str, path: Path) -> str:
+    destination = str(path.resolve()).replace("\\", "/")
+    return f"[{label}](<{destination}>)"
+
+
+def sync_project_agents_navigation(
+    root: Path,
+    *,
+    workflow_root: str = "",
+    skill_root: str = "",
+    tool_catalog: str = "",
+) -> dict[str, Any]:
+    """Fill project-local library navigation and report the real outcome.
+
+    Only the mother placeholder is replaced. Existing human navigation is
+    preserved. A non-sibling Workflow/Skill layout is reported as partial with
+    the links that can be proved; no physical Libraries root is guessed.
+    """
+    agents = Path(root) / "AGENTS.md"
+    result: dict[str, Any] = {"path": str(agents)}
+    if not agents.is_file():
+        return {**result, "status": "not_applicable", "reason": "agents_missing"}
+    try:
+        original = agents.read_bytes()
+        text = original.decode("utf-8-sig")
+    except (OSError, UnicodeError) as exc:
+        return {**result, "status": "unreadable", "reason": type(exc).__name__}
+    if LIBRARY_NAV_PLACEHOLDER not in text:
+        return {**result, "status": "preserved", "reason": "human_navigation_present"}
+
+    def registered_path(locator: str) -> Path | None:
+        locator = posix_windows_drive_locator(str(locator).strip())
+        if not locator:
+            return None
+        path = Path(locator).expanduser()
+        return path if path.is_absolute() else None
+
+    workflow = registered_path(workflow_root)
+    skill = registered_path(skill_root)
+    tool = registered_path(tool_catalog)
+    roots_exist = (workflow is not None and skill is not None
+                   and workflow.is_dir() and skill.is_dir())
+    libraries = workflow.parent if roots_exist and workflow.parent == skill.parent else None
+    links: list[str] = []
+    missing: list[str] = []
+    if libraries is not None and libraries.is_dir():
+        links.append(_direct_path_link("Libraries", libraries))
+    elif not roots_exist:
+        missing.append("Libraries 总入口（Workflow/Skill 根未完整登记为可读绝对目录）")
+    elif libraries is None:
+        missing.append("Libraries 总入口（Workflow/Skill 根不共用父目录，需补唯一 Libraries 根）")
+    else:
+        missing.append("Libraries 总入口（父目录不存在）")
+
+    for label, path in (
+        ("Workflow Catalog", workflow / "CATALOG.md" if workflow is not None else None),
+        ("Skill Catalog", skill / "CATALOG.md" if skill is not None else None),
+        ("Tool Catalog", tool),
+    ):
+        if path is not None and path.is_file():
+            links.append(_direct_path_link(label, path))
+        else:
+            missing.append(f"{label}（未登记、非绝对路径或不可读）")
+
+    if not links:
+        return {**result, "status": "unavailable", "missing": missing,
+                "reason": "no_registered_library_entry"}
+
+    navigation = " · ".join(links)
+    if missing:
+        navigation += "\n\n" + "；".join(missing) + "。"
+    updated = text.replace(LIBRARY_NAV_PLACEHOLDER, navigation, 1).encode("utf-8")
+    if updated == original:
+        return {**result, "status": "preserved", "reason": "content_unchanged",
+                "links": links, "missing": missing}
+    staging = agents.with_name(f".{agents.name}.staging-{uuid.uuid4().hex}")
+    try:
+        staging.write_bytes(updated)
+        if agents.read_bytes() != original:
+            return {**result, "status": "concurrent_change",
+                    "reason": "agents_changed_before_publish", "links": links,
+                    "missing": missing}
+        os.replace(staging, agents)
+    except OSError as exc:
+        return {**result, "status": "write_failed", "reason": type(exc).__name__,
+                "links": links, "missing": missing}
+    finally:
+        staging.unlink(missing_ok=True)
+    return {**result, "status": "updated" if not missing else "partial",
+            "links": links, "missing": missing}
+
+
 def _single_line(value: Any) -> str:
     return " ".join(str(value or "").split())
 
@@ -273,6 +371,7 @@ def render_fixed_entry(
         "project_index_link": link("INDEX", str(project_root / "INDEX.md")),
         "project_agents_link": link("AGENTS", str(project_root / "AGENTS.md")),
         "project_team_link": link("TEAM", str(project_root / "TEAM.md")),
+        "project_history_link": link("HISTORY", str(project_root / "HISTORY.md")),
         "team_member_link": link("TEAM 本人条目", str(project_root / "TEAM.md"), "#" + agent_id),
         "guide_index_link": link("Guide", guide_index),
         "guide_link": link("GUIDE", guide), "ops_link": link("OPS", ops),
@@ -1210,6 +1309,12 @@ def ensure_fixed_workstation(
     )
 
     vault = ensure_project_vault(root)
+    agents_navigation = sync_project_agents_navigation(
+        root,
+        workflow_root=workflow_library,
+        skill_root=skill_library,
+        tool_catalog=tool_index_ref,
+    )
     created: list[str] = []
     if not workstation.exists():
         stage = workstation.parent / f".{agent_id}.staging-{uuid.uuid4().hex}"
@@ -1277,6 +1382,7 @@ def ensure_fixed_workstation(
         "created_paths": created,
         "retired_legacy_entry": retired_legacy_entry,
         "project_vault": vault,
+        "agents_navigation": agents_navigation,
     }
 
 
