@@ -165,6 +165,16 @@ class CatBoardTests(unittest.TestCase):
         self.assertEqual(value["status"], 409)
         self.assertEqual([c.args[0][0] for c in call.call_args_list], ["join", "send"])
 
+    def test_static_assets_ignore_a_host_that_maps_js_to_text_plain(self):
+        """Regression: Windows may register .js as text/plain in its MIME database."""
+        with patch("front.paos_front_server.mimetypes.guess_type",
+                   return_value=("text/plain", None)):
+            with urlopen(self.origin + "/assets/app.js") as response:
+                self.assertIn("javascript", response.headers["Content-Type"])
+                self.assertTrue(response.read())
+            with urlopen(self.origin + "/assets/app.css") as response:
+                self.assertIn("text/css", response.headers["Content-Type"])
+                self.assertTrue(response.read())
 
 if __name__ == "__main__":
     unittest.main()
