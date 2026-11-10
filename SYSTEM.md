@@ -46,7 +46,7 @@ flowchart LR
 | --- | --- |
 | 项目与成员的位置 | Core 的 Project Registry；[项目与 Agent](PROJECTS.md)由登记与 TEAM 聚合生成。 |
 | 成员职责与专长 | 对应项目 TEAM；工位 ENTRY 直链本人条目。 |
-| Harness 与唤醒配置 | Harness 读本人 ENTRY，绑定与 STOP 读 Contact；聚合页只提供入口，不探测在线。 |
+| Harness 与唤醒配置 | 项目成员 Harness 读对应项目 TEAM；Rooter 自身 Harness 读本人 ENTRY；绑定与 STOP 读 Contact；聚合页只提供入口，不探测在线。 |
 | 项目共识、重要文档和成果 | 对应项目的 INDEX 与业务正文。 |
 | 本人目标、下一步和任务状态 | 本人工位 TODO v4，沿现有写者及指纹操作。 |
 | 通用运行行为 | 项目生效 `AGENTS.md`（派生自 [母本](Project-Template/AGENTS.md)）；专题在 [Guide](Guide/README.md)。 |

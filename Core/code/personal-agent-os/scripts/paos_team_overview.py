@@ -24,6 +24,29 @@ def _powershell(*args: str) -> str:
     return '& ' + ' '.join("'" + str(arg).replace("'", "''") + "'" for arg in args)
 
 
+def _team_harness_summaries(team: Path, registered_ids: set[str]) -> dict[str, str]:
+    """Read actual Harness values from the current TEAM member sections."""
+    try:
+        lines = team.read_text(encoding='utf-8-sig').splitlines()
+    except (OSError, UnicodeError):
+        return {}
+    harnesses: dict[str, str] = {}
+    in_current = False
+    current: str | None = None
+    for line in lines:
+        if line.startswith('## '):
+            in_current = line.strip() == '## 当前成员'
+            current = None
+        elif in_current and line.startswith('### '):
+            candidate = line[4:].strip()
+            current = candidate if candidate in registered_ids else None
+        elif current:
+            match = re.match(r'^\s*-\s*Harness\s*[：:]\s*(.+)$', line)
+            if match:
+                harnesses[current] = match.group(1).strip()
+    return harnesses
+
+
 def render_overview(installation_file: Path, output: Path) -> str:
     installation_file, output = installation_file.resolve(), output.resolve()
     installation = load_installation_descriptor(installation_file)
@@ -57,14 +80,15 @@ def render_overview(installation_file: Path, output: Path) -> str:
         root = Path(posix_windows_drive_locator(record['root_path'])).expanduser()
         team = root / 'TEAM.md'
         read(team)
-        projects.append((record, root, team, _team_role_summaries(root, set(record['homes']))))
+        home_ids = set(record['homes'])
+        projects.append((record, root, team, _team_role_summaries(root, home_ids),
+                         _team_harness_summaries(team, home_ids)))
 
     members: list[tuple[str, Path]] = []
 
-    def row(home_id: str, home: Path, role: str) -> str:
+    def row(home_id: str, home: Path, role: str, harness: str, source: str) -> str:
         entry = home / 'ENTRY.md'
-        text = read(entry)
-        harness = re.search(r'^- Harness[：:]\s*(.+)$', text, re.M)
+        read(entry)
         contact = home / 'contact.py'
         # Only file presence is observed; configuration is not an online check.
         fingerprints.append(f'{contact}:exists={contact.is_file()}')
@@ -73,36 +97,42 @@ def render_overview(installation_file: Path, output: Path) -> str:
             wake = f'[命令](#{home_id})'
         else:
             wake = '联系入口未配置，状态和接续见ENTRY'
-        return (f'| {home_id} | {cell(role)} | '
-                f'{cell(harness.group(1)) if harness else "未注明，读 ENTRY"} | '
+        harness_cell = cell(harness) if harness else f'未注明，读 {source}'
+        return (f'| {home_id} | {cell(role)} | {harness_cell} | '
                 f'{link("ENTRY", entry)} · {link("TODO", home / "TODO.md")} | {wake} |')
 
-    table = ['| Agent | 职责 / 专长 | Harness（ENTRY） | 工位 | 唤醒 |',
-             '| --- | --- | --- | --- | --- |']
+    project_table = ['| Agent | 职责 / 专长 | Harness（TEAM） | 工位 | 唤醒 |',
+                     '| --- | --- | --- | --- | --- |']
     lines = ['# 项目与 Agent · TEAM 聚合', '', MARKER, '',
              '<!-- paoe:human-intro:start -->',
              '> 按项目找成员与唤醒入口。职责维护在项目 TEAM；本页由原件生成。',
              '<!-- paoe:human-intro:end -->', '', '<!-- paoe:agent-reference -->', '']
     if not projects:
         lines += ['当前登记范围内没有 Project。', '']
-    for record, root, team, roles in projects:
+    for record, root, team, roles, harnesses in projects:
         project_id = record['id']
         lines += [f'## 项目 {project_id} · {cell(root.name)}', '',
                   f'原件：{link("TEAM", team)} · {link("INDEX", root / "INDEX.md")} · '
                   f'{link("Registry", registry_dir / (project_id + ".json"))}', '']
         if not team.is_file():
-            lines += ['TEAM 原件缺失；仍列出登记成员，不猜职责。', '']
-        lines += table
+            lines += ['TEAM 原件缺失；仍列出登记成员，不猜职责或 Harness。', '']
+        lines += project_table
         for home_id in record['homes']:
             lines.append(row(home_id, root / 'Workstations' / home_id,
-                             roles.get(home_id) or '未识别，打开 TEAM 原文'))
+                             roles.get(home_id) or '未识别，打开 TEAM 原文',
+                             harnesses.get(home_id) or '', 'TEAM'))
         lines.append('')
 
     raw_rooter = str(installation.get('rooter_home') or '')
     if raw_rooter:
         home = Path(posix_windows_drive_locator(raw_rooter)).expanduser()
-        lines += ['## 安装级支持', '', *table,
-                  row('rooter-001', home, '职责见本人 ENTRY；不属于 Project'), '']
+        rooter_harness = re.search(r'^- Harness[：:]\s*(.+)$',
+                                   read(home / 'ENTRY.md'), re.M)
+        rooter_table = ['| Agent | 职责 / 专长 | Harness（ENTRY） | 工位 | 唤醒 |',
+                        '| --- | --- | --- | --- | --- |']
+        lines += ['## 安装级支持', '', *rooter_table,
+                  row('rooter-001', home, '职责见本人 ENTRY；不属于 Project',
+                      rooter_harness.group(1) if rooter_harness else '', 'ENTRY'), '']
 
     lines += ['## 外部唤醒', '',
               '适用于获准在本机执行命令的 Agent。下列命令只提醒原会话；持久留信按 OPS 的正式 Mail 入口。',

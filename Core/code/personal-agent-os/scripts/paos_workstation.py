@@ -273,6 +273,7 @@ def render_fixed_entry(
         "project_index_link": link("INDEX", str(project_root / "INDEX.md")),
         "project_agents_link": link("AGENTS", str(project_root / "AGENTS.md")),
         "project_team_link": link("TEAM", str(project_root / "TEAM.md")),
+        "project_history_link": link("HISTORY", str(project_root / "HISTORY.md")),
         "team_member_link": link("TEAM 本人条目", str(project_root / "TEAM.md"), "#" + agent_id),
         "guide_index_link": link("Guide", guide_index),
         "guide_link": link("GUIDE", guide), "ops_link": link("OPS", ops),

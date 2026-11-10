@@ -132,7 +132,7 @@ class StageOneEntryTests(unittest.TestCase):
     def test_missing_project_notes_are_visible_not_created_for_navigation(self):
         home = self.new_home()
         text = normalized_path((home / "ENTRY.md").read_text(encoding="utf-8"))
-        for name in ("INDEX.md", "TEAM.md", "AGENTS.md"):
+        for name in ("INDEX.md", "TEAM.md", "AGENTS.md", "HISTORY.md"):
             self.assertFalse((self.f.vault / name).exists())
             matching = [row for row in text.splitlines() if normalized_path(self.f.vault / name) in row]
             self.assertTrue(matching, name)

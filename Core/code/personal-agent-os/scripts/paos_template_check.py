@@ -92,7 +92,7 @@ def inspect_markdown(path: Path, retired=()):
 def check_templates(system: Path, installation_file: Path, retired=()):
     """Use the real mother in a disposable Home; never register its sample."""
     mother = system / 'Project-Template'
-    for relative in ('README.md', 'AGENTS.md', 'INDEX.md', 'TEAM.md',
+    for relative in ('README.md', 'AGENTS.md', 'INDEX.md', 'TEAM.md', 'HISTORY.md',
                      'Workstations/_workstation/ENTRY.md', 'Workstations/_workstation/TODO.md'):
         if not (mother / relative).is_file():
             raise ValueError(f'母版缺失：{mother / relative}')
@@ -103,7 +103,7 @@ def check_templates(system: Path, installation_file: Path, retired=()):
         home.mkdir(parents=True)
         for name in ('mailbox', 'notices'):
             (home / name).mkdir()
-        for name in ('AGENTS.md', 'INDEX.md', 'TEAM.md'):
+        for name in ('AGENTS.md', 'INDEX.md', 'TEAM.md', 'HISTORY.md'):
             text = (mother / name).read_text('utf-8-sig').replace('<home-id>', home_id).replace('<project-id>', project_id)
             (root / name).write_text(text, 'utf-8')
         todo = (mother / 'Workstations/_workstation/TODO.md').read_text('utf-8-sig')
@@ -155,7 +155,7 @@ def main(argv=None):
                     errors.append(f'{agents}: {state.status}；{state.reason}')
                 record = registry.read_record(pid)
                 project = agents.parent
-                files.update(project / n for n in ('AGENTS.md','INDEX.md','TEAM.md'))
+                files.update(project / n for n in ('AGENTS.md','INDEX.md','TEAM.md','HISTORY.md'))
                 for hid in record['homes']:
                     home = project / 'Workstations' / hid
                     files.add(home / 'ENTRY.md')

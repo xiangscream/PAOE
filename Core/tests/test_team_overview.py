@@ -22,8 +22,9 @@ class TeamOverviewTests(unittest.TestCase):
         self.home.mkdir(parents=True)
         self.team = self.project / 'TEAM.md'
         self.team.write_text('## 当前成员\n### 3002-s001\n- 职责/专长：原职责\n'
+                             '- Harness：OpenCode2（TEAM）\n'
                              '### 3002-s999\n- 职责/专长：未登记成员\n', encoding='utf-8')
-        (self.home / 'ENTRY.md').write_text('- Harness：OpenCode2\n', encoding='utf-8')
+        (self.home / 'ENTRY.md').write_text('- Harness：ENTRY-ONLY\n', encoding='utf-8')
         (self.home / 'contact.py').write_text('raise Exception("Never execute")', encoding='utf-8')
         registry = self.root / 'data/project-registry/projects'
         registry.mkdir(parents=True)
@@ -63,10 +64,16 @@ class TeamOverviewTests(unittest.TestCase):
         self.assertNotIn('3002-s999', text)
         self.assertIn('安装级支持', text)
         self.assertIn("space''s", text)
-        self.assertIn('OpenCode2', text)
+        self.assertIn('Harness（TEAM）', text)
+        self.assertIn('OpenCode2（TEAM）', text)
+        self.assertNotIn('ENTRY-ONLY', text)
         self.assertIn('[命令](#3002-s001)', text)
         self.assertIn('### 3002-s001', text)
         self.assertNotIn('在线；', text)
+        self.team.write_text('## 当前成员\n### 3002-s001\n- 职责：新职责\n', encoding='utf-8')
+        missing_harness = render_overview(self.install, self.output)
+        self.assertIn('未注明，读 TEAM', missing_harness)
+        self.assertNotIn('ENTRY-ONLY', missing_harness)
         self.team.unlink()
         missing = render_overview(self.install, self.output)
         self.assertIn('TEAM 原件缺失', missing)

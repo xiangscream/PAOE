@@ -28,7 +28,7 @@ class TemplateSyncTests(unittest.TestCase):
         station = self.mother / 'Workstations/_workstation';station.mkdir(parents=True)
         (self.mother/'README.md').write_text('# Mother\n','utf-8')
         (self.mother/'AGENTS.md').write_text('# Mother\n'+common.START+'\nRule.\n'+common.END+'\n','utf-8')
-        for name in ('INDEX.md','TEAM.md'):
+        for name in ('INDEX.md','TEAM.md','HISTORY.md'):
             (self.mother/name).write_text('# fixture\n','utf-8')
         self.template = station/'ENTRY.md'
         self.template.write_bytes(self.f.entry_template.read_bytes())
@@ -40,7 +40,7 @@ class TemplateSyncTests(unittest.TestCase):
             (self.system/name).write_text('# fixture\n','utf-8')
         source=common.source_block(self.mother/'AGENTS.md')
         (self.f.vault/'AGENTS.md').write_text(common.START+'\n'+common.managed_section(source)+common.END+'\n## Human\nPreserve.\n','utf-8')
-        for name in ('INDEX.md','TEAM.md'):
+        for name in ('INDEX.md','TEAM.md','HISTORY.md'):
             (self.f.vault/name).write_text('# fixture\n','utf-8')
         overview=self.system/'PROJECTS.md';overview.write_text(render_overview(self.f.install,overview),'utf-8')
 
@@ -134,6 +134,20 @@ class TemplateSyncTests(unittest.TestCase):
         self.assertEqual(code,1);self.assertIn('锚点缺失',out);self.assertIn('gone.md',out)
         self.assertNotIn('fake.md',out);self.assertIn('引用方',out)
         self.assertEqual(out.count('退役定位 old/place'),1)
+        self.assertEqual(before,self.snapshot())
+
+    def test_history_mother_is_part_of_initialization_check(self):
+        (self.mother/'HISTORY.md').unlink()
+        code,out=self.check('--templates-only')
+        self.assertNotEqual(code,0,out)
+        self.assertIn('HISTORY.md',out)
+
+    def test_registered_project_history_is_checked_read_only(self):
+        (self.f.vault/'HISTORY.md').unlink()
+        before=self.snapshot()
+        code,out=self.check()
+        self.assertNotEqual(code,0,out)
+        self.assertIn('HISTORY.md',out)
         self.assertEqual(before,self.snapshot())
 
     def test_todo_mother_is_checked_with_the_real_v4_parser(self):

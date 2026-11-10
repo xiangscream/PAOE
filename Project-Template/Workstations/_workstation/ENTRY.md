@@ -17,7 +17,7 @@ version: 22
 | 要找什么 | 入口 |
 | --- | --- |
 | 当前目标、下一动作和成果 | [本人 TODO](TODO.md) |
-| 业务原件与同事 | [INDEX](../../INDEX.md) · [TEAM 本人条目](../../TEAM.md#{{home_id}}) |
+| 业务原件与同事 | [INDEX](../../INDEX.md) · [TEAM 本人条目](../../TEAM.md#{{home_id}}) · {{project_history_link}} |
 | 来信原文与处理状态 | [Mailbox](mailbox/) · [Notice](notices/) |
 | 正常命令与公开联系包 | {{guide_index_link}} · {{ops_link}}；OPS选择“生成本人公开联系包” |
 | 方法与工具 | 下方CLI的 `library search` / `library tools`，再读命中的原件 |
