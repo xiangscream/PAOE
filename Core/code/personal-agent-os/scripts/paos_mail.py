@@ -22,6 +22,9 @@ DISPATCH_SCHEMA = "paos-workstation-mail-dispatch/v1"
 HANDLED_SCHEMA = "paos-workstation-mail-handled/v1"
 ARCHIVE_SCHEMA = "paos-workstation-mail-archive/v1"
 MAIL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{2,119}$")
+# Pre-V1.3 mailbox files used their filename stem as the lookup ID.  Keep that
+# narrow archive/read path available without widening new Mail ID generation.
+LEGACY_MAIL_ID_RE = re.compile(r'^[^\x00-\x1f<>:"/\\|?*]{1,160}$')
 MAX_SUBJECT_CHARS = 240
 MAX_BODY_CHARS = 256 * 1024
 
@@ -67,15 +70,22 @@ def _clean_single_line(value: Any, *, label: str, max_chars: int) -> str:
     return text
 
 
-def _validate_message_id(value: str) -> str:
+def _validate_message_id(value: str, *, allow_legacy: bool = False) -> str:
     text = str(value or "").strip()
-    if not MAIL_ID_RE.fullmatch(text):
-        raise MailProblem(
-            "mail_message_id_invalid",
-            "message_id 必须为 3–120 位字母、数字、点、下划线或短横线。",
-            {"message_id": text},
-        )
-    return text
+    if MAIL_ID_RE.fullmatch(text):
+        return text
+    if (
+        allow_legacy
+        and text not in {".", ".."}
+        and not text.endswith((".", " "))
+        and LEGACY_MAIL_ID_RE.fullmatch(text)
+    ):
+        return text
+    raise MailProblem(
+        "mail_message_id_invalid",
+        "message_id 必须为 3–120 位字母、数字、点、下划线或短横线。",
+        {"message_id": text},
+    )
 
 
 def _atomic_create(path: Path, text: str) -> bool:
@@ -269,9 +279,11 @@ def read_mail_archive_home(
     home_path: Path,
     agent_id: str,
     message_id: str,
+    *,
+    allow_legacy: bool = False,
 ) -> dict[str, Any] | None:
     """Read the explicit archive marker from one exact Home."""
-    message_id = _validate_message_id(message_id)
+    message_id = _validate_message_id(message_id, allow_legacy=allow_legacy)
     path = _archive_path(Path(home_path), message_id)
     if not path.is_file():
         return None
@@ -304,9 +316,10 @@ def record_mail_archive_home(
     message_id: str,
     *,
     history_root: str,
+    allow_legacy: bool = False,
 ) -> dict[str, Any]:
     """Persist the explicit archive marker in one exact Home after verified removal."""
-    message_id = _validate_message_id(message_id)
+    message_id = _validate_message_id(message_id, allow_legacy=allow_legacy)
     history_root = str(history_root or "").strip()
     if not history_root:
         raise MailProblem(
@@ -325,7 +338,9 @@ def record_mail_archive_home(
     }
     text = json.dumps(record, ensure_ascii=False, indent=2) + "\n"
     if not _atomic_create(path, text):
-        existing = read_mail_archive_home(Path(home_path), agent_id, message_id)
+        existing = read_mail_archive_home(
+            Path(home_path), agent_id, message_id, allow_legacy=allow_legacy
+        )
         if existing is None:
             raise MailProblem(
                 "mail_archive_record_invalid",
@@ -350,10 +365,15 @@ def read_mail_archive(
     root: Path,
     agent_id: str,
     message_id: str,
+    *,
+    allow_legacy: bool = False,
 ) -> dict[str, Any] | None:
     """Project-root convenience wrapper; Home-specific reads use *_home."""
     return read_mail_archive_home(
-        Path(root) / "Workstations" / agent_id, agent_id, message_id
+        Path(root) / "Workstations" / agent_id,
+        agent_id,
+        message_id,
+        allow_legacy=allow_legacy,
     )
 
 
@@ -363,6 +383,7 @@ def record_mail_archive(
     message_id: str,
     *,
     history_root: str,
+    allow_legacy: bool = False,
 ) -> dict[str, Any]:
     """Project-root convenience wrapper; Home-specific writes use *_home."""
     return record_mail_archive_home(
@@ -370,6 +391,7 @@ def record_mail_archive(
         agent_id,
         message_id,
         history_root=history_root,
+        allow_legacy=allow_legacy,
     )
 
 
@@ -867,9 +889,15 @@ def list_mail(root: Path, agent_id: str) -> dict[str, Any]:
     }
 
 
-def mail_archive_files(root: Path, agent_id: str, message_id: str) -> list[Path]:
+def mail_archive_files(
+    root: Path,
+    agent_id: str,
+    message_id: str,
+    *,
+    allow_legacy: bool = False,
+) -> list[Path]:
     """Return the immutable Mail and optional legacy handling file for one input."""
-    message_id = _validate_message_id(message_id)
+    message_id = _validate_message_id(message_id, allow_legacy=allow_legacy)
     candidates = (
         _mail_path(Path(root), agent_id, message_id),
         _handled_path(Path(root), agent_id, message_id),
@@ -877,8 +905,14 @@ def mail_archive_files(root: Path, agent_id: str, message_id: str) -> list[Path]
     return [path for path in candidates if path.is_file()]
 
 
-def read_mail(root: Path, agent_id: str, message_id: str) -> dict[str, Any]:
-    message_id = _validate_message_id(message_id)
+def read_mail(
+    root: Path,
+    agent_id: str,
+    message_id: str,
+    *,
+    allow_legacy: bool = False,
+) -> dict[str, Any]:
+    message_id = _validate_message_id(message_id, allow_legacy=allow_legacy)
     path = _mail_path(Path(root), agent_id, message_id)
     if not path.is_file():
         raise MailProblem(

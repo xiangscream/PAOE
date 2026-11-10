@@ -380,6 +380,65 @@ class HistoryArchiveTests(unittest.TestCase):
         self.assertTrue(read['mail']['handling']['handled'])
         self.assertEqual(read['mail']['handling']['reason'], 'legacy 已处理')
 
+    def test_legacy_chinese_filename_mail_can_be_archived_and_read_back(self):
+        legacy_name = '2026-09-22-固定工位接班'
+        home = self.vault / 'Workstations/3002-s002'
+        mailbox = home / 'mailbox'
+        (mailbox / f'{legacy_name}.md').write_text(
+            '# 旧信\n\n旧信正文。\n', encoding='utf-8'
+        )
+        notice = create_notice(
+            home_path=home,
+            home_kind='project_agent',
+            home_id='3002-s002',
+            project_id='3002',
+            source_kind='mail',
+            source_ref=f'legacy-mail-file:{legacy_name}.md',
+            summary='旧信',
+        )
+        mark_notice_read(
+            home_path=home,
+            notice_id=notice['notice_id'],
+            reader_home_kind='project_agent',
+            reader_home_id='3002-s002',
+            reader_project_id='3002',
+        )
+        handle_notice(
+            home_path=home,
+            notice_id=notice['notice_id'],
+            resolution='旧信已处理',
+            action_ref='Works/legacy.md',
+        )
+        history = self.root / 'legacy-history'
+
+        archived = self.call(
+            'attention', 'archive-input', '3002', '3002-s002',
+            '--message-id', f'{legacy_name}.md', '--history-root', str(history),
+        )[1]
+
+        self.assertEqual(archived['message_id'], legacy_name)
+        self.assertEqual(archived['state'], 'archived')
+        self.assertFalse((mailbox / f'{legacy_name}.md').exists())
+        self.assertTrue(
+            (history / 'Workstations/3002-s002/mailbox' / f'{legacy_name}.md').is_file()
+        )
+        self.assertTrue((mailbox / '.archived' / f'{legacy_name}.json').is_file())
+        replay = self.call(
+            'attention', 'archive-input', '3002', '3002-s002',
+            '--message-id', f'{legacy_name}.md', '--history-root', str(history),
+        )[1]
+        self.assertEqual(replay['state'], 'already_archived')
+        read = self.call(
+            'attention', 'history-read', '--history-root', str(history),
+            '--agent-id', '3002-s002', '--message-id', f'{legacy_name}.md',
+        )[1]
+        self.assertIn('旧信正文', read['mail']['markdown'])
+        self.assertEqual(read['notice']['state'], 'handled')
+        self.assertEqual(
+            read['notice']['source_ref'], f'legacy-mail-file:{legacy_name}.md'
+        )
+        self.assertTrue(read['mail']['handling']['handled'])
+
     def test_direct_notice_can_move_and_be_read_by_notice_id(self):
         source = self.root / 'incoming-direct.md'
         source.write_text('直接输入原件', encoding='utf-8')
