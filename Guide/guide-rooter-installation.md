@@ -5,7 +5,7 @@ title: Rooter 安装与运行维护
 description: 按需读取：安装定位、原会话恢复、服务可达与成员运行例外。
 tags: rooter, installation, recovery
 status: active
-version: 17
+version: 18
 ---
 
 # Rooter 安装与运行维护
@@ -36,6 +36,12 @@ Project员工用 `paos --json wake status <project> <agent>`，Rooter用本工�
 本人接收器从所属 Harness 环境启动。按当前登记维护实际运行通道；旧 Core HTTP / Bridge 保持停用。分别记录宿主、启停方法和日志；不能用某组件在线代替另一组件可用。
 
 交付沿公共运行规则：项目成员读本项目 AGENTS；Rooter 读 System 的 Project-Template/AGENTS 公共区。通信已通但业务停止时，与原执行者/Coordinator核当前责任和停点，接续可执行工作。
+
+## 工位位置迁移
+
+保留身份、会话与历史，不等于保留旧物理目录。按Human指定位置搬迁真实Home，先保存Current、原件与运行入口，再同步安装登记、编号定位、原生接收、定时任务、快捷方式和当前引用。直接来源若以绝对路径派生索引，迁址时一并维护索引及处理事实，原件留恢复映射。
+
+从新Home读Current和输入，核原会话正常接续，再将旧位置归档到库外。迁移完成以真实目录、登记和实际接续为准；只更新导航或命令不算搬迁。涉及多个Project时逐项列出真实位置和未完项，基座更新与项目/工位搬迁分别记录。
 
 ## 配置与权限
 
