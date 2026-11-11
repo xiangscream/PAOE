@@ -1044,6 +1044,41 @@ def _mail_lookup_token(value: str) -> str:
     return text
 
 
+def _rooter_mail_item(home_path: Path, lookup: str) -> tuple[Path, str]:
+    """Resolve a Rooter mailbox file by full filename or filename stem."""
+    raw = str(lookup or "").strip()
+    if not raw or Path(raw.replace("\\", "/")).name != raw:
+        raise AttentionServiceProblem(
+            "attention_mail_missing",
+            "Rooter mailbox 中没有该 Mail。",
+            {"message_id": raw, "path": str(Path(home_path) / "mailbox")},
+        )
+    mailbox = Path(home_path) / "mailbox"
+    candidates = [mailbox / raw, mailbox / f"{raw}.md"]
+    for path in candidates:
+        if path.is_file():
+            return path, path.stem
+    raise AttentionServiceProblem(
+        "attention_mail_missing",
+        "Rooter mailbox 中没有该 Mail。",
+        {
+            "message_id": raw,
+            "paths": [str(path) for path in candidates],
+        },
+    )
+
+
+def _history_mail_lookup(home_path: Path, lookup: str) -> str:
+    """Resolve full filename or stem against the archived mailbox."""
+    raw = str(lookup or "").strip()
+    mailbox = Path(home_path) / "mailbox"
+    if raw and raw.lower().endswith(".md") and (mailbox / raw).is_file():
+        return Path(raw).stem
+    if raw and (mailbox / f"{raw}.md").is_file():
+        return raw
+    return _mail_lookup_token(raw)
+
+
 def _mail_archive_id(item: dict[str, Any]) -> str:
     """Use the declared ID, or the original filename stem for legacy Mail."""
     declared = str(item.get("declared_message_id") or "").strip()
@@ -1815,7 +1850,7 @@ def archive_rooter_input(
             "archive_rooter_input 只接受已登记 Rooter Home。",
             {"home_kind": ref.get("home_kind")},
         )
-    message_id = _mail_lookup_token(str(message_id or "").strip())
+    message_id = str(message_id or "").strip()
     notice_id = str(notice_id or "").strip()
     if bool(message_id) == bool(notice_id):
         raise AttentionServiceProblem(
@@ -1825,6 +1860,7 @@ def archive_rooter_input(
     home_path = Path(str(ref["home_path"])).resolve()
     home_id = str(ref["home_id"])
     batch = _history_root_home(home_path, history_root)
+    archive_id = message_id
     if message_id:
         existing_archive = read_mail_archive_home(
             home_path, home_id, message_id, allow_legacy=True
@@ -1839,40 +1875,50 @@ def archive_rooter_input(
                 "state": "already_archived",
                 "files": [],
             }
+        if message_id.lower().endswith(".md"):
+            stem = Path(message_id).stem
+            if stem != message_id:
+                existing_archive = read_mail_archive_home(
+                    home_path, home_id, stem, allow_legacy=True
+                )
+                if existing_archive is not None:
+                    return {
+                        "schema": "paos-history-archive/v1",
+                        "home": ref,
+                        "history_root": str(existing_archive.get("history_root") or ""),
+                        "message_id": stem,
+                        "notice_id": "",
+                        "state": "already_archived",
+                        "files": [],
+                    }
 
     sources: list[Path] = []
     source_ref = ""
     if message_id:
-        mail_path = home_path / "mailbox" / f"{message_id}.md"
-        if not mail_path.is_file():
-            raise AttentionServiceProblem(
-                "attention_mail_missing",
-                "Rooter mailbox 中没有该 Mail。",
-                {"message_id": message_id, "path": str(mail_path)},
-            )
+        mail_path, archive_id = _rooter_mail_item(home_path, message_id)
         try:
             meta = parse_mail_frontmatter(mail_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError) as exc:
             raise AttentionServiceProblem(
                 "attention_mail_unreadable",
                 "Rooter Mail 无法读取。",
-                {"message_id": message_id, "path": str(mail_path)},
+                {"message_id": archive_id, "path": str(mail_path)},
             ) from exc
-        recipient = str(meta.get("recipient_agent_id") or "").strip()
-        if recipient and recipient != home_id:
-            raise AttentionServiceProblem(
-                "attention_mail_recipient_mismatch",
-                "Mail recipient 与 Rooter Home 不一致。",
-                {"message_id": message_id, "recipient_agent_id": recipient},
-            )
         declared = str(meta.get("message_id") or "").strip()
         source_ref = (
             declared
             if declared and MAIL_ID_RE.fullmatch(declared)
-            else f"legacy-mail-file:{mail_path.name}"
+            else f"rooter-mail-file:{mail_path.name}"
         )
         notice_id = _mail_notice_id(home_ref=ref, source_ref=source_ref)
-        selected_notice = read_notice(home_path, notice_id)
+        try:
+            selected_notice = read_notice(home_path, notice_id)
+        except NoticeProblem as exc:
+            raise AttentionServiceProblem(
+                str(getattr(exc, "code", "attention_history_notice_missing")),
+                str(exc),
+                dict(getattr(exc, "details", {}) or {}),
+            ) from exc
         if (
             selected_notice.get("source_kind") != "mail"
             or selected_notice.get("source_ref") != source_ref
@@ -1880,10 +1926,13 @@ def archive_rooter_input(
             raise AttentionServiceProblem(
                 "attention_history_notice_mismatch",
                 "Rooter Mail 对应的 Notice identity 不一致。",
-                {"message_id": message_id, "source_ref": source_ref},
+                {"message_id": archive_id, "source_ref": source_ref},
             )
+        # A Rooter-held local reference copy may retain its original recipient.
+        # It is accepted only when the exact matching Rooter Notice already
+        # exists above; ordinary Project recipient validation is unchanged.
         sources.append(mail_path)
-        handled = home_path / "mailbox" / ".handled" / f"{message_id}.json"
+        handled = home_path / "mailbox" / ".handled" / f"{archive_id}.json"
         if handled.is_file():
             sources.append(handled)
     else:
@@ -1926,7 +1975,7 @@ def archive_rooter_input(
             record_mail_archive_home(
                 home_path,
                 home_id,
-                message_id,
+                archive_id,
                 history_root=str(batch),
                 allow_legacy=True,
             )
@@ -1945,7 +1994,7 @@ def archive_rooter_input(
         "schema": "paos-history-archive/v1",
         "home": ref,
         "history_root": str(batch),
-        "message_id": message_id,
+        "message_id": archive_id,
         "notice_id": notice_id,
         "state": "already_archived" if all(
             item["state"] == "already_moved" for item in planned
@@ -1962,7 +2011,7 @@ def read_history_input(
     notice_id: str = "",
 ) -> dict[str, Any]:
     """Read moved Mail/Notice by explicit batch root; never edits the batch."""
-    message_id = _mail_lookup_token(str(message_id or "").strip())
+    message_id = str(message_id or "").strip()
     notice_id = str(notice_id or "").strip()
     if bool(message_id) == bool(notice_id):
         raise AttentionServiceProblem(
@@ -1990,22 +2039,36 @@ def read_history_input(
         "home_path": str(home_path),
     }
     if message_id:
+        lookup = _history_mail_lookup(home_path, message_id)
         result["mail"] = read_mail(
-            batch, agent_id, message_id, allow_legacy=True
+            batch, agent_id, lookup, allow_legacy=True
         )
+        declared = str(
+            (result["mail"].get("metadata") or {}).get("message_id") or ""
+        ).strip()
         try:
             notice_listing = list_notices(home_path)
         except NoticeProblem:
             notice_listing = {"items": []}
-        legacy_refs = {
+        source_refs = {
             message_id,
+            lookup,
+            f"{message_id}.md",
+            f"{lookup}.md",
             f"legacy-mail-file:{message_id}",
             f"legacy-mail-file:{message_id}.md",
+            f"legacy-mail-file:{lookup}",
+            f"legacy-mail-file:{lookup}.md",
+            f"rooter-mail-file:{message_id}",
+            f"rooter-mail-file:{lookup}",
+            f"rooter-mail-file:{lookup}.md",
         }
+        if declared:
+            source_refs.add(declared)
         for item in notice_listing.get("items") or []:
             if (
                 item.get("source_kind") == "mail"
-                and item.get("source_ref") in legacy_refs
+                and item.get("source_ref") in source_refs
             ):
                 result["notice"] = read_notice(
                     home_path, str(item.get("notice_id") or "")

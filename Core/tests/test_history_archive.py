@@ -337,6 +337,197 @@ class HistoryArchiveTests(unittest.TestCase):
         self.assertEqual(read['notice']['state'], 'handled')
         self.assertEqual(list_notices(self.rooter)['count'], 0)
 
+    def test_rooter_legacy_full_filename_archives_with_original_identity(self):
+        legacy_name = '2026-09-22-rooter-legacy'
+        filename = f'{legacy_name}.md'
+        mailbox = self.rooter / 'mailbox'
+        (mailbox / filename).write_text(
+            '# Rooter legacy\n\nRooter 旧信正文。\n', encoding='utf-8'
+        )
+        notice = create_notice(
+            home_path=self.rooter,
+            home_kind='rooter',
+            home_id='rooter-001',
+            project_id='',
+            source_kind='mail',
+            source_ref=f'rooter-mail-file:{filename}',
+            summary='Rooter legacy',
+        )
+        mark_notice_read(
+            home_path=self.rooter,
+            notice_id=notice['notice_id'],
+            reader_home_kind='rooter',
+            reader_home_id='rooter-001',
+            reader_project_id='',
+        )
+        handle_notice(
+            home_path=self.rooter,
+            notice_id=notice['notice_id'],
+            resolution='Rooter 旧信已处理',
+            action_ref='Works/rooter-legacy.md',
+        )
+        history = self.root / 'rooter-legacy-history'
+
+        archived = self.call(
+            'attention', 'rooter-archive-input', '--message-id', filename,
+            '--history-root', str(history),
+        )[1]
+
+        self.assertEqual(archived['message_id'], legacy_name)
+        self.assertEqual(archived['state'], 'archived')
+        self.assertFalse((mailbox / filename).exists())
+        self.assertTrue(
+            (history / 'Workstations/rooter-001/mailbox' / filename).is_file()
+        )
+        self.assertTrue((mailbox / '.archived' / f'{legacy_name}.json').is_file())
+        self.assertFalse((history / 'Workstations/rooter-001/mailbox' / f'{filename}.md').exists())
+        read = self.call(
+            'attention', 'rooter-history-read', '--history-root', str(history),
+            '--message-id', filename,
+        )[1]
+        self.assertIn('Rooter 旧信正文', read['mail']['markdown'])
+        self.assertEqual(read['notice']['state'], 'handled')
+        self.assertEqual(
+            read['notice']['source_ref'], f'rooter-mail-file:{filename}'
+        )
+        self.assertTrue(read['mail']['handling']['handled'])
+
+    def test_rooter_local_reference_copy_keeps_original_recipient(self):
+        message_id = 'msg-reference-copy-20261005'
+        filename = f'{message_id}.md'
+        mailbox = self.rooter / 'mailbox'
+        (mailbox / filename).write_text(
+            '---\nschema: paos-workstation-mail/v1\n'
+            f'message_id: "{message_id}"\nproject_id: "3002"\n'
+            'recipient_agent_id: "3002-s010"\ncreated_at: "2026-10-05T08:25:10Z"\n'
+            'sender_kind: "agent"\nsender_id: "3002-s027"\n'
+            'audience: "targeted"\nsubject: "reference copy"\n---\n\n'
+            '# reference copy\n\nRooter 本地参考正文。\n',
+            encoding='utf-8',
+        )
+        notice = create_notice(
+            home_path=self.rooter,
+            home_kind='rooter',
+            home_id='rooter-001',
+            project_id='',
+            source_kind='mail',
+            source_ref=message_id,
+            summary='reference copy',
+        )
+        mark_notice_read(
+            home_path=self.rooter,
+            notice_id=notice['notice_id'],
+            reader_home_kind='rooter',
+            reader_home_id='rooter-001',
+            reader_project_id='',
+        )
+        handle_notice(
+            home_path=self.rooter,
+            notice_id=notice['notice_id'],
+            resolution='本地参考副本已处理',
+            action_ref='Works/rooter-reference.md',
+        )
+        history = self.root / 'rooter-reference-history'
+
+        archived = self.call(
+            'attention', 'rooter-archive-input', '--message-id', filename,
+            '--history-root', str(history),
+        )[1]
+
+        self.assertEqual(archived['message_id'], message_id)
+        self.assertEqual(archived['state'], 'archived')
+        self.assertFalse((mailbox / filename).exists())
+        self.assertTrue(
+            (history / 'Workstations/rooter-001/mailbox' / filename).is_file()
+        )
+        read = self.call(
+            'attention', 'rooter-history-read', '--history-root', str(history),
+            '--message-id', filename,
+        )[1]
+        self.assertEqual(
+            read['mail']['metadata']['recipient_agent_id'], '3002-s010'
+        )
+        self.assertEqual(read['notice']['state'], 'handled')
+        self.assertEqual(read['notice']['source_ref'], message_id)
+
+    def test_rooter_history_read_uses_declared_id_for_notice(self):
+        filename = '2026-10-05-date-file.md'
+        declared = 'msg-declared-copy-20261005'
+        mailbox = self.rooter / 'mailbox'
+        (mailbox / filename).write_text(
+            '---\nschema: paos-workstation-mail/v1\n'
+            f'message_id: "{declared}"\nproject_id: "3002"\n'
+            'recipient_agent_id: "rooter-001"\ncreated_at: "2026-10-05T08:25:10Z"\n'
+            'sender_kind: "agent"\nsender_id: "3002-s027"\n'
+            'audience: "targeted"\nsubject: "declared id"\n---\n\n'
+            '# declared id\n\n正文保留原 ID。\n',
+            encoding='utf-8',
+        )
+        notice = create_notice(
+            home_path=self.rooter,
+            home_kind='rooter',
+            home_id='rooter-001',
+            project_id='',
+            source_kind='mail',
+            source_ref=declared,
+            summary='declared id',
+        )
+        mark_notice_read(
+            home_path=self.rooter,
+            notice_id=notice['notice_id'],
+            reader_home_kind='rooter',
+            reader_home_id='rooter-001',
+            reader_project_id='',
+        )
+        handle_notice(
+            home_path=self.rooter,
+            notice_id=notice['notice_id'],
+            resolution='声明 ID 已处理',
+            action_ref='Works/declared-id.md',
+        )
+        history = self.root / 'rooter-declared-history'
+
+        self.call(
+            'attention', 'rooter-archive-input', '--message-id', filename,
+            '--history-root', str(history),
+        )
+        read = self.call(
+            'attention', 'rooter-history-read', '--history-root', str(history),
+            '--message-id', filename,
+        )[1]
+        self.assertEqual(read['mail']['metadata']['message_id'], declared)
+        self.assertEqual(read['notice']['state'], 'handled')
+        self.assertEqual(read['notice']['source_ref'], declared)
+        self.assertTrue(read['mail']['handling']['handled'])
+
+    def test_rooter_missing_notice_returns_structured_error(self):
+        filename = 'rooter-without-notice.md'
+        mailbox = self.rooter / 'mailbox'
+        (mailbox / filename).write_text(
+            '# Rooter without notice\n\n未登记 Notice 的本地副本。\n',
+            encoding='utf-8',
+        )
+        history = self.root / 'rooter-missing-notice-history'
+        code, result = self.call(
+            'attention', 'rooter-archive-input', '--message-id', filename,
+            '--history-root', str(history), ok=False,
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn('notice_missing', str(result))
+        self.assertNotIn('Traceback', str(result))
+        self.assertTrue((mailbox / filename).is_file())
+
+    def test_rooter_missing_legacy_filename_returns_structured_error(self):
+        history = self.root / 'rooter-missing-history'
+        code, result = self.call(
+            'attention', 'rooter-archive-input', '--message-id',
+            'missing-rooter-legacy.md', '--history-root', str(history),
+            ok=False,
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn('attention_mail_missing', str(result))
+        self.assertNotIn('Traceback', str(result))
+
     def test_history_read_legacy_mail_alias_projects_notice_handling(self):
         history = self.root / 'legacy-history'
         home = history / 'Workstations/2001-s009'
