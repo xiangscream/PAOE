@@ -1904,7 +1904,6 @@ def archive_rooter_input(
                 "Rooter Mail 无法读取。",
                 {"message_id": archive_id, "path": str(mail_path)},
             ) from exc
-        recipient = str(meta.get("recipient_agent_id") or "").strip()
         declared = str(meta.get("message_id") or "").strip()
         source_ref = (
             declared
@@ -1915,13 +1914,11 @@ def archive_rooter_input(
         try:
             selected_notice = read_notice(home_path, notice_id)
         except NoticeProblem as exc:
-            if recipient and recipient != home_id:
-                raise AttentionServiceProblem(
-                    "attention_mail_recipient_mismatch",
-                    "Mail recipient 与 Rooter Home 不一致。",
-                    {"message_id": archive_id, "recipient_agent_id": recipient},
-                ) from exc
-            raise
+            raise AttentionServiceProblem(
+                str(getattr(exc, "code", "attention_history_notice_missing")),
+                str(exc),
+                dict(getattr(exc, "details", {}) or {}),
+            ) from exc
         if (
             selected_notice.get("source_kind") != "mail"
             or selected_notice.get("source_ref") != source_ref

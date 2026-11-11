@@ -450,6 +450,23 @@ class HistoryArchiveTests(unittest.TestCase):
         self.assertEqual(read['notice']['state'], 'handled')
         self.assertEqual(read['notice']['source_ref'], message_id)
 
+    def test_rooter_missing_notice_returns_structured_error(self):
+        filename = 'rooter-without-notice.md'
+        mailbox = self.rooter / 'mailbox'
+        (mailbox / filename).write_text(
+            '# Rooter without notice\n\n未登记 Notice 的本地副本。\n',
+            encoding='utf-8',
+        )
+        history = self.root / 'rooter-missing-notice-history'
+        code, result = self.call(
+            'attention', 'rooter-archive-input', '--message-id', filename,
+            '--history-root', str(history), ok=False,
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn('notice_missing', str(result))
+        self.assertNotIn('Traceback', str(result))
+        self.assertTrue((mailbox / filename).is_file())
+
     def test_rooter_missing_legacy_filename_returns_structured_error(self):
         history = self.root / 'rooter-missing-history'
         code, result = self.call(
