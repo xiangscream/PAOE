@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 94
+version: 95
 ---
 
 # PAOS 操作指南
@@ -269,9 +269,9 @@ Human 已授权本机 OpenCode 全部工具权限。Rooter沿服务正式 Config
 
 Human 显式指定 OpenCode 模型时，`--model` 传完整原生 JSON 对象，例如 `'{"providerID":"opencode-go","modelID":"deepseek-v4.1-flash"}'`；不传 `provider/model` 字符串。其他正常提醒省略该参数，继承原模型。具体参数见安装 `wake trigger --help`。
 
-后台 OpenCode 用 `opencode attach <当前服务URL> --session <当前sessionID>` 查看原会话。URL与ID从当前联系事实取得，不另建替代会话。
+后台 OpenCode 从已安装版本的正常入口查看原会话。v2使用 `opencode --server <当前服务URL> --session <当前sessionID>`；URL与ID从当前联系事实取得，机器profile沿本机启动入口，不另建替代会话。
 
-OpenCode 的状态按 `directory` 分实例。查询 `/session/status` 时，显式传入该 Home/原生 Session 已核的 `directory`，并在回报保留查询目录；省略参数只读服务默认目录，不能据空表判断目标会话闲置或已停止。
+按当前安装版本的正式状态读面核目标Session及实际工作目录。旧版HTTP路径和状态作用域不能套到新版；空状态表只说明本次查询结果，不据此判断所有会话闲置或已停止。
 
 维护共享 OpenCode 服务前，核该服务所有已绑定 Agent 及其实际 directory。任何会话仍在运行就保留服务到安全点；不能用一个 directory 的空状态表判断整台 server 空闲。
 
