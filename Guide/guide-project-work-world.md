@@ -5,7 +5,7 @@ title: Project 文件与 Git
 description: 成果归项目、当前入口清楚、历史可读，文本版本使用现有 Git。
 tags: project, files, git, current
 status: active
-version: 22
+version: 23
 ---
 
 # Project 文件与 Git
@@ -45,6 +45,8 @@ Project 根的 HISTORY 按业务主题汇总阶段成果、关键判断和经验
 任务行动与进展在对应工位 TODO，项目共识在唯一最新口径；不在 Project JSON 维护第二份进展。任务完成与成果接受按实际结果区分。参考快照注明来源即可，不给普通资料增加逐文件哈希和必填 provenance 账本。
 
 每个独立交付阶段保留审阅时原文、必要交付回执和移动恢复映射；常规 Current 写入不逐次另存 TODO 全文、指纹或目录快照，异常时保留对应现场。同类已定用途资料按实际用途合批，复用现有阅读与恢复入口。
+
+完整回放、恢复副本和测试资料树放在活跃Vault之外。项目内保留当前输入、正式成果和简短历史入口，避免把每次实验的整库副本、旧工作树和依赖目录带进Obsidian索引。
 
 ### 日常顺手维护
 
