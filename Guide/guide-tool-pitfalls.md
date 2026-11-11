@@ -5,7 +5,7 @@ title: 工具行为陷阱：按工具与操作检索
 description: 按工具/操作查已记录的时间、版本、现象与处理动作；不把单次版本现象外推成普遍定律。
 tags: tools, pitfalls, feishu, cli, verification
 status: active
-version: 8
+version: 9
 ---
 
 # 工具行为陷阱
@@ -36,6 +36,12 @@ version: 8
 ## 基本动作区分
 
 新增内容用插入语义（如 `block_insert_after`）；改原内容才用替换。不要用“替换”锚点顺手吞掉原项，也不要用插入结果冒充原内容已更新。任何写后都以云端回读的 revision、块结构和目标文本为准。
+
+## 查找已有原件
+
+查找已有原件时，先用当前任务路径、ENTRY、项目索引和本机Tool Catalog定位。服务中的资料沿现有CLI读取；例如CAT原发言用[通信指南](guide-paos-cat-operations.md#cat-圆桌)的`cat read <room>`取得。文件只查路径时用`rg --files <已定位目录> -g <文件名>`，需要正文时再用`rg -n <关键词> <已定位目录>`。同一范围的多个关键词合并检索一次。
+
+路径失效时按登记或迁移映射查同一原件；缺件或404保留具体位置和Owner，继续可执行部分。避免用`Get-ChildItem -Recurse`配合逐文件`Select-String`反复读取整盘内容。
 
 ## PowerShell UTF-8
 
