@@ -450,6 +450,56 @@ class HistoryArchiveTests(unittest.TestCase):
         self.assertEqual(read['notice']['state'], 'handled')
         self.assertEqual(read['notice']['source_ref'], message_id)
 
+    def test_rooter_history_read_uses_declared_id_for_notice(self):
+        filename = '2026-10-05-date-file.md'
+        declared = 'msg-declared-copy-20261005'
+        mailbox = self.rooter / 'mailbox'
+        (mailbox / filename).write_text(
+            '---\nschema: paos-workstation-mail/v1\n'
+            f'message_id: "{declared}"\nproject_id: "3002"\n'
+            'recipient_agent_id: "rooter-001"\ncreated_at: "2026-10-05T08:25:10Z"\n'
+            'sender_kind: "agent"\nsender_id: "3002-s027"\n'
+            'audience: "targeted"\nsubject: "declared id"\n---\n\n'
+            '# declared id\n\n正文保留原 ID。\n',
+            encoding='utf-8',
+        )
+        notice = create_notice(
+            home_path=self.rooter,
+            home_kind='rooter',
+            home_id='rooter-001',
+            project_id='',
+            source_kind='mail',
+            source_ref=declared,
+            summary='declared id',
+        )
+        mark_notice_read(
+            home_path=self.rooter,
+            notice_id=notice['notice_id'],
+            reader_home_kind='rooter',
+            reader_home_id='rooter-001',
+            reader_project_id='',
+        )
+        handle_notice(
+            home_path=self.rooter,
+            notice_id=notice['notice_id'],
+            resolution='声明 ID 已处理',
+            action_ref='Works/declared-id.md',
+        )
+        history = self.root / 'rooter-declared-history'
+
+        self.call(
+            'attention', 'rooter-archive-input', '--message-id', filename,
+            '--history-root', str(history),
+        )
+        read = self.call(
+            'attention', 'rooter-history-read', '--history-root', str(history),
+            '--message-id', filename,
+        )[1]
+        self.assertEqual(read['mail']['metadata']['message_id'], declared)
+        self.assertEqual(read['notice']['state'], 'handled')
+        self.assertEqual(read['notice']['source_ref'], declared)
+        self.assertTrue(read['mail']['handling']['handled'])
+
     def test_rooter_missing_notice_returns_structured_error(self):
         filename = 'rooter-without-notice.md'
         mailbox = self.rooter / 'mailbox'

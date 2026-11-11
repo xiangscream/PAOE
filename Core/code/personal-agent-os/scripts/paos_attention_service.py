@@ -2043,6 +2043,9 @@ def read_history_input(
         result["mail"] = read_mail(
             batch, agent_id, lookup, allow_legacy=True
         )
+        declared = str(
+            (result["mail"].get("metadata") or {}).get("message_id") or ""
+        ).strip()
         try:
             notice_listing = list_notices(home_path)
         except NoticeProblem:
@@ -2060,6 +2063,8 @@ def read_history_input(
             f"rooter-mail-file:{lookup}",
             f"rooter-mail-file:{lookup}.md",
         }
+        if declared:
+            source_refs.add(declared)
         for item in notice_listing.get("items") or []:
             if (
                 item.get("source_kind") == "mail"
