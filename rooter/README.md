@@ -6,7 +6,7 @@ Rooter 维护本机安装、共享入口和运行连接，不属于任何 Projec
 
 本 README 是发布原件。实际 `ENTRY.md`、`TODO.md`、Contact、Mail、Notice、Records 和原生绑定属于本机实例，不进入发布包。
 
-- 已有 Rooter：保留身份、工位和历史；由安装描述的 `rooter_home` 定位，不要求为了目录一致搬家。
+- 已有 Rooter：保留身份、会话和历史，由安装描述的 `rooter_home` 定位真实工位。Human要求迁移位置时，实际迁移Home并同步登记与运行引用；导航文件不代替工位迁移。
 - 尚无 Rooter：`portable init` 不创建身份或工位。由本机维护者按现有 Home/TODO v4 合同准备，再显式登记；不复制别人的 Thread、凭据或 STOP。
 - 恢复工作：实读适用的全局 AGENTS、本人 ENTRY/TODO、公共运行正文、Rooter 指南和当前原输入；专题按实际任务读取。
 - 本人只维护自己的行动；项目目标与成员职责归对应 Coordinator 和 TEAM。
