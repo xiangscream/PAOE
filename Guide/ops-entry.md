@@ -5,7 +5,7 @@ title: 操作入口：按目的找命令
 description: 定位本人工作、已登记资源、同事与安装级 Rooter；使用现有文件和联系入口。
 tags: ops, operations, entry
 status: active
-version: 38
+version: 39
 ---
 
 # 操作入口
@@ -26,6 +26,7 @@ version: 38
 | 目的 | 入口 |
 | --- | --- |
 | 命令环境：PowerShell中文输出 | [UTF-8文本环境](guide-tool-pitfalls.md#powershell-utf-8)，与CLI放在同一段调用 |
+| Codex本人上线准备 | 原Desktop运行 `wake prepare-current`，仅准备已登记的本人接收器；无项目/同事参数，健康实例复用。见[上线准备](guide-paos-cat-operations.md#codex-目标上线准备) |
 | 恢复本人工作 | `orient <project> <home> --read` 一次读取现行AGENTS、INDEX、ENTRY、TODO；再读本轮原输入。仅查摘要时省略 `--read` |
 | 找 Workflow、Skill、Tool 或项目经验 | [工作入口·按需寻找资源](guide-work-method.md#按需寻找资源) |
 | 找同事、咨询或交付 | [联系同事与 Rooter](#联系同事与-rooter) |
