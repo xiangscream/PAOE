@@ -5,7 +5,7 @@ title: Project 文件与 Git
 description: 成果归项目、当前入口清楚、历史可读，文本版本使用现有 Git。
 tags: project, files, git, current
 status: active
-version: 24
+version: 25
 ---
 
 # Project 文件与 Git
@@ -70,7 +70,7 @@ Project 根的 HISTORY 按业务主题汇总阶段成果、关键判断和经验
 
 每天汇总本人经历时，顺手整理完成项、下一动作、工位与当天采用的材料。项目合成人据实际成果更新INDEX/HISTORY；能直接修的小摩擦当场修，可复用问题回安装Rooter现有摩擦页，说明实际场景、影响和处理结果。
 
-本机Libraries与工具导航放AGENTS公共区外，从已登记库根填写直接链接；创建或库根变化时同步。共享规则仍只维护公共母本，机器路径不写进共享正文。
+本机 Libraries、工具与共同经历导航放在 AGENTS 公共区外，创建或库根变化时从登记根填写并同步直接链接。共享规则只维护公共母本，机器路径不写进共享正文。
 
 ### 库外历史
 
