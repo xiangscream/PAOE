@@ -51,10 +51,10 @@ python notices/opencode.py status
 
 **DSH：**
 
-DSH 的固定 Session 必须以项目根为工作目录创建；私有目标配置只登记接收器发现文件，不复制 secret：
+DSH 的固定 Session 必须以项目根为工作目录创建；私有目标配置只登记接收器发现文件，不复制 secret。`receiver_file` 填本机绝对路径：
 
 ```json
-{"receiver_file":"C:/Users/<you>/.dsh/wake-receiver/receiver.json","mode":"queue"}
+{"receiver_file":"<本机DSH_HOME>/wake-receiver/receiver.json","mode":"queue"}
 ```
 
 ```text
