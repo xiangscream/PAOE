@@ -496,6 +496,11 @@ def _dsh_receiver_view(target: dict[str, Any]) -> dict[str, Any]:
                 view["reason"] = "heartbeat_stale"
         except (TypeError, ValueError):
             view["record_fresh"] = None
+            view.update(state="receiver_heartbeat_unknown", prepared=False,
+                        reason="heartbeat_invalid")
+    else:
+        view.update(state="receiver_heartbeat_unknown", prepared=False,
+                    reason="heartbeat_missing")
     view["secret_registered"] = True
     secret_path = Path(posix_windows_drive_locator(secret_file)).expanduser()
     view["secret_present"] = secret_path.is_file()

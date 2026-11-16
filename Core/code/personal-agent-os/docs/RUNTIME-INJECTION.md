@@ -62,7 +62,7 @@ DSH 的 `wake-receiver` 插件在 DSH 进程内监听本机回环，并把一条
 
 `receiver_file` 必须指向 DSH 正常写出的 `dsh-wake-receiver/v1` 记录；其中 `url` 只能为 `127.0.0.1` 回环，`secretFile` 由驱动在发送时读取。固定 Session 必须以项目根为 cwd 创建；绑错 cwd 会得到 `session/not-found`，本工具不自动创建或换 Session。`mode` 省略时为 `queue`，`steer` 只在目标会话正在运行时由 DSH 自身处理。
 
-一次提醒生成一个本次 `requestId`，随请求提交并在受理回执中核对。传输超时或回执丢失时保留该 ID 并返回 unknown；不自动重发，也不生成第二个 UUID 冒充同一次幂等提交。`paos wake status` 的 DSH `receiver` 视图只读发现文件、PID 与 heartbeat，不连接接收器；在线事实仍由 DSH 侧 `dsh_wake.py status` 或真实受理验证。
+一次提醒生成一个本次 `requestId`，随请求提交并在受理回执中核对。传输超时或回执丢失时保留该 ID 并返回 unknown；不自动重发，也不生成第二个 UUID 冒充同一次幂等提交。`paos wake status` 的 DSH `receiver` 视图只读发现文件、PID 与 heartbeat，不连接接收器。`prepared=true` 只表示记录、secret 存在，PID 未被确认死亡，且 heartbeat 存在并新鲜；heartbeat 缺失、不可解析或过期均使 `prepared=false`，且任何 `prepared=true` 都不等于在线或已消费。在线事实仍由 DSH 侧 `dsh_wake.py status` 或真实受理验证。
 
 ## OpenCode v2 Windows接入
 

@@ -62,7 +62,7 @@ python notices/dsh.py bind --session-id <本人DSH_SESSION_ID> --driver-config <
 python notices/dsh.py status
 ```
 
-接收器由 DSH 的 `wake-receiver` 插件提供，只监听 `127.0.0.1`。`status` 读取绑定和接收器发现文件的 PID/heartbeat 事实，不连接入口；需要在线健康时用 DSH 侧 `dsh_wake.py status`。接收器不创建 Session、不取消回合；PAOE STOP 只阻止后续注入，不能声称已停止运行中的回合。
+接收器由 DSH 的 `wake-receiver` 插件提供，只监听 `127.0.0.1`。`status` 读取绑定和接收器发现文件的 PID/heartbeat 事实，不连接入口；`prepared=true` 只表示记录、secret 存在、PID 未被确认死亡且 heartbeat 新鲜，heartbeat 缺失/不可解析/过期均为未准备，且不等于在线。需要在线健康时用 DSH 侧 `dsh_wake.py status`。接收器不创建 Session、不取消回合；PAOE STOP 只阻止后续注入，不能声称已停止运行中的回合。
 
 ## 使用与验收
 

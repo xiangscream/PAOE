@@ -644,7 +644,7 @@ def _dsh_config(target):
     secret_path = Path(posix_windows_drive_locator(secret_file.strip())).expanduser()
     try:
         secret = secret_path.read_text(encoding="utf-8").strip()
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         raise InjectionError(
             "dsh receiver secret is unreadable", code="dsh_secret_unreadable",
             state="receiver_not_prepared",

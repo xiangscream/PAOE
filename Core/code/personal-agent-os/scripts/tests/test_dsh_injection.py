@@ -155,6 +155,34 @@ class DshInjectionTests(unittest.TestCase):
         self.assertEqual(contact["receiver"]["state"], "receiver_record_invalid")
         self.assertEqual(contact["receiver"]["reason"], "invalid_endpoint")
 
+    def test_non_utf8_secret_is_a_structured_config_error_without_echo(self):
+        self.secret_file.write_bytes(b"\xff" * 64)
+        with patch.object(injection, "_request") as request:
+            with self.assertRaises(injection.InjectionError) as raised:
+                injection.inject(self.target, "提醒")
+        self.assertEqual(raised.exception.code, "dsh_secret_unreadable")
+        self.assertEqual(raised.exception.state, "receiver_not_prepared")
+        self.assertFalse(raised.exception.details()["retry"])
+        self.assertNotIn("\ufffd", str(raised.exception))
+        self.assertNotIn("0xff", json.dumps(raised.exception.details()))
+        request.assert_not_called()
+
+    def test_contact_heartbeat_missing_or_invalid_is_not_prepared(self):
+        project_root = self.root / "project"
+        project_root.mkdir()
+        save_native_targets(project_root, {"agent": self.target})
+        self.write_record(heartbeatAt=None)
+        contact = runtime_contact(project_root, "agent")
+        self.assertEqual(contact["receiver"]["state"], "receiver_heartbeat_unknown")
+        self.assertFalse(contact["receiver"]["prepared"])
+        self.assertEqual(contact["receiver"]["reason"], "heartbeat_missing")
+        self.write_record(heartbeatAt="not-a-timestamp")
+        contact = runtime_contact(project_root, "agent")
+        self.assertEqual(contact["receiver"]["state"], "receiver_heartbeat_unknown")
+        self.assertFalse(contact["receiver"]["prepared"])
+        self.assertEqual(contact["receiver"]["reason"], "heartbeat_invalid")
+        self.assertIsNone(contact["receiver"]["record_fresh"])
+
     def test_stop_prevents_any_receiver_access(self):
         stop = self.root / "STOP"
         stop.touch()
