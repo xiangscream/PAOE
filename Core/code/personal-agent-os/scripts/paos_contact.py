@@ -443,37 +443,46 @@ def _dsh_receiver_view(target: dict[str, Any]) -> dict[str, Any]:
         return view
     except (OSError, UnicodeError) as error:
         view.update(file_state="unreadable", state="receiver_record_unreadable",
-                    reason=type(error).__name__)
+                    reason=type(error).__name__,
+                    next_action="核 DSH receiver 发现文件权限/内容；保留原绑定，不自动重新 bind。")
         return view
     except ValueError:
         view.update(file_state="invalid", state="receiver_record_invalid",
-                    reason="invalid_json")
+                    reason="invalid_json",
+                    next_action="核 DSH receiver 发现文件内容；保留原绑定，不自动重新 bind。")
         return view
     if not isinstance(record, dict) or record.get("schema") != "dsh-wake-receiver/v1":
         view.update(file_state="invalid", state="receiver_record_invalid",
-                    reason="invalid_schema")
+                    reason="invalid_schema",
+                    next_action="核 DSH receiver 发现文件内容；保留原绑定，不自动重新 bind。")
         return view
     url = record.get("url")
     secret_file = record.get("secretFile")
     if not isinstance(url, str) or not url.strip() or not isinstance(secret_file, str) or not secret_file.strip():
         view.update(file_state="invalid", state="receiver_record_invalid",
-                    reason="missing_url_or_secret")
+                    reason="missing_url_or_secret",
+                    next_action="核 DSH receiver 发现文件内容；保留原绑定，不自动重新 bind。")
         return view
     try:
         endpoint = urlsplit(url)
         port = endpoint.port
     except ValueError:
         view.update(file_state="invalid", state="receiver_record_invalid",
-                    reason="invalid_endpoint")
+                    reason="invalid_endpoint",
+                    next_action="核 DSH receiver 发现文件内容；保留原绑定，不自动重新 bind。")
         return view
     if (endpoint.scheme != "http" or endpoint.hostname != "127.0.0.1"
             or not port or endpoint.username or endpoint.password
             or endpoint.path not in {"", "/"} or endpoint.query or endpoint.fragment):
         view.update(file_state="invalid", state="receiver_record_invalid",
-                    reason="receiver_endpoint_not_loopback")
+                    reason="receiver_endpoint_not_loopback",
+                    next_action="核 DSH receiver 发现文件内容；保留原绑定，不自动重新 bind。")
         return view
+    # The record is usable. Clear the unregistered defaults so a healthy status
+    # never tells the operator to rebind an already working Session.
     view.update(file_state="available", state="receiver_record_present",
-                prepared=True, schema=record.get("schema"), url=url)
+                prepared=True, schema=record.get("schema"), url=url,
+                reason="", next_action="")
     pid = record.get("pid")
     if type(pid) is int and 0 < pid <= 0xFFFFFFFF:
         view["pid"] = pid
@@ -494,22 +503,29 @@ def _dsh_receiver_view(target: dict[str, Any]) -> dict[str, Any]:
                 view["state"] = "receiver_record_stale"
                 view["prepared"] = False
                 view["reason"] = "heartbeat_stale"
+                view["next_action"] = "确认 DSH receiver 仍在运行或等待 heartbeat 刷新；保留原绑定。"
         except (TypeError, ValueError):
             view["record_fresh"] = None
             view.update(state="receiver_heartbeat_unknown", prepared=False,
-                        reason="heartbeat_invalid")
+                        reason="heartbeat_invalid",
+                        next_action="核 DSH receiver 发现文件 heartbeat；保留原绑定，不自动重新 bind。")
     else:
         view.update(state="receiver_heartbeat_unknown", prepared=False,
-                    reason="heartbeat_missing")
+                    reason="heartbeat_missing",
+                    next_action="核 DSH receiver 发现文件 heartbeat；保留原绑定，不自动重新 bind。")
     view["secret_registered"] = True
     secret_path = Path(posix_windows_drive_locator(secret_file)).expanduser()
     view["secret_present"] = secret_path.is_file()
     if not view["secret_present"]:
         view.update(state="receiver_secret_missing", prepared=False,
-                    reason="secret_file_missing")
+                    reason="secret_file_missing",
+                    next_action="由原Owner恢复 DSH 私有 secret；保留原绑定，不自动重新 bind。")
     elif view.get("pid_alive") is False:
         view.update(state="receiver_process_missing", prepared=False,
-                    reason="pid_not_alive")
+                    reason="pid_not_alive",
+                    next_action="启动 DSH receiver；保留原绑定，不自动重新 bind。")
+    if view.get("prepared") is True:
+        view.update(reason="", next_action="", repair_owner=None)
     return view
 
 

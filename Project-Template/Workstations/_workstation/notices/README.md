@@ -51,7 +51,7 @@ python notices/opencode.py status
 
 **DSH：**
 
-DSH 的固定 Session 必须以项目根为工作目录创建；私有目标配置只登记接收器发现文件，不复制 secret。`receiver_file` 填本机绝对路径：
+DSH 的固定 Session 使用正常接口返回的完整 ID（形如 `session-<uuid>`），不要剥前缀或用裸 UUID 猜补。Session 的 cwd 可以是 Human 的实际工作区，不必等于项目根；Project 工作材料按 ENTRY 定位，不强迫搬工作区。私有目标配置只登记接收器发现文件，不复制 secret。`receiver_file` 填本机绝对路径：
 
 ```json
 {"receiver_file":"<本机DSH_HOME>/wake-receiver/receiver.json","mode":"queue"}
@@ -62,7 +62,7 @@ python notices/dsh.py bind --session-id <本人DSH_SESSION_ID> --driver-config <
 python notices/dsh.py status
 ```
 
-接收器由 DSH 的 `wake-receiver` 插件提供，只监听 `127.0.0.1`。`status` 读取绑定和接收器发现文件的 PID/heartbeat 事实，不连接入口；`prepared=true` 只表示记录、secret 存在、PID 未被确认死亡且 heartbeat 新鲜，heartbeat 缺失/不可解析/过期均为未准备，且不等于在线。需要在线健康时用 DSH 侧 `dsh_wake.py status`。接收器不创建 Session、不取消回合；PAOE STOP 只阻止后续注入，不能声称已停止运行中的回合。
+接收器由 DSH 的 `wake-receiver` 插件提供，只监听 `127.0.0.1`。`status` 读取绑定和接收器发现文件的 PID/heartbeat 事实，不连接入口；`prepared=true` 只表示记录、secret 存在、PID 未被确认死亡且 heartbeat 新鲜，heartbeat 缺失/不可解析/过期均为未准备，且不等于在线。记录可用时不再显示未注册 `reason` 或重新 bind 的 `next_action`，只有真正异常才给修复提示。需要在线健康时用 DSH 侧 `dsh_wake.py status`。接收器不创建 Session、不取消回合；PAOE STOP 只阻止后续注入，不能声称已停止运行中的回合。
 
 ## 使用与验收
 
