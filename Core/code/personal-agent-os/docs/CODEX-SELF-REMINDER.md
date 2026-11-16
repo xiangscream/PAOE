@@ -4,7 +4,9 @@
 
 ## 目标侧启动
 
-由目标本人从 Codex Desktop 正常提供的原生工具环境执行人工 prepare：使用已安装 Windows Python，工作目录为安装 Source 的 `scripts`，运行 `python -X utf8 -B codex_receiver_session_start.py --prepare-current`。本入口沿 installation、registry 和 Contact 唯一定位调用者本人的 Home，读取已登记 Python、运行文件和 STOP；不接收目标、pipe 或身份覆盖参数，也不读取伪造的 Hook 事件。
+目标本人每次从 Codex Desktop 原工具环境复工，先用安装CLI执行 `paos wake prepare-current`。它沿下述同一准备函数运行，支持Project与Rooter，不接受目标参数、不发送提醒。命令成功只报告启动或复用；随后读正常wake status核就绪。缺原环境或STOP跳过为CLI非零结果。
+
+底层脚本仍支持维护调用。由目标本人从 Codex Desktop 正常提供的原生工具环境执行人工 prepare：使用已安装 Windows Python，工作目录为安装 Source 的 `scripts`，运行 `python -X utf8 -B codex_receiver_session_start.py --prepare-current`。本入口沿 installation、registry 和 Contact 唯一定位调用者本人的 Home，读取已登记 Python、运行文件和 STOP；不接收目标、pipe 或身份覆盖参数，也不读取伪造的 Hook 事件。
 
 人工 prepare、真实 SessionStart 和 UserPromptSubmit 共用环境、Home、STOP 校验及同一启动段。正常 prepare 先读已有接收器的正式实例状态；prepared的本人实例还须通过鉴权/status核对实例和捕获连接标记，并与当前Owner事件环境中的连接身份比较。连接相同时返回 `receiver_prepare_reused`，不创建子进程或准备日志。需要启动时使用 `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB`，标准输入关闭，stdout/stderr 仍留原运行文件旁。`CREATE_NO_WINDOW` 只隐藏控制台；当宿主 Job 允许 breakaway 时，第二个标志使新接收器脱离该工具 Job。[Microsoft 进程创建标志](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)及[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)说明了这一机制。
 
@@ -77,6 +79,12 @@ UserPromptSubmit用于本人真实输入前的正常准备，保证后续自然�
 Install SessionStart hooks through the supported host settings; this source does not ship a machine-specific installed hook definition.
 
 An installed hook must be checked on its own host; source files and prior adoption reports are not proof of current trust.
+
+## 正常复工与宿主接线
+
+正常工作入口使用 `paos wake prepare-current`；它调用同一 `prepare_current`，保留原Home、Thread、模型、Contact和STOP。健康且同连接的接收器不重复启动；失效或换连接沿原正常路径处理。状态查询保持只读。
+
+宿主Hook可提供自动准备，但不是正常复工的唯一执行面。[官方Hooks说明](https://learn.chatgpt.com/docs/hooks)区分本地编排与云编排，后者不加载本机command Hook。定义已信任与当前会话真实执行必须分别核实；没有事件证据时保留未知，不用合成stdin、配置存在或手工准备证明自动恢复。
 
 ## 接线验收限制
 
