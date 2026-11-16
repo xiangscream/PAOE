@@ -101,11 +101,13 @@ class DshInjectionTests(unittest.TestCase):
         request.assert_not_called()
 
     def test_invalid_mode_is_rejected_before_any_native_access(self):
-        self.target["mode"] = "later"
-        with patch.object(injection, "_request") as request:
-            with self.assertRaisesRegex(ValueError, "queue or steer"):
-                injection.inject(self.target, "提醒")
-        request.assert_not_called()
+        for mode in ("later", ["queue"]):
+            with self.subTest(mode=mode):
+                self.target["mode"] = mode
+                with patch.object(injection, "_request") as request:
+                    with self.assertRaisesRegex(ValueError, "queue or steer"):
+                        injection.inject(self.target, "提醒")
+                request.assert_not_called()
 
     def test_missing_or_invalid_receiver_config_never_posts(self):
         cases = [
@@ -295,11 +297,17 @@ class DshInjectionTests(unittest.TestCase):
             paos_wakeup.bind_wakeup(**common, driver_config={"receiver_file": str(self.receiver), "mode": "later"})
         self.assertEqual(raised.exception.code, "wake_dsh_mode_invalid")
         result = paos_wakeup.bind_wakeup(
-            **common, driver_config={"receiver_file": str(self.receiver), "mode": "steer"})
+            **common,
+            driver_config={"receiver_file": str(self.receiver), "mode": "steer",
+                           "secretFile": str(self.secret_file), "token": "fixture-token"},
+        )
         self.assertEqual(result["target"]["mode"], "steer")
+        self.assertNotIn("secretFile", result["target"])
+        self.assertNotIn("token", result["target"])
         stored = paos_wakeup.load_native_targets(project_root)
         self.assertEqual(stored["agent-original"]["receiver_file"], str(self.receiver))
         self.assertNotIn(self.secret, json.dumps(stored))
+        self.assertNotIn("fixture-token", json.dumps(stored))
 
     def test_contact_status_reads_discovery_not_secret_and_declares_stop_scope(self):
         project_root = self.root / "project"

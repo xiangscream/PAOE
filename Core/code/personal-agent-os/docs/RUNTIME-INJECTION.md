@@ -42,7 +42,7 @@ Codex正常接收器对明确active/idle/notLoaded向既有App Tools跟进入口
 
 WorkBuddy回环建立连接前明确被拒绝时，返回 `receiver_offline` / `receiver_connection_refused` / `accepted:false`。当前扩展在调用sendPrompt前返回的400/401/404为明确拒绝；SDK调用后502、连接超时/复位、响应丢失或关联回执不符仍是结果未知，不据此自动重发。S014等目标仍须取得产品支持的正常扩展安装与权限入口，错误分类不代替恢复。
 
-DSH 只从 receiver 发现文件读取 `url` 与 `secretFile`，secret 内容不写入 Contact、命令行、结果或 Git。目标必须是 `127.0.0.1` 回环；400/401/403/404/409/413 与 503 是明确拒绝（503 为 Session controller 未挂载），5xx（含 500）和连接超时/复位、回执丢失或身份不符均保持 unknown，不自动重发。409 `session/agent-busy` 表示另一写入者占用目标，不重试；接收器不创建 Session、不取消回合，STOP 只阻止后续发送，不能声称已停止运行中的回合。
+DSH 只从 receiver 发现文件读取 `url` 与 `secretFile`，secret 内容不写入 Contact、命令行、结果或 Git。目标必须是 `127.0.0.1` 回环；400/401/403/404/409/413/422 与 503 是明确拒绝（503 为 Session controller 未挂载），其余 5xx（含 500）和连接超时/复位、回执丢失或身份不符均保持 unknown，不自动重发。409 `session/agent-busy` 表示另一写入者占用目标，不重试；接收器不创建 Session、不取消回合，STOP 只阻止后续发送，不能声称已停止运行中的回合。
 
 工具不自动重试、启动Runtime、保存attempt或观察模型完成，也不加载Project Store、Work或Notice。旧消息是否已处理由调用方在工位当前读面判断；既有拒绝和不确定回执保持原样，不因实现更新重放。
 

@@ -154,6 +154,10 @@ def bind_wakeup(
         target["extension"] = extension
         target.setdefault("stop_file", previous.get("stop_file") or str(PureWindowsPath(extension["receiver_runtime_file"]).parent / "STOP"))
     elif target["runtime"] == "dsh":
+        # The Contact only needs the discovery locator. A private secret must
+        # never become target state even if a caller copies it into the config.
+        for forbidden in ("secret", "secretFile", "secret_file", "token", "apiKey", "api_key"):
+            target.pop(forbidden, None)
         receiver_file = target.get("receiver_file")
         if not isinstance(receiver_file, str) or not receiver_file.strip():
             raise WakeProblem(
@@ -169,7 +173,7 @@ def bind_wakeup(
                 {"agent_id": agent_id},
             )
         mode = target.get("mode", "queue")
-        if mode not in {"queue", "steer"}:
+        if not isinstance(mode, str) or mode not in {"queue", "steer"}:
             raise WakeProblem(
                 "wake_dsh_mode_invalid",
                 "DSH mode 只能是 queue 或 steer；未保存 Contact。",

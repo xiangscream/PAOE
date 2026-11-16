@@ -665,7 +665,7 @@ def _dsh(target, message, model):
     if model is not None:
         raise ValueError("dsh 驱动按目标会话当前模型执行，不接受显式 model。")
     mode = target.get("mode", "queue")
-    if mode not in DSH_MODES:
+    if not isinstance(mode, str) or mode not in DSH_MODES:
         raise ValueError("dsh mode must be queue or steer")
     origin, secret = _dsh_config(target)
     _check_stop(target)
