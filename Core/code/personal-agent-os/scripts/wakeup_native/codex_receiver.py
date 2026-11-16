@@ -312,7 +312,9 @@ def reusable_owned_runtime(runtime_file, stop_file):
     """Reuse a verified current connection, or retire a verified old connection.
 
     PID readiness is not Desktop connection readiness. Only a real Owner
-    environment can prove the replacement connection; no business send occurs.
+    environment supplies the current connection identity. Preparation must not
+    call back into the Desktop that is waiting for this hook; normal sends
+    check native thread readiness separately.
     """
     reminder = SelfReminder.from_desktop(stop_file)
     target = {"runtime": "codex", "session_id": reminder.session_id, "stop_file": str(reminder.stop_file),
@@ -337,13 +339,10 @@ def reusable_owned_runtime(runtime_file, stop_file):
             connection = status.get("desktop_connection_id")
             if not isinstance(connection, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", connection):
                 raise ReceiverError("receiver_connection_unknown", "Receiver lacks connection identity; Owner must load accepted code with --update-current", 503)
-            current = reminder.client.thread_status(reminder.session_id)
         except (OSError, EOFError, RuntimeError, ValueError, UnicodeError, HTTPException) as exc:
             if isinstance(exc, ReceiverError):
                 raise
             raise ReceiverError("receiver_connection_unknown", f"Own connection proof unavailable ({type(exc).__name__}); keep registration", 503) from exc
-        if current not in {"active", "idle", "notLoaded"}:
-            raise ReceiverError("receiver_connection_unknown", "Current Owner Desktop state is unavailable; keep registration", 503)
         if reminder.stop_file.exists():
             raise ReceiverError("native_stopped", "Original STOP prevents receiver prepare")
         if runtime_file.read_bytes() != original:

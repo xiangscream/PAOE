@@ -6,9 +6,9 @@
 
 由目标本人从 Codex Desktop 正常提供的原生工具环境执行人工 prepare：使用已安装 Windows Python，工作目录为安装 Source 的 `scripts`，运行 `python -X utf8 -B codex_receiver_session_start.py --prepare-current`。本入口沿 installation、registry 和 Contact 唯一定位调用者本人的 Home，读取已登记 Python、运行文件和 STOP；不接收目标、pipe 或身份覆盖参数，也不读取伪造的 Hook 事件。
 
-人工 prepare、真实 SessionStart 和 UserPromptSubmit 共用环境、Home、STOP 校验及同一启动段。正常 prepare 先读已有接收器的正式实例状态；prepared的本人实例还须通过鉴权/status核对实例和捕获连接标记，并从当前Owner的Desktop连接只读确认本人状态。连接相同且当前本人状态有效时返回 `receiver_prepare_reused`，不创建子进程或准备日志。需要启动时使用 `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB`，标准输入关闭，stdout/stderr 仍留原运行文件旁。`CREATE_NO_WINDOW` 只隐藏控制台；当宿主 Job 允许 breakaway 时，第二个标志使新接收器脱离该工具 Job。[Microsoft 进程创建标志](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)及[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)说明了这一机制。
+人工 prepare、真实 SessionStart 和 UserPromptSubmit 共用环境、Home、STOP 校验及同一启动段。正常 prepare 先读已有接收器的正式实例状态；prepared的本人实例还须通过鉴权/status核对实例和捕获连接标记，并与当前Owner事件环境中的连接身份比较。连接相同时返回 `receiver_prepare_reused`，不创建子进程或准备日志。需要启动时使用 `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB`，标准输入关闭，stdout/stderr 仍留原运行文件旁。`CREATE_NO_WINDOW` 只隐藏控制台；当宿主 Job 允许 breakaway 时，第二个标志使新接收器脱离该工具 Job。[Microsoft 进程创建标志](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)及[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)说明了这一机制。
 
-旧receiver仍活而当前Owner连接已更换时，正常prepare在原锁内用既有精确启动调用、OS实例与鉴权空消息拒绝核本人旧服务，再经原Windows实例停止入口退休它；随后同一正常启动段沿原locator归档旧登记并加载当前Owner环境。未知、STOP、身份变化或当前Desktop连接无法核定时保留原服务，明确报receiver_connection_unknown，不回退或循环重试。逐次打开旧pipe不等于其名称会更新。
+旧receiver仍活而当前Owner连接已更换时，正常prepare在原锁内用既有精确启动调用、OS实例与鉴权空消息拒绝核本人旧服务，再经原Windows实例停止入口退休它；随后同一正常启动段沿原locator归档旧登记并加载当前Owner环境。接收器身份/连接证明未知、STOP、身份变化或缺原Owner环境时保留原服务，明确报receiver_connection_unknown，不回退或循环重试。逐次打开旧pipe不等于其名称会更新。
 
 宿主拒绝创建时只尝试一次，输出 `receiver_prepare_unavailable` 及原错误，人工命令以非零状态退出；不改 Job 策略，不重试或换启动路径。环境缺失、未登记、歧义或 STOP 仍明确停止。创建成功只报告启动器 PID；随后读正式 `wake status` 确认就绪。正常 prepare 与 SessionStart 不替换健康实例，登记迁移也不加载新代码。
 
@@ -91,3 +91,5 @@ An installed hook must be checked on its own host; source files and prior adopti
 ## 验证
 
 Receiver behavior is exercised by the current source tests; historic Dashboard tests are not part of this checkout.
+
+准备Hook只比较原Owner事件环境中的连接身份与已鉴权receiver实际捕获的连接，不反向调用Desktop工具或读取线程状态；宿主正在等待Hook完成时，准备路径不能再等待同一宿主。原生线程可用性仍由正常一次提醒在发送阶段判断。

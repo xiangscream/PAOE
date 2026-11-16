@@ -60,7 +60,7 @@ class ReceiverConnectionTests(unittest.TestCase):
     def test_same_live_connection_is_reused_through_authenticated_http(self):
         self.assertEqual(self.reuse(), os.getpid())
         self.stop_process.assert_not_called()
-        self.current_client.thread_status.assert_called_once_with("own")
+        self.current_client.thread_status.assert_not_called()
         self.assert_preserved()
 
     def test_changed_connection_retires_only_authenticated_exact_self(self):
@@ -86,22 +86,27 @@ class ReceiverConnectionTests(unittest.TestCase):
         self.stop_process.assert_not_called()
         self.assert_preserved()
 
-    def test_current_host_unavailable_never_retires_old_receiver(self):
-        self.current.desktop_connection_id = receiver.desktop_connection_identity("new-pipe")
-        self.current_client.thread_status.side_effect = OSError("private-current-pipe")
-        with self.assertRaises(receiver.ReceiverError) as caught:
-            self.reuse()
-        self.assertEqual(caught.exception.code, "receiver_connection_unknown")
-        self.assertNotIn("private-current-pipe", str(caught.exception))
+    def test_prepare_does_not_query_native_desktop(self):
+        self.current_client.thread_status.side_effect = AssertionError("native RPC must not run in a preparation hook")
+        self.assertEqual(self.reuse(), os.getpid())
+        self.current_client.thread_status.assert_not_called()
         self.stop_process.assert_not_called()
         self.assert_preserved()
 
-    def test_stop_after_host_read_prevents_connection_rotation(self):
+    def test_stop_after_receiver_proof_prevents_connection_rotation(self):
         self.current.desktop_connection_id = receiver.desktop_connection_identity("new-pipe")
-        self.current_client.thread_status.side_effect = lambda _: self.stop.touch() or "idle"
-        with self.assertRaises(receiver.ReceiverError) as caught:
-            self.reuse()
+        request = receiver._request
+
+        def prove_and_stop(*args, **kwargs):
+            result = request(*args, **kwargs)
+            self.stop.touch()
+            return result
+
+        with patch.object(receiver, "_request", side_effect=prove_and_stop):
+            with self.assertRaises(receiver.ReceiverError) as caught:
+                self.reuse()
         self.assertEqual(caught.exception.code, "native_stopped")
+        self.current_client.thread_status.assert_not_called()
         self.stop_process.assert_not_called()
         self.assert_preserved()
 
