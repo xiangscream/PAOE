@@ -75,7 +75,7 @@ def main(driver: str, argv=None) -> int:
     commands = parser.add_subparsers(dest="action", required=True)
     bind = commands.add_parser("bind", help="登记本人真实原生会话")
     bind.add_argument("--session-id", required=True)
-    bind.add_argument("--driver-config", required=driver == "opencode", help="本机私有目标配置 JSON")
+    bind.add_argument("--driver-config", required=driver in {"opencode", "dsh"}, help="本机私有目标配置 JSON")
     if driver == "codex":
         commands.add_parser("prepare", help="从本人 Desktop 环境准备被动接收器")
     commands.add_parser("status", help="只读本人配置与接收状态")

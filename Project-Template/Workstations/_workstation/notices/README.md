@@ -15,6 +15,7 @@
 | --- | --- |
 | [codex.py](codex.py) | Codex：绑定、准备接收器、查状态、单次提醒 |
 | [opencode.py](opencode.py) | OpenCode / OpenCode2：绑定原生服务、查状态、单次提醒 |
+| [dsh.py](dsh.py) | DSH：绑定固定 Session、查状态、单次提醒 |
 | [wake_entry.py](wake_entry.py) | 共用安装定位与本人工位校验，调用 Core |
 
 本页脚本调用当前安装的Core。公开联系包命令只在OPS所链接的“工位Contact薄入口”维护；日常入职按该公开入口执行，无需调用实现函数。
@@ -48,9 +49,24 @@ python notices/opencode.py status
 
 `auth_file` 指向现有服务授权文件；沿用本机已登记的服务与模型。旧版 OpenCode 使用对应驱动配置，不套用 `api_version: 2`。
 
+**DSH：**
+
+DSH 的固定 Session 必须以项目根为工作目录创建；私有目标配置只登记接收器发现文件，不复制 secret。`receiver_file` 填本机绝对路径：
+
+```json
+{"receiver_file":"<本机DSH_HOME>/wake-receiver/receiver.json","mode":"queue"}
+```
+
+```text
+python notices/dsh.py bind --session-id <本人DSH_SESSION_ID> --driver-config <本机私有配置JSON>
+python notices/dsh.py status
+```
+
+接收器由 DSH 的 `wake-receiver` 插件提供，只监听 `127.0.0.1`。`status` 读取绑定和接收器发现文件的 PID/heartbeat 事实，不连接入口；`prepared=true` 只表示记录、secret 存在、PID 未被确认死亡且 heartbeat 新鲜，heartbeat 缺失/不可解析/过期均为未准备，且不等于在线。需要在线健康时用 DSH 侧 `dsh_wake.py status`。接收器不创建 Session、不取消回合；PAOE STOP 只阻止后续注入，不能声称已停止运行中的回合。
+
 ## 使用与验收
 
-单次原生提醒：`python notices/codex.py wake --prompt "读取本人TODO并继续"`；OpenCode 换成 `opencode.py`。这条命令只提醒，不保存 Mail；正式交接仍用 ENTRY 中的 `paos agent send --remind`。
+单次原生提醒：`python notices/codex.py wake --prompt "读取本人TODO并继续"`；OpenCode 换成 `opencode.py`，DSH 换成 `dsh.py`。这条命令只提醒，不保存 Mail；正式交接仍用 ENTRY 中的 `paos agent send --remind`。
 
 入职验收：同事发一条 Mail → 本人收到提醒 → 实读原信 → 更新 TODO、处理 Notice → 回告 → 恢复原会话并接续。配置存在、提醒受理、实际消费分别记录；四项入职要求完成后勾选 `ONBOARD`。
 
