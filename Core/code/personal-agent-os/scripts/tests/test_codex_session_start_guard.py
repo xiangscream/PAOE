@@ -375,6 +375,38 @@ class SessionStartGuardTests(unittest.TestCase):
         self.assertIn("receiver_prepare_started", result)
         launch.assert_called_once()
 
+    def test_user_prompt_prepares_only_its_registered_owner(self):
+        event = {"hook_event_name": "UserPromptSubmit", "session_id": "own-thread",
+                 "prompt": "ordinary work; not a receiver message"}
+        result, launch = self.prepare(event)
+        self.assertIn("receiver_prepare_started: 3002-s031", result)
+        launch.assert_called_once()
+        self.assertNotIn(event["prompt"], str(launch.call_args))
+        self.assertNotIn("env", launch.call_args.kwargs)
+
+    def test_user_prompt_cannot_supply_another_or_missing_session(self):
+        for session in ("another-thread", None):
+            event = {"hook_event_name": "UserPromptSubmit"}
+            if session is not None:
+                event["session_id"] = session
+            result, launch = self.prepare(event)
+            self.assertIn("event_thread_mismatch", result)
+            launch.assert_not_called()
+
+    def test_healthy_receiver_is_reused_without_child_or_file_changes(self):
+        runtime = Path(self.target["extension"]["receiver_runtime_file"])
+        runtime.parent.mkdir()
+        runtime.write_text("existing private grant", encoding="utf-8")
+        contact = self.root / "3002/private-data/contact/native-targets.json"
+        original = runtime.read_bytes(), contact.read_bytes()
+        with patch.object(hook, "_codex_receiver_view", return_value={"prepared": True, "pid": 456}, create=True):
+            for event in (self.event, {"hook_event_name": "UserPromptSubmit", "session_id": "own-thread"}):
+                result, launch = self.prepare(event)
+                self.assertIn("receiver_prepare_reused: 3002-s031 PID 456", result)
+                launch.assert_not_called()
+        self.assertEqual((runtime.read_bytes(), contact.read_bytes()), original)
+        self.assertEqual(list(runtime.parent.iterdir()), [runtime])
+
     def test_no_registration_is_explicit(self):
         with self.assertRaisesRegex(ValueError, "contact_thread_not_registered"):
             hook.registered_target("unregistered", self.descriptor)

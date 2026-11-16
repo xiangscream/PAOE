@@ -6,7 +6,7 @@
 
 由目标本人从 Codex Desktop 正常提供的原生工具环境执行人工 prepare：使用已安装 Windows Python，工作目录为安装 Source 的 `scripts`，运行 `python -X utf8 -B codex_receiver_session_start.py --prepare-current`。本入口沿 installation、registry 和 Contact 唯一定位调用者本人的 Home，读取已登记 Python、运行文件和 STOP；不接收目标、pipe 或身份覆盖参数，也不读取伪造的 Hook 事件。
 
-人工 prepare 与真实 SessionStart 共用环境、Home、STOP 校验及同一启动段。启动使用 `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB`，标准输入关闭，stdout/stderr 仍留原运行文件旁。`CREATE_NO_WINDOW` 只隐藏控制台；当宿主 Job 允许 breakaway 时，第二个标志使新接收器脱离该工具 Job。[Microsoft 进程创建标志](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)及[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)说明了这一机制。
+人工 prepare、真实 SessionStart 和 UserPromptSubmit 共用环境、Home、STOP 校验及同一启动段。正常 prepare 先读已有接收器的正式实例状态；已核 prepared 的本人实例直接返回 `receiver_prepare_reused`，不创建子进程或准备日志。需要启动时使用 `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB`，标准输入关闭，stdout/stderr 仍留原运行文件旁。`CREATE_NO_WINDOW` 只隐藏控制台；当宿主 Job 允许 breakaway 时，第二个标志使新接收器脱离该工具 Job。[Microsoft 进程创建标志](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)及[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)说明了这一机制。
 
 宿主拒绝创建时只尝试一次，输出 `receiver_prepare_unavailable` 及原错误，人工命令以非零状态退出；不改 Job 策略，不重试或换启动路径。环境缺失、未登记、歧义或 STOP 仍明确停止。创建成功只报告启动器 PID；随后读正式 `wake status` 确认就绪。正常 prepare 与 SessionStart 不替换健康实例，登记迁移也不加载新代码。
 
@@ -66,7 +66,9 @@ agent send的runtime_wake_performed只聚合本次调用：有确证受理成员
 
 ## SessionStart接线
 
-一个用户级SessionStart定义供已登记的Codex Home使用，不含逐Agent参数。`scripts/codex_receiver_session_start.py`仅处理startup/resume：事件session_id必须等于宿主原有CODEX_THREAD_ID，并继承本人CODEX_APP_TOOLS_PIPE_PATH。它沿既有installation和`ProjectRegistry.read`读取五字段登记的Home适配视图及准确root的Contact，以及安装描述rooter_home的Rooter Contact；Rooter沿公开合同使用`rooter-001`身份和既有rooter_home校验，目录名可以不同，不创建Project Session，也不要求存在Project登记目录。旧schema、缺失或空root的坏项目登记明确失败，不把当前目录当root。当前Thread须在Project与Rooter之间唯一匹配一个已登记且存在的Home；使用该Contact原有receiver_runtime_file、stop_file和windows_python做一次隐藏prepare。环境缺失、未登记、歧义、Home缺失或STOP存在均明确停止，不建身份、不改Contact、不借凭据。
+用户级宿主事件定义供已登记的Codex Home使用，不含逐Agent参数。`scripts/codex_receiver_session_start.py`处理SessionStart的startup/resume及UserPromptSubmit：两类事件的session_id都必须等于宿主原有CODEX_THREAD_ID，并继承本人CODEX_APP_TOOLS_PIPE_PATH。它沿既有installation和`ProjectRegistry.read`读取五字段登记的Home适配视图及准确root的Contact，以及安装描述rooter_home的Rooter Contact；Rooter沿公开合同使用`rooter-001`身份和既有rooter_home校验，目录名可以不同，不创建Project Session，也不要求存在Project登记目录。旧schema、缺失或空root的坏项目登记明确失败，不把当前目录当root。当前Thread须在Project与Rooter之间唯一匹配一个已登记且存在的Home；使用该Contact原有receiver_runtime_file、stop_file和windows_python做一次隐藏prepare。环境缺失、未登记、歧义、Home缺失或STOP存在均明确停止，不建身份、不改Contact、不借凭据。
+
+UserPromptSubmit用于本人真实输入前的正常准备，保证后续自然回合也有准备时点；不读取、记录或转发事件中的prompt。健康实例复用，失效实例仍由原锁内的正常prepare判定与归档。脚本支持该事件不等于本机已经安装对应定义；Rooter须在宿主受支持设置中把同一已安装命令接入UserPromptSubmit，并对当前精确定义完成正常审阅和真实触发读回。没有新增轮询、重投、Harness启动或模型调用。
 
 Install SessionStart hooks through the supported host settings; this source does not ship a machine-specific installed hook definition.
 
@@ -76,11 +78,11 @@ An installed hook must be checked on its own host; source files and prior adopti
 
 官方支持上述SessionStart事件，非managed新定义必须review/trust，信任与当前定义关联：[官方Hooks说明](https://learn.chatgpt.com/docs/hooks)。本机2026-10-15只读配置已有SessionStart信任记录，不能将未见恢复归因于Human未配置；记录存在也不替代当前定义被宿主接受及事件实际执行的证据。需要审阅时通过受支持的产品入口（官方CLI为`/hooks`），不写信任缓存、不用bypass。真实Desktop startup/resume是否触发已安装Hook并继承本人环境，仍须原会话实际观察。
 
-恢复有两条现有入口：原Owner从当前Desktop工具环境执行“目标侧启动”的 `--prepare-current`；或由宿主真实startup/resume触发已经安装、正常信任且继承本人环境的Hook。两者共用同一启动段，均须随后读正式wake status确认prepared/pid_alive，启动PID或文件存在不能代替就绪。人工模式不合成SessionStart；Hook仍从标准输入处理真实事件，现有用户Hook定义不变。
+恢复入口为原Owner从当前Desktop工具环境执行“目标侧启动”的 `--prepare-current`，以及宿主真实SessionStart startup/resume或UserPromptSubmit事件。事件定义须已安装、正常信任且继承本人环境；均须随后读正式wake status确认prepared/pid_alive，启动PID或文件存在不能代替就绪。人工模式不合成宿主事件；Hook从标准输入处理真实事件，安装定义由Rooter维护。
 
 常驻观察应核具体工具Job的成员，以及创建工具结束、后继自然回合中的正式状态。嵌套Job可能仍有外层归属；不能仅因 `IsProcessInJob(..., NULL)` 为true就反复停止活实例。脱离工具Job不等于持续自愈，也不承诺Desktop退出、注销或重启后的可用性。历史缺exit的退出原因仍未知；自然正式来件的受理与业务消费另核，不盲发测试提醒。
 
-当前matcher不处理其他SessionStart来源，也不监听接收器进程退出。普通消息、切回已打开的聊天或接收器突然退出本身，都不是本实现的恢复触发条件；不因此承诺持续自愈。若Hook缺本人环境，保留明确断点，由Owner沿原工具入口prepare，不借用其他会话。退出日志只有starting/ready且无exit时，原因继续未知，不能仅凭父进程消失或当前无接收器就归因宿主清理、整机重启或信任缺失。
+脚本不处理其他SessionStart来源，也不监听接收器进程退出。切回已打开的聊天或接收器突然退出本身不会执行准备；UserPromptSubmit只在真实输入事件发生时运行。没有Owner事件或宿主离线时不承诺自动重建，也不启动Harness。若Hook缺本人环境，保留明确断点，由Owner沿原工具入口prepare，不借用其他会话。退出日志只有starting/ready且无exit时，原因继续未知，不能仅凭父进程消失或当前无接收器就归因宿主清理、整机重启或信任缺失。
 
 ## 验证
 

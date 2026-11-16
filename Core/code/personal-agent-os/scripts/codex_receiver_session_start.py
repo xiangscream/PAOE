@@ -1,6 +1,6 @@
 """Prepare the caller's *own* registered Codex receiver.
 
-Manual prepare and actual SessionStart use the same Home/Contact and STOP
+Manual prepare, SessionStart and UserPromptSubmit use the same Home/Contact and STOP
 checks. Current thread identity comes from the host environment; this module
 refuses a caller-supplied target override or another Home's credentials.
 """
@@ -13,7 +13,7 @@ import sys
 from datetime import datetime, timezone
 
 from paos_attention_service import AttentionServiceProblem, _registry_projects_root
-from paos_contact import load_native_targets
+from paos_contact import _codex_receiver_view, load_native_targets
 from paos_home import HomeProblem, project_agent_home, rooter_home
 from paos_installation import InstallationProblem, load_installation_descriptor, resolve_installation_path
 from paos_registry import ProjectRegistry
@@ -57,7 +57,9 @@ def registered_target(thread_id, descriptor):
 
 
 def prepare(event):
-    if event.get("hook_event_name") != "SessionStart" or event.get("source") not in {"startup", "resume"}:
+    name = event.get("hook_event_name")
+    if not (name == "UserPromptSubmit" or
+            name == "SessionStart" and event.get("source") in {"startup", "resume"}):
         return "receiver_prepare_skipped: unsupported_event"
     return prepare_current(event=event)
 
@@ -86,6 +88,10 @@ def prepare_current(*, event=None, update=False):
         return "receiver_prepare_skipped: original_STOP_present"
     if update:
         retire_owned_runtime(runtime, stop)
+    elif runtime.exists():
+        view = _codex_receiver_view(target)
+        if view.get("prepared") is True:
+            return f"receiver_prepare_reused: {home['home_id']} PID {view['pid']}; original receiver unchanged."
     scripts = Path(posix_windows_drive_locator(descriptor["source_root"])) / "scripts"
     runtime.parent.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
