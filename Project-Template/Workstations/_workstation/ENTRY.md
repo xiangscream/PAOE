@@ -5,19 +5,19 @@ title: Workstation ENTRY 母本
 description: 本人运行定位与业务入口；规则引用项目公共正文，机器配置引用本机登记。
 tags: template, workstation, entry
 status: active
-version: 23
+version: 24
 ---
 
-# {{home_id}} · 个人工位入口
+# {{staff_number}} · 个人工位入口
 
 ## 流程约束
 
-共同运行规则在[项目 AGENTS](../../AGENTS.md)。新会话、接班或压缩后，已登记 Codex 接收器的本人先在原 Desktop 工具环境，用下方 CLI 前缀加 `wake prepare-current`；其他 Harness 沿本页正常入口。再用同一前缀加 `orient {{project_id}} {{home_id}} --read`，完整阅读返回原文后按 TODO 接续。准备失败时保留具体错误交 Rooter，继续可独立完成的责任。
+共同运行规则在[项目 AGENTS](../../AGENTS.md)。新会话、接班或压缩后，已登记 Codex 接收器的本人先在原 Desktop 工具环境，用下方 CLI 前缀加 `wake prepare-current`；其他 Harness 沿本页正常入口。再用同一前缀加 `orient {{project_id}} {{staff_number}} --read`，完整阅读返回原文后按 TODO 接续；Home 只作底层定位。准备失败时保留具体错误交 Rooter，继续可独立完成的责任。
 
 | 要找什么 | 入口 |
 | --- | --- |
 | 当前目标、下一动作和成果 | [本人 TODO](TODO.md) |
-| 业务原件与同事 | [INDEX](../../INDEX.md) · [TEAM 本人条目](../../TEAM.md#{{home_id}}) · {{project_history_link}} |
+| 业务原件与同事 | [INDEX](../../INDEX.md) · [TEAM 本人条目](../../TEAM.md#{{staff_anchor}}) · {{project_history_link}} |
 | 来信原文与处理状态 | [Mailbox](mailbox/) · [Notice](notices/) |
 | 正常命令与公开联系包 | {{guide_index_link}} · {{ops_link}}；OPS选择“生成本人公开联系包” |
 | 方法与工具 | 下方CLI的 `library search` / `library tools`，再读命中的原件 |

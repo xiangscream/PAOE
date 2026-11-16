@@ -113,21 +113,27 @@ class CatBoardTests(unittest.TestCase):
         call.assert_not_called()
 
     def test_people_and_new_room_use_registered_team_labels_without_home_runtime_reads(self):
+        numbers = self.fixture.base / "AGENT-NUMBERS.json"
+        numbers.write_text(json.dumps({"1001-s001": "S040", "1001-s002": "S063", "2001-s009": "S009"}), encoding="utf-8")
+        installation = json.loads(self.fixture.install.read_text(encoding="utf-8"))
+        installation["agent_numbers_config"] = str(numbers)
+        self.fixture.install.write_text(json.dumps(installation), encoding="utf-8")
+        self.board.installation["agent_numbers_config"] = str(numbers)
         team = self.fixture.roots["1001"] / "TEAM.md"
-        team.write_text("# 团队\n## 当前成员\n### 1001-s001\n- 职责/专长：产品定义\n", encoding="utf-8")
+        team.write_text("# 团队\n## 当前成员\n### S040\n- 职责/专长：产品定义\n", encoding="utf-8")
         before = team.read_bytes()
         with patch.object(self.board, "agent", side_effect=AssertionError("no runtime reads")):
             status, value = self.call("/api/cat/people")
         self.assertEqual(status, 200)
         self.assertEqual({p["id"] for p in value["people"]}, {"1001-s001", "1001-s002", "2001-s009"})
-        self.assertEqual(value["people"][0]["name"], "1001-s001 · 产品定义")
+        self.assertEqual(value["people"][0]["name"], "S040 · 产品定义")
         self.assertEqual(team.read_bytes(), before)
         with patch.object(self.board, "cat", side_effect=[
                 {"ok": True, "room": {"id": "room-new"}}, {"ok": True}, {"ok": True}]) as call:
             status, receipt = self.call("/api/room", {"title": "讨论", "members": ["1001-s001", "1001-s002"]})
         self.assertEqual(receipt, {"ok": True, "room_id": "room-new"})
         self.assertEqual(call.call_args_list[1].args[0],
-                         ["join", "room-new", "--home", "1001-s001", "--label", "1001-s001 · 产品定义"])
+                         ["join", "room-new", "--home", "1001-s001", "--label", "S040 · 产品定义"])
 
     def test_event_proxy_keeps_cursor_and_stream_bytes_without_cli_or_writes(self):
         self.board.cat_url = "http://127.0.0.1:12345"

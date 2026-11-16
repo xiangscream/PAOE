@@ -141,7 +141,7 @@ function restoreOrReset() {
 }
 
 function label(agent: AgentSummary): string {
-  const number = agent.number || agent.id
+  const number = agent.number || '未编号'
   const name = agent.name && agent.name !== agent.id ? agent.name : ''
   return name ? `${number} · ${name}` : number
 }

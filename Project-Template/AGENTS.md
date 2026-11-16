@@ -5,7 +5,7 @@ title: Project AGENTS 入口模板
 description: 项目公共工作指南的唯一编辑母本；项目副本承载派生公共区与本项目约定。
 tags: template, harness, entry
 status: active
-version: 23
+version: 24
 ---
 
 # 项目 <project-id> · Agent 工作入口
@@ -23,9 +23,11 @@ version: 23
 
 ### 1. 从当前任务恢复
 
-新会话、接班或压缩后，从本人 ENTRY 取得 CLI 前缀。已登记 Codex 接收器的本人，在原 Desktop 工具环境先执行 `wake prepare-current`；其他 Harness 沿 ENTRY 的正常入口。随后执行 `orient <project> <home> --read`，将当前 AGENTS、项目 INDEX、本人 ENTRY/TODO 的完整输出读入本轮上下文，再读任务所需原件并继续。准备失败时保留具体错误交 Rooter，继续可独立完成的责任。摘要只帮助定位。Rooter 直接读本人工位和 System 入口，不虚构项目。
+新会话、接班或压缩后，从本人 ENTRY 取得 CLI 前缀。已登记 Codex 接收器的本人，在原 Desktop 工具环境先执行 `wake prepare-current`；其他 Harness 沿 ENTRY 的正常入口。随后执行 `orient <project> <Sxxx> --read`，将当前 AGENTS、项目 INDEX、本人 ENTRY/TODO 的完整输出读入本轮上下文，再读任务所需原件并继续；Home 只作底层定位。准备失败时保留具体错误交 Rooter，继续可独立完成的责任。摘要只帮助定位。Rooter 直接读本人工位和 System 入口，不虚构项目。
 
 共同经历是各 Agent 持续维护的外置记忆，帮助保持全局视野。开始一项任务或进入新阶段时，主动联想其中可用的业务口径、参考成果与有相关经历的同事，结合本任务推进。入口见本页“共同经历”，追读广度由本人判断。
+
+正常人员称呼、TEAM 标题和交接用本机安装 SSOT 的全局员工号 Sxxx；Home ID 只作本机内部定位，不得按尾号推算员工号。Project 号只表示业务上下文；跨机仍按机器 + Project + Home 定位，不能只凭 Sxxx 路由。
 
 从本人TODO和当前有效输入确定下一动作，同事记录用于补事实。普通通知和维护并入原责任，不打断Human明确的当前优先级；改变目标、解除阻碍的输入及时接续。已完成的旧议题只按需查结果。
 

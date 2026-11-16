@@ -25,7 +25,7 @@ from paos_notice import (
     mark_notice_read,
 )
 from paos_orient import render_orient
-from paos_contact import parse_team_payload
+from paos_contact import parse_team_payload, render_team
 from paos_todo import render_todo
 
 
@@ -677,6 +677,55 @@ class HistoryArchiveTests(unittest.TestCase):
         }, lines)
         self.assertIn('registered Home', '\n'.join(lines))
         self.assertNotIn('unregistered', '\n'.join(lines))
+
+    def test_team_text_uses_staff_number_as_the_primary_label(self):
+        lines: list[str] = []
+        parse_team_payload({
+            'agents': [{
+                'agent_id': '3002-s035',
+                'staff_number': 'S040',
+                'identity_id': None,
+                'membership_basis': 'fixed_workstation',
+                'session_status': 'no_active_session',
+                'workstation_todo': {},
+            }]
+        }, lines)
+        text = '\n'.join(lines)
+        self.assertIn('S040 (Home 3002-s035; registered Home)', text)
+        self.assertNotIn('- 3002-s035 (', text)
+        rendered = render_team({
+            'agent_id': '3002-s035', 'project_id': '3002',
+            'agents': [{
+                'agent_id': '3002-s035', 'staff_number': 'S040',
+                'membership_basis': 'fixed_workstation', 'session_status': 'no_active_session',
+                'workstation_todo': {},
+            }],
+        })
+        self.assertIn('PAOS team — S040 @ 3002', rendered)
+
+    def test_team_text_names_missing_staff_number_explicitly(self):
+        lines: list[str] = []
+        parse_team_payload({
+            'agents': [{
+                'agent_id': '3002-s002',
+                'staff_number': None,
+                'identity_id': None,
+                'membership_basis': 'fixed_workstation',
+                'session_status': 'no_active_session',
+                'workstation_todo': {},
+            }]
+        }, lines)
+        text = '\n'.join(lines)
+        self.assertIn('员工号未登记 (Home 3002-s002; registered Home)', text)
+        rendered = render_team({
+            'agent_id': '3002-s002', 'project_id': '3002',
+            'agents': [{
+                'agent_id': '3002-s002', 'staff_number': None,
+                'membership_basis': 'fixed_workstation', 'session_status': 'no_active_session',
+                'workstation_todo': {},
+            }],
+        })
+        self.assertIn('PAOS team — 员工号未登记 @ 3002', rendered)
 
 
 if __name__ == '__main__':

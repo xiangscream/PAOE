@@ -5,7 +5,7 @@ title: PAOS 接口参考：本地工位、项目登记与方法库
 description: Agent 无 Core HTTP 运行的本地入口；内容维护走原文件，不另建项目概览。
 tags: paos, interface, reference, cli
 status: active
-version: 30
+version: 31
 ---
 
 # PAOS 接口参考
@@ -30,8 +30,8 @@ version: 30
 
 ## Home 读面
 
-`orient <project> <home>` 返回身份、入口、当前任务与待处理输入的摘要。加 `--read` 直接读取当前Project AGENTS、可选Home AGENTS、INDEX、ENTRY、TODO原文与来源，不处理消息或修改状态。
-`attention show <project> <home>` 读 Home 的 Current、Tasks 和 Notice；
+`orient <project> <本人Sxxx>` 返回身份、入口、当前任务与待处理输入的摘要。加 `--read` 直接读取当前Project AGENTS、可选Home AGENTS、INDEX、ENTRY、TODO原文与来源，不处理消息或修改状态。
+`attention show <project> <本人Sxxx>` 读 Home 的 Current、Tasks 和 Notice；
 Rooter 使用 `attention rooter-show`。`inbox` 给待处理优先的 Mail 短表，
 `mail list/read` 展开原件。读取不等于输入已处理。
 
@@ -82,8 +82,8 @@ TODO 写入走 `attention todo-update/todo-write`，Rooter 使用对应 `rooter-
 需要结构化找人时，显式使用 `team`/`peers` 的 `--summary`；默认文本与完整 JSON 保持原合同。
 
 ```text
-paos --json team <project> <home> --summary
-paos --json peers <project> <home> --summary
+paos --json team <project> <本人Sxxx> --summary
+paos --json peers <project> <本人Sxxx> --summary
 ```
 
 摘要保留名册 Identity、员工号、TEAM 职责/来源、Coordinator、可信 Current/任务计数、原件路径、联系事实和读取错误；省略 Pinned、完整 Task 与逐条 Mail/Notice 历史。详细内容仍按原路径读取。不要用 `--summary` 代替完整恢复或完整 JSON。

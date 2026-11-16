@@ -32,8 +32,7 @@ from paos_installation import InstallationProblem, effective_data_root, load_ins
 from paos_library import LibraryProblem, load_library_roots, scan_skills, scan_workflows
 from paos_registry import ProjectRegistry, RegistryProblem
 from paos_workstation import posix_windows_drive_locator
-from paos_agent_numbers import staff_number
-from paos_contact import _team_role_summaries
+from paos_agent_numbers import NumbersProblem, agent_id_for_staff_number, staff_number
 
 
 # Workbench assets must not depend on the host MIME database. Windows registries
@@ -71,7 +70,7 @@ class BoardProblem(ValueError):
 
 
 READ_ERRORS = (BoardProblem, HomeProblem, AttentionServiceProblem, RegistryProblem,
-               InstallationProblem, LibraryProblem, OSError, UnicodeError)
+               InstallationProblem, LibraryProblem, NumbersProblem, OSError, UnicodeError)
 
 
 def error_view(error: Exception) -> dict:
@@ -193,6 +192,10 @@ class Board:
                 continue
             if line.startswith("### "):
                 candidate = line[4:].strip()
+                if re.fullmatch(r"[Ss]\d+", candidate):
+                    candidate = agent_id_for_staff_number(
+                        candidate, installation_path=self.installation_file,
+                        installation=self.installation)
                 current = candidate
                 members[candidate] = {}
                 continue
@@ -202,7 +205,7 @@ class Board:
             if not match:
                 continue
             key, value = match.group(1).strip(), match.group(2).strip()
-            for label in ("成员状态", "职责", "职责/专长", "名称", "员工号", "个人介绍/专长"):
+            for label in ("成员状态", "职责", "职责/专长", "专长", "名称", "员工号", "个人介绍/专长"):
                 if key == label:
                     members[current][key] = value
         return {"path": str(path), "body": body, "members": members}
@@ -215,8 +218,8 @@ class Board:
         number = staff_number(home_id, installation_path=self.installation_file, installation=self.installation) or ""
         return {
             "number": number,
-            "name": member.get("名称") or number or home_id,
-            "role": member.get("职责") or member.get("职责/专长") or "",
+            "name": member.get("名称") or number or "未编号",
+            "role": member.get("职责") or member.get("职责/专长") or member.get("专长") or "",
             "description": member.get("个人介绍/专长", ""),
             "member_status": status,
             "registered": True,
@@ -498,7 +501,7 @@ class Board:
                 continue
             status = member.get("成员状态") or "资料未补齐"
             agents.append({"ok": True, "id": home_id, "registered": False,
-                           "number": member.get("员工号", ""), "name": member.get("名称") or home_id,
+                           "number": member.get("员工号", ""), "name": member.get("名称") or "未编号",
                            "role": member.get("职责") or member.get("职责/专长") or "",
                            "description": member.get("个人介绍/专长", ""),
                            "member_status": status, "can_contact": False,
@@ -543,13 +546,11 @@ class Board:
         """Names come from the registered Homes, staff numbers and TEAM originals."""
         people = []
         for project in self.projects():
-            root = runtime_path(project["root_path"])
-            roles = _team_role_summaries(root, set(project["homes"]))
             for home_id in project["homes"]:
-                number = staff_number(home_id, installation_path=self.installation_file, installation=self.installation)
-                role = roles.get(home_id, "")
+                fields = self._team_fields(project["id"], home_id)
+                number, role = fields["number"], fields["role"]
                 people.append({"id": home_id, "number": number or "", "role": role,
-                               "name": (number or home_id) + (" · " + role if role else ""),
+                               "name": (number or "未编号") + (" · " + role if role else ""),
                                "project": project["id"]})
         if self.installation.get("rooter_home"):
             number = staff_number("rooter-001", installation_path=self.installation_file, installation=self.installation)
