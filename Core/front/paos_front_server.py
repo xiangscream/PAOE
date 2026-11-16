@@ -218,7 +218,7 @@ class Board:
         number = staff_number(home_id, installation_path=self.installation_file, installation=self.installation) or ""
         return {
             "number": number,
-            "name": member.get("名称") or number or home_id,
+            "name": member.get("名称") or number or "未编号",
             "role": member.get("职责") or member.get("职责/专长") or member.get("专长") or "",
             "description": member.get("个人介绍/专长", ""),
             "member_status": status,
@@ -501,7 +501,7 @@ class Board:
                 continue
             status = member.get("成员状态") or "资料未补齐"
             agents.append({"ok": True, "id": home_id, "registered": False,
-                           "number": member.get("员工号", ""), "name": member.get("名称") or home_id,
+                           "number": member.get("员工号", ""), "name": member.get("名称") or "未编号",
                            "role": member.get("职责") or member.get("职责/专长") or "",
                            "description": member.get("个人介绍/专长", ""),
                            "member_status": status, "can_contact": False,
@@ -550,7 +550,7 @@ class Board:
                 fields = self._team_fields(project["id"], home_id)
                 number, role = fields["number"], fields["role"]
                 people.append({"id": home_id, "number": number or "", "role": role,
-                               "name": (number or home_id) + (" · " + role if role else ""),
+                               "name": (number or "未编号") + (" · " + role if role else ""),
                                "project": project["id"]})
         if self.installation.get("rooter_home"):
             number = staff_number("rooter-001", installation_path=self.installation_file, installation=self.installation)

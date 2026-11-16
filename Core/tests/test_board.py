@@ -97,6 +97,13 @@ class BoardTests(unittest.TestCase):
         self.assertFalse(after[1]["can_contact"])
         self.assertEqual(team.read_text(encoding="utf-8"), updated)
 
+    def test_missing_number_is_not_inferred_from_home_suffix(self):
+        people = {row["id"]: row for row in self.board.people()}
+        self.assertEqual(people["1001-s001"]["number"], "")
+        self.assertEqual(people["1001-s001"]["name"], "未编号")
+        self.assertEqual(self.board.agent("1001-s001")["name"], "未编号")
+        self.assertEqual(people["1001-s001"]["id"], "1001-s001")
+
     def test_unknown_staff_heading_reports_the_mapping_error(self):
         numbers = self.base / "AGENT-NUMBERS.json"
         numbers.write_text(json.dumps({"1001-s001": "S040"}), encoding="utf-8")

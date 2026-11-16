@@ -508,6 +508,16 @@ class HeadlessTests(unittest.TestCase):
         self.assertEqual(wake_orphan['error_code'], 'staff_number_history_unregistered')
         peers_orphan = self.call('peers', '3002', 'S041', ok=False)[1]
         self.assertEqual(peers_orphan['error_code'], 'staff_number_history_unregistered')
+        direct = self.call('peers', '3002', '2002-s001', ok=False)[1]
+        self.assertEqual(direct['error_code'], 'home_agent_unknown')
+
+        cat_args = paos.build_parser().parse_args([
+            '--installation-file', str(self.install), 'cat', 'join', 'room',
+            '--home', 'S041'])
+        with self.assertRaises(paos.CliError) as raised:
+            paos.execute(cat_args, ProjectRegistry(self.install),
+                         installation_path=self.install)
+        self.assertEqual(raised.exception.error_code, 'staff_number_history_unregistered')
 
     def test_peers_and_team_use_local_roster(self):
         for command in ('peers','team'):

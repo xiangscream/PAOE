@@ -872,9 +872,9 @@ def parse_team_payload(payload: dict[str, Any], lines: list[str]) -> None:
             if agent.get("membership_basis") == "active_session"
             else "unregistered"
         )
+        primary = staff or "员工号未登记"
         lines.append(
-            f"- {agent['agent_id']} ({identity_label})"
-            + (f" [员工号={staff}]" if staff else "")
+            f"- {primary} (Home {agent['agent_id']}; {identity_label})"
             + f"[session={agent.get('session_status') or 'unknown'}]"
         )
         if agent.get("role_summary"):
@@ -966,8 +966,16 @@ def parse_team_payload(payload: dict[str, Any], lines: list[str]) -> None:
 
 
 def render_team(payload: dict[str, Any]) -> str:
+    requested = str(payload.get("agent_id") or "")
+    subject = next(
+        (row for row in payload.get("agents") or []
+         if str(row.get("agent_id") or "") == requested),
+        {},
+    )
+    title = ((subject.get("staff_number") or "员工号未登记")
+             if isinstance(subject, dict) and subject else requested)
     lines = [
-        f"PAOS team — {payload['agent_id']} @ {payload['project_id']}",
+        f"PAOS team — {title} @ {payload['project_id']}",
         f"Long-term Agents (status=active): {len(payload['agents'])}",
     ]
     parse_team_payload(payload, lines)

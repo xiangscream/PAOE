@@ -5,7 +5,9 @@ Existing Mail/Notice delivery is covered by the independent headless suite.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -129,6 +131,14 @@ class StageTwoDiscoveryTests(unittest.TestCase):
         support = self.f.call('peers', '3002', 'S001')[1]['installation_support'][0]
         self.assertIn('--to S099', support['send_hint'])
         self.assertIn('wake status rooter S099', support['contact_hint'])
+        sys.path.insert(0, str(ROOT / "code" / "personal-agent-os" / "scripts"))
+        import paos
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(paos.main(["--installation-file", str(self.f.install),
+                                        "peers", "3002", "S001"]), 0)
+        self.assertIn('PAOS peers — S001', out.getvalue())
+        self.assertIn('S002 (Home 3002-s002;', out.getvalue())
 
     def test_team_and_peers_summary_is_explicit_compact_and_lossless_for_lookup(self):
         team = self.f.vault / "TEAM.md"

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 
 import argparse
+import re
 import socket
 import json
 import locale
@@ -1101,7 +1102,9 @@ def execute_team(
         payload["summary"] = True
     if args.json_output:
         return payload
-    return render_contact(payload, include_self=True)
+    return render_contact(
+        payload, include_self=True,
+        subject_label=numbers_map.get(str(args.agent_id)) or "员工号未登记")
 
 
 def execute_peers(args: argparse.Namespace, registry: ProjectRegistry) -> Any:
@@ -1141,7 +1144,9 @@ def execute_peers(args: argparse.Namespace, registry: ProjectRegistry) -> Any:
         payload["summary"] = True
     if args.json_output:
         return payload
-    return render_contact(payload, include_self=False)
+    return render_contact(
+        payload, include_self=False,
+        subject_label=numbers_map.get(str(args.agent_id)) or "员工号未登记")
 
 
 def _staff_numbers_map(args: argparse.Namespace) -> dict[str, str]:
@@ -1161,7 +1166,8 @@ def _staff_numbers_map(args: argparse.Namespace) -> dict[str, str]:
         return {}
 
 
-def render_contact(payload: dict[str, Any], *, include_self: bool) -> str:
+def render_contact(payload: dict[str, Any], *, include_self: bool,
+                   subject_label: str = "") -> str:
     label = "team" if (payload.get("schema") or "") == CONTACT_SCHEMA else "peers"
     agents = payload.get("agents") if include_self else (payload.get("peers") or [])
     body = dict(payload)
@@ -1169,7 +1175,7 @@ def render_contact(payload: dict[str, Any], *, include_self: bool) -> str:
     body["agent_id"] = payload.get("agent_id")
     filter_note = payload.get("roster_filter") or "unknown"
     lines = [
-        f"PAOS {label} — {payload.get('agent_id')} @ {payload.get('project_id')}",
+        f"PAOS {label} — {subject_label or payload.get('agent_id')} @ {payload.get('project_id')}",
         f"Roster ({filter_note}): {len(agents)}",
     ]
     parse_team_payload(body, lines)
@@ -1393,32 +1399,57 @@ def _resolve_staff_number_recipients(args: argparse.Namespace) -> list[str]:
     if isinstance(home_values, list):
         args.home = [_swap(raw) for raw in list(home_values)]
     elif isinstance(home_values, (str, bytes)) and str(home_values or "").strip():
-        args.home = _swap(str(home_values))
+        original = str(home_values).strip()
+        mapped = _swap(original)
+        args.home = mapped
+        if mapped != original and original.upper().startswith("S") and original[1:].isdigit():
+            resolved_fields["home"] = (original.upper(), mapped)
     return resolved
 
 
 def _validate_resolved_identity_subject(args: argparse.Namespace,
                                          registry: ProjectRegistry,
                                          installation_path: Path) -> None:
-    """Reject an Sxxx that resolves to an unregistered/history Home.
+    """Reject a direct/resolved Home that is not currently registered.
 
-    The same Sxxx must not appear as a normal unbound target merely because the
-    SSOT still contains an old mapping. Creation/registration paths are excluded.
+    Sxxx maps through the installation SSOT; direct Home IDs are checked too, so
+    a historical Home cannot bypass a normal read/wake command. Creation and
+    explicit registration commands are excluded.
     """
+    resolved_fields = getattr(args, "_staff_number_resolved", {}) or {}
+    if args.command == "cat":
+        home_pattern = re.compile(r"^(?:\d+-s\d+|rooter-001)$")
+        for field in ("home", "sender_id"):
+            value = str(getattr(args, field, "") or "").strip()
+            entry = resolved_fields.get(field)
+            if not value or not (entry or home_pattern.match(value)):
+                continue
+            label = entry[0] if entry else value
+            try:
+                resolve_home_by_registry(value, installation_file=str(installation_path))
+            except (AttentionServiceProblem, HomeProblem, CliError) as exc:
+                raise CliError(
+                    f"员工号/Home {label} 未登记或已退役。",
+                    error_code=("staff_number_history_unregistered" if entry else "home_agent_unknown"),
+                    details={"staff_number": label, "agent_id": value},
+                ) from exc
+        return
     if args.command not in {"status", "orient", "inbox", "peers", "team", "wake"}:
         return
-    entry = (getattr(args, "_staff_number_resolved", {}) or {}).get("agent_id")
-    if not entry:
+    home = str(getattr(args, "agent_id", "") or "").strip()
+    if not home:
         return
-    label, home = entry
+    entry = resolved_fields.get("agent_id")
+    label = entry[0] if entry else home
+    error_code = "staff_number_history_unregistered" if entry else "home_agent_unknown"
     project_id = str(getattr(args, "project_id", "") or "").strip()
     if project_id == "rooter":
         route = _rooter_home_root(installation_path)
         if route and home == route[0]:
             return
         raise CliError(
-            f"员工号 {label} 映射到 {home}，但不是本安装 Rooter Home。",
-            error_code="staff_number_history_unregistered",
+            f"员工号/Home {label} 映射到 {home}，但不是本安装 Rooter Home。",
+            error_code=error_code,
             details={"staff_number": label, "agent_id": home, "project_id": project_id},
         )
     try:
@@ -1427,8 +1458,8 @@ def _validate_resolved_identity_subject(args: argparse.Namespace,
         return
     if home not in set(project.get("homes") or []):
         raise CliError(
-            f"员工号 {label} 映射到未登记 Home {home}；不能当普通未绑定目标。",
-            error_code="staff_number_history_unregistered",
+            f"员工号/Home {label} 映射到未登记 Home {home}；不能当普通未绑定目标。",
+            error_code=error_code,
             details={"staff_number": label, "agent_id": home, "project_id": project_id},
         )
 
