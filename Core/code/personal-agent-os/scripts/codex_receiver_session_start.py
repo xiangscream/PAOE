@@ -1,6 +1,6 @@
 """Prepare the caller's *own* registered Codex receiver.
 
-Manual prepare and actual SessionStart use the same Home/Contact and STOP
+Manual prepare, SessionStart and UserPromptSubmit use the same Home/Contact and STOP
 checks. Current thread identity comes from the host environment; this module
 refuses a caller-supplied target override or another Home's credentials.
 """
@@ -19,7 +19,7 @@ from paos_installation import InstallationProblem, load_installation_descriptor,
 from paos_registry import ProjectRegistry
 from paos_workstation import WorkstationProblem, posix_windows_drive_locator
 from runtime_injection import InjectionError
-from wakeup_native.codex_receiver import ReceiverError, retire_owned_runtime
+from wakeup_native.codex_receiver import ReceiverError, reusable_owned_runtime, retire_owned_runtime
 
 
 def registered_target(thread_id, descriptor):
@@ -57,7 +57,9 @@ def registered_target(thread_id, descriptor):
 
 
 def prepare(event):
-    if event.get("hook_event_name") != "SessionStart" or event.get("source") not in {"startup", "resume"}:
+    name = event.get("hook_event_name")
+    if not (name == "UserPromptSubmit" or
+            name == "SessionStart" and event.get("source") in {"startup", "resume"}):
         return "receiver_prepare_skipped: unsupported_event"
     return prepare_current(event=event)
 
@@ -86,6 +88,10 @@ def prepare_current(*, event=None, update=False):
         return "receiver_prepare_skipped: original_STOP_present"
     if update:
         retire_owned_runtime(runtime, stop)
+    elif runtime.exists():
+        pid = reusable_owned_runtime(runtime, stop)
+        if pid is not None:
+            return f"receiver_prepare_reused: {home['home_id']} PID {pid}; original receiver unchanged."
     scripts = Path(posix_windows_drive_locator(descriptor["source_root"])) / "scripts"
     runtime.parent.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -119,7 +125,8 @@ def main():
             message = prepare(event)
     except (OSError, UnicodeError, ValueError, KeyError, HomeProblem, InstallationProblem,
             AttentionServiceProblem, WorkstationProblem, ReceiverError, InjectionError) as exc:
-        message = f"receiver_prepare_unavailable: {exc}"
+        detail = f"{exc.code}: {exc}" if isinstance(exc, ReceiverError) else str(exc)
+        message = f"receiver_prepare_unavailable: {detail}"
         exit_code = 1 if args.prepare_current or args.update_current else 0
     print(json.dumps({"systemMessage": message}, ensure_ascii=False))
     return exit_code

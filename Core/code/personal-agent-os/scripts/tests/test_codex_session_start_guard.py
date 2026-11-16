@@ -254,7 +254,8 @@ class SessionStartGuardTests(unittest.TestCase):
         runtime = Path(self.target["extension"]["receiver_runtime_file"])
         runtime.parent.mkdir()
         runtime.write_text("existing grant evidence", encoding="utf-8")
-        result, launch = self.prepare()
+        with patch.object(hook, "reusable_owned_runtime", return_value=None):
+            result, launch = self.prepare()
         self.assertIn("receiver_prepare_started: 3002-s031 PID 123", result)
         launch.assert_called_once()
         args, kwargs = launch.call_args
@@ -318,6 +319,7 @@ class SessionStartGuardTests(unittest.TestCase):
             with self.subTest(manual=manual), \
                  patch.object(hook, "os", SimpleNamespace(name="nt", environ=self.environment)), \
                  patch.object(hook, "load_installation_descriptor", return_value=self.descriptor), \
+                 patch.object(hook, "reusable_owned_runtime", return_value=None), \
                  patch.object(hook.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True), \
                  patch.object(hook.subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000, create=True), \
                  patch.object(hook.subprocess, "Popen", side_effect=PermissionError(5, "breakaway denied")) as launch:
@@ -374,6 +376,50 @@ class SessionStartGuardTests(unittest.TestCase):
         result, launch = self.prepare({**self.event, "source": "startup"})
         self.assertIn("receiver_prepare_started", result)
         launch.assert_called_once()
+
+    def test_user_prompt_prepares_only_its_registered_owner(self):
+        event = {"hook_event_name": "UserPromptSubmit", "session_id": "own-thread",
+                 "prompt": "ordinary work; not a receiver message"}
+        result, launch = self.prepare(event)
+        self.assertIn("receiver_prepare_started: 3002-s031", result)
+        launch.assert_called_once()
+        self.assertNotIn(event["prompt"], str(launch.call_args))
+        self.assertNotIn("env", launch.call_args.kwargs)
+
+    def test_user_prompt_cannot_supply_another_or_missing_session(self):
+        for session in ("another-thread", None):
+            event = {"hook_event_name": "UserPromptSubmit"}
+            if session is not None:
+                event["session_id"] = session
+            result, launch = self.prepare(event)
+            self.assertIn("event_thread_mismatch", result)
+            launch.assert_not_called()
+
+    def test_healthy_receiver_is_reused_without_child_or_file_changes(self):
+        runtime = Path(self.target["extension"]["receiver_runtime_file"])
+        runtime.parent.mkdir()
+        runtime.write_text("existing private grant", encoding="utf-8")
+        contact = self.root / "3002/private-data/contact/native-targets.json"
+        original = runtime.read_bytes(), contact.read_bytes()
+        with patch.object(hook, "reusable_owned_runtime", return_value=456):
+            for event in (self.event, {"hook_event_name": "UserPromptSubmit", "session_id": "own-thread"}):
+                result, launch = self.prepare(event)
+                self.assertIn("receiver_prepare_reused: 3002-s031 PID 456", result)
+                launch.assert_not_called()
+        self.assertEqual((runtime.read_bytes(), contact.read_bytes()), original)
+        self.assertEqual(list(runtime.parent.iterdir()), [runtime])
+
+    def test_connection_unknown_preserves_grant_without_child_or_logs(self):
+        runtime = Path(self.target["extension"]["receiver_runtime_file"])
+        runtime.parent.mkdir()
+        runtime.write_text("unverified original grant", encoding="utf-8")
+        with patch.object(hook, "reusable_owned_runtime", side_effect=hook.ReceiverError(
+                "receiver_connection_unknown", "keep registration", 503)):
+            with self.assertRaises(hook.ReceiverError) as caught:
+                self.prepare()
+        self.assertEqual(caught.exception.code, "receiver_connection_unknown")
+        self.assertEqual(runtime.read_text(encoding="utf-8"), "unverified original grant")
+        self.assertEqual(list(runtime.parent.iterdir()), [runtime])
 
     def test_no_registration_is_explicit(self):
         with self.assertRaisesRegex(ValueError, "contact_thread_not_registered"):
