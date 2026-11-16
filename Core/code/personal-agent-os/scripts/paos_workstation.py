@@ -361,9 +361,12 @@ def render_fixed_entry(
         template = source.parent.parent.parent / "Project-Template/Workstations/_workstation/ENTRY.md"
     else:
         raise WorkstationProblem("workstation_entry_template_missing", "未定位 ENTRY 母本；请显式提供 --entry-template。")
+    staff_value = _single_line(staff_number)
+    staff_anchor = (staff_value if staff_value and staff_value != "（未登记）" else agent_id).lower()
     values = {
         "home_id": agent_id, "project_id": project_id,
-        "staff_number": _single_line(staff_number) or "（未登记）",
+        "staff_number": staff_value or "（未登记）",
+        "staff_anchor": staff_anchor,
         "project_root": str(project_root), "home_path": str(workstation_path),
         "installation_file": installed_path or "（未登记）",
         "library_roots_config": library_config_path or "（未登记）",
@@ -372,7 +375,8 @@ def render_fixed_entry(
         "project_agents_link": link("AGENTS", str(project_root / "AGENTS.md")),
         "project_team_link": link("TEAM", str(project_root / "TEAM.md")),
         "project_history_link": link("HISTORY", str(project_root / "HISTORY.md")),
-        "team_member_link": link("TEAM 本人条目", str(project_root / "TEAM.md"), "#" + agent_id),
+        "team_member_link": link("TEAM 本人条目", str(project_root / "TEAM.md"),
+                                 "#" + staff_anchor),
         "guide_index_link": link("Guide", guide_index),
         "guide_link": link("GUIDE", guide), "ops_link": link("OPS", ops),
         "workflow_index_link": link("Workflow Catalog", workflow_index),

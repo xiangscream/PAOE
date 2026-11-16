@@ -99,12 +99,16 @@ def check_templates(system: Path, installation_file: Path, retired=()):
     source_block(mother / 'AGENTS.md')
     with tempfile.TemporaryDirectory(prefix='paoe-template-') as directory:
         root = Path(directory) / 'Project'; home_id, project_id = '3002-s099', '3002'
+        staff_number = 'S099'
         home = root / 'Workstations' / home_id
         home.mkdir(parents=True)
         for name in ('mailbox', 'notices'):
             (home / name).mkdir()
         for name in ('AGENTS.md', 'INDEX.md', 'TEAM.md', 'HISTORY.md'):
-            text = (mother / name).read_text('utf-8-sig').replace('<home-id>', home_id).replace('<project-id>', project_id)
+            text = ((mother / name).read_text('utf-8-sig')
+                    .replace('<home-id>', home_id)
+                    .replace('<project-id>', project_id)
+                    .replace('<全局员工号 Sxxx>', staff_number))
             (root / name).write_text(text, 'utf-8')
         todo = (mother / 'Workstations/_workstation/TODO.md').read_text('utf-8-sig')
         todo = todo.replace('<home-id>', home_id).replace('<project-id>', project_id)
@@ -115,7 +119,7 @@ def check_templates(system: Path, installation_file: Path, retired=()):
         entry = render_fixed_entry(project={'id':project_id}, session={'id':home_id},
             workstation_path=home, entry_template=str(mother / 'Workstations/_workstation/ENTRY.md'),
             guide_root=str(system / 'Guide'), source_root=str(system / 'Core/code/personal-agent-os'),
-            installation_file=str(installation_file))
+            installation_file=str(installation_file), staff_number=staff_number)
         target = home / 'ENTRY.md'; target.write_text(entry, 'utf-8')
         errors, _ = inspect_markdown(target, retired)
         if errors:

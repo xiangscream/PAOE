@@ -18,9 +18,9 @@ def add_cat_parser(sub):
                             ("close", "Close a roundtable; history stays readable")):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("room_id")
-    join = commands.add_parser("join", help="Join by stable Home ID, including rooter-001")
+    join = commands.add_parser("join", help="Join by global staff number Sxxx or exact Home ID")
     join.add_argument("room_id")
-    join.add_argument("--home", required=True)
+    join.add_argument("--home", required=True, help="Global staff number Sxxx or exact joined Home ID")
     join.add_argument("--label")
     # Seat participation: one CLI per state transition (member state backend).
     # Reads are inherently `members` already; keep the verbs explicit.
@@ -30,7 +30,7 @@ def add_cat_parser(sub):
     )
     seat.add_argument("room_id")
     seat.add_argument("--home", required=True,
-                      help="Stable joined Home ID whose seat state changes")
+                      help="Global staff number Sxxx or exact joined Home ID whose seat state changes")
     seat.add_argument(
         "--state",
         required=True,
@@ -43,7 +43,8 @@ def add_cat_parser(sub):
     )
     send = commands.add_parser("send", help="Persist public speech, then remind other members once")
     send.add_argument("room_id")
-    send.add_argument("--from", dest="sender_id", required=True, help="Joined stable Home ID")
+    send.add_argument("--from", dest="sender_id", required=True,
+                      help="Global staff number Sxxx or exact joined Home ID")
     send.add_argument("--body", required=True, help="Literal text, @FILE or '-' for stdin")
     send.add_argument("--message-id", required=True, help="Reuse this ID for idempotent replay")
     send.add_argument("--reply-to", help="Existing message ID in this room")

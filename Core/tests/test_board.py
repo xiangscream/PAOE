@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 PACKAGE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE))
 from front.paos_front_server import Board, BoardProblem, make_server
+from paos_agent_numbers import NumbersProblem
 from paos_installation import write_installation_descriptor
 from paos_library import ensure_skill_library, ensure_workflow_library, register_library_roots
 from paos_notice import handle_notice, list_notices
@@ -66,6 +67,58 @@ class BoardTests(unittest.TestCase):
         static_patch = patch("front.paos_front_server.DIST", self.front_dist)
         static_patch.start()
         self.addCleanup(static_patch.stop)
+
+    def test_staff_headings_preserve_member_details_and_human_pause(self):
+        numbers = self.base / "AGENT-NUMBERS.json"
+        numbers.write_text(json.dumps({"1001-s001": "S040", "1001-s002": "S063"}), encoding="utf-8")
+        installation = json.loads(self.install.read_text(encoding="utf-8"))
+        installation["agent_numbers_config"] = str(numbers)
+        self.install.write_text(json.dumps(installation), encoding="utf-8")
+        self.board = Board(self.install)
+        team = self.roots["1001"] / "TEAM.md"
+        original = ("## 当前成员\n\n### 1001-s001\n"
+                    "- 名称：前端维护\n- 职责/专长：维护交互\n- 成员状态：在队\n"
+                    "\n### 1001-s002\n- 名称：集成复核\n"
+                    "- 职责：独立复核\n- 成员状态：Human暂停\n")
+        team.write_text(original, encoding="utf-8")
+        fields = ("id", "number", "name", "role", "member_status", "can_contact")
+        before = [{k: self.board.agent(home_id)[k] for k in fields}
+                  for home_id in ("1001-s001", "1001-s002")]
+        people_before = self.board.people()
+        updated = original.replace("### 1001-s001", "### S040").replace("### 1001-s002", "### S063")
+        team.write_text(updated, encoding="utf-8")
+        after = [{k: self.board.agent(home_id)[k] for k in fields}
+                 for home_id in ("1001-s001", "1001-s002")]
+        self.assertEqual(after, before)
+        self.assertEqual(self.board.people(), people_before)
+        self.assertEqual(self.board.people()[0]["role"], "维护交互")
+        self.assertEqual(after[0]["number"], "S040")
+        self.assertTrue(after[0]["can_contact"])
+        self.assertFalse(after[1]["can_contact"])
+        self.assertEqual(team.read_text(encoding="utf-8"), updated)
+
+    def test_missing_number_is_not_inferred_from_home_suffix(self):
+        people = {row["id"]: row for row in self.board.people()}
+        self.assertEqual(people["1001-s001"]["number"], "")
+        self.assertEqual(people["1001-s001"]["name"], "未编号")
+        self.assertEqual(self.board.agent("1001-s001")["name"], "未编号")
+        self.assertEqual(people["1001-s001"]["id"], "1001-s001")
+
+    def test_unknown_staff_heading_reports_the_mapping_error(self):
+        numbers = self.base / "AGENT-NUMBERS.json"
+        numbers.write_text(json.dumps({"1001-s001": "S040"}), encoding="utf-8")
+        installation = json.loads(self.install.read_text(encoding="utf-8"))
+        installation["agent_numbers_config"] = str(numbers)
+        self.install.write_text(json.dumps(installation), encoding="utf-8")
+        self.board = Board(self.install)
+        (self.roots["1001"] / "TEAM.md").write_text(
+            "## 当前成员\n\n### S999\n- 成员状态：Human暂停\n", encoding="utf-8")
+        with self.assertRaises(NumbersProblem) as raised:
+            self.board.agent("1001-s001")
+        self.assertEqual(raised.exception.code, "staff_number_unknown")
+        with self.assertRaises(NumbersProblem) as dashboard_error:
+            self.board.dashboard("1001")
+        self.assertEqual(dashboard_error.exception.code, "staff_number_unknown")
 
     def test_v4_and_registered_project_not_old_machine_defaults(self):
         with patch.dict(os.environ, {"PAOS_INSTALLATION_FILE": "missing-old-install.json",

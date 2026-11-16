@@ -22,7 +22,7 @@ class TemplateSyncTests(unittest.TestCase):
     def setUp(self):
         self.f = test_headless.HeadlessTests(methodName='runTest')
         self.addCleanup(self.f.doCleanups); self.f.setUp()
-        (self.f.root/'numbers.json').write_text(json.dumps({'3002-s001':'S001','3002-s002':'S002'}),'utf-8')
+        (self.f.root/'numbers.json').write_text(json.dumps({'3002-s001':'S001','3002-s002':'S002','rooter-001':'S035'}),'utf-8')
         self.system = self.f.root / 'System'
         self.mother = self.system / 'Project-Template'
         station = self.mother / 'Workstations/_workstation';station.mkdir(parents=True)

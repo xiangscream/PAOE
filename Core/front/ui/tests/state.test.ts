@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { defaultNodes, mergeLayout } from '../src/state/layout'
 import { buildBody, canResubmit, membersFor, outcomeOf, payloadFor, validateDraft } from '../src/state/collab'
-import { canStartCollaboration, displayName, isPaused, statusLabel } from '../src/state/team'
+import { canStartCollaboration, displayName, displayNumber, isPaused, statusLabel } from '../src/state/team'
 import type { AgentSummary, BoardLayout } from '../src/types'
 
 const agent = (id: string, extra: Partial<AgentSummary> = {}): AgentSummary => ({ id, ok: true, ...extra })
@@ -84,5 +84,10 @@ describe('team view', () => {
     expect(statusLabel(paused)).toBe('暂停')
     expect(statusLabel(agent('x', { registered: false }))).toBe('尚未接入')
     expect(displayName(agent('x', { name: 'S052 · 学习' }))).toContain('S052')
+  })
+
+  it('never derives an employee number from a Home id suffix', () => {
+    expect(displayNumber(agent('3002-s035'))).toBe('未编号')
+    expect(displayName(agent('3002-s035'))).toBe('员工资料未补齐')
   })
 })
