@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from paos_agent_numbers import NumbersProblem
 from paos_workstation import (
     WorkstationProblem,
     posix_windows_drive_locator,
@@ -651,7 +652,28 @@ def _read_project_home_state(
         }
 
 
-def _team_role_summaries(root: Path, registered_ids: set[str]) -> dict[str, str]:
+def _team_heading_home(candidate: str, registered_ids: set[str],
+                       numbers_map: dict[str, str] | None) -> str | None:
+    """Resolve a TEAM heading by Home id or staff number; never guess by suffix."""
+    candidate = str(candidate or "").strip()
+    if candidate in registered_ids:
+        return candidate
+    matches = sorted(
+        agent_id for agent_id, label in (numbers_map or {}).items()
+        if str(label or "").strip().upper() == candidate.upper()
+    )
+    if len(matches) > 1:
+        raise NumbersProblem(
+            "staff_number_ambiguous",
+            f"员工号 {candidate.upper()} 映射到多个 Home，需先澄清：{matches}",
+            {"staff_number": candidate.upper(), "matches": matches},
+        )
+    home = matches[0] if matches else None
+    return home if home in registered_ids else None
+
+
+def _team_role_summaries(root: Path, registered_ids: set[str],
+                         numbers_map: dict[str, str] | None = None) -> dict[str, str]:
     """Read the current TEAM role lines on demand; TEAM.md remains the SSOT."""
     try:
         lines = (root / "TEAM.md").read_text(encoding="utf-8").splitlines()
@@ -665,8 +687,7 @@ def _team_role_summaries(root: Path, registered_ids: set[str]) -> dict[str, str]
             in_current = line.strip() == "## 当前成员"
             agent_id = None
         elif in_current and line.startswith("### "):
-            candidate = line[4:].strip()
-            agent_id = candidate if candidate in registered_ids else None
+            agent_id = _team_heading_home(line[4:].strip(), registered_ids, numbers_map)
         elif agent_id:
             match = re.match(r"^\s*-\s*(?:职责/专长|职责|专长)\s*[：:]\s*(.+)$", line)
             if match:
@@ -685,7 +706,7 @@ def build_team_rows(
     """TEAM rows over fixed workstations; optional agent_ids narrows Home reads."""
     root = Path(posix_windows_drive_locator(str(data_root))).expanduser()
     registered_ids = set(str(item) for item in project.get("homes") or [])
-    roles = _team_role_summaries(root, registered_ids)
+    roles = _team_role_summaries(root, registered_ids, numbers_map)
     sessions_by_agent: dict[str, list[dict[str, Any]]] = {}
     for session in project.get("sessions") or []:
         if isinstance(session, dict) and str(session.get("id") or ""):
@@ -729,7 +750,8 @@ def build_team_rows(
     }
 
 
-def team_member_statuses(role_source: str, home_ids: list[str]) -> dict[str, str]:
+def team_member_statuses(role_source: str, home_ids: list[str],
+                         numbers_map: dict[str, str] | None = None) -> dict[str, str]:
     """Read the current TEAM member-status lines once for selected Homes."""
     path = Path(role_source or "")
     try:
@@ -747,8 +769,7 @@ def team_member_statuses(role_source: str, home_ids: list[str]) -> dict[str, str
             active = line.strip() == section
             current = None
         elif active and line.startswith("### "):
-            candidate = line[4:].strip()
-            current = candidate if candidate in wanted else None
+            current = _team_heading_home(line[4:].strip(), wanted, numbers_map)
         elif active and current:
             match = re.match(r"^\s*-\s*" + label + r"\s*[\uff1a:]\s*(.+)$", line)
             if match:

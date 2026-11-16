@@ -19,12 +19,12 @@ export function statusLabel(agent: AgentSummary): string {
 }
 
 export function displayNumber(agent: AgentSummary): string {
-  return agent.number || agent.id.match(/s\d+$/i)?.[0].toUpperCase() || agent.id
+  return agent.number || '未编号'
 }
 
 export function displayName(agent: AgentSummary): string {
   if (agent.name && agent.name !== agent.id) return agent.name
-  return agent.id
+  return '员工资料未补齐'
 }
 
 export function displayRole(agent: AgentSummary): string {

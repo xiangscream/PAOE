@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 97
+version: 98
 ---
 
 # PAOS 操作指南
@@ -27,17 +27,17 @@ version: 97
 
 | 目的 | 命令 |
 | --- | --- |
-| 找回本人的当前责任 | `paos orient <project> <home>` |
-| 读分源输入 | `paos inbox <project> <home>` |
-| 找同事 | `paos peers <project> <home>` |
-| 查看消息与运行状态 | `paos status <project> <home>` |
-| 查看已发信件 | `paos status <project> <home> --message-id <id>` |
+| 找回本人的当前责任 | `paos orient <project> <本人Sxxx>` |
+| 读分源输入 | `paos inbox <project> <本人Sxxx>` |
+| 找同事 | `paos peers <project> <本人Sxxx>` |
+| 查看消息与运行状态 | `paos status <project> <本人Sxxx>` |
+| 查看已发信件 | `paos status <project> <本人Sxxx> --message-id <id>` |
 
 Mail、正式 Requests 和已配置 CAT 分开读取。读取失败不是零消息；没有配置 CAT 就按不适用处理。
 
 ## 联系并让对方接续
 
-需要同事接续时，用 `agent send <本人项目ID> --to <目标完整HomeID> --remind`：先保存 Mail 与 Notice，再沿目标 Home 的 Contact 提醒一次。第一个项目参数是发送上下文，不是目标所属 Project；因此项目同事、跨项目同事、安装级 Rooter 均用已有接口，不另建项目。先从本人 Current 取得成果原件，再编写简短 UTF-8 交接正文，说明结论、接续动作和原件的实际路径；正文用 `@` 读取文件，例如 `--body '@完整UTF-8文件路径'`。Windows批处理入口的多行正文使用该文件方式；内联多行可能在批处理转发时丢失正文和后续参数。
+需要同事接续时，用 `agent send <本人项目ID> --to <目标全局员工号 Sxxx 或 HomeID> --remind`：员工号按本机安装的 AGENT-NUMBERS 解析为真实 Home，再保存 Mail 与 Notice、沿目标 Contact 提醒一次。第一个项目参数是发送上下文，不是目标所属 Project；因此项目同事、跨项目同事、安装级 Rooter 均用已有接口，不另建项目。先从本人 Current 取得成果原件，再编写简短 UTF-8 交接正文，说明结论、接续动作和原件的实际路径；正文用 `@` 读取文件，例如 `--body '@完整UTF-8文件路径'`。Windows批处理入口的多行正文使用该文件方式；内联多行可能在批处理转发时丢失正文和后续参数。
 
 普通交接保存成果后，用 `agent send --remind` 交付、`attention todo-update` 校准本人当前页；下游回告后直接读其成果并继续。解除等待的验收回告也属于需要接续的交付。对方没有回流或报告失败时，再用 `status --message-id` 定位。已有原件和回告即可引用，无须另写一份收件证明或逐级重查全部状态。记录完成状态或回告时，把当前结论写在前，再接续动作和原件。
 
@@ -54,10 +54,10 @@ Mail、正式 Requests 和已配置 CAT 分开读取。读取失败不是零消�
 以下 `paos` 表示本人 ENTRY 的完整 CLI 调用前缀，`request.md` 是已保存的短交接文件；参数与目标 ID 由当前任务决定，不复制示例占位符直接执行：
 
 ```sh
-paos agent send 3002 --to 3002-s010 --sender-kind agent --sender-id 3002-s001 --subject "交付接续" --body @request.md --message-id handoff-unique-001 --remind
+paos agent send 3002 --to S010 --sender-kind agent --sender-id S032 --subject "交付接续" --body @request.md --message-id handoff-unique-001 --remind
 ```
 
-安装级问题改为 `--to rooter-001`；跨项目仍保持第一个位置参数为发件人项目。若只是简短咨询，不必为了套模板专门创建交接报告或第二份任务。相关联系人与入口见 [操作入口](ops-entry.md#联系同事与-rooter)。
+安装级问题改为 `--to S035`（Rooter）；跨项目仍保持第一个位置参数为发件人项目。若只是简短咨询，不必为了套模板专门创建交接报告或第二份任务。相关联系人与入口见 [操作入口](ops-entry.md#联系同事与-rooter)。
 
 读取投递和提醒各自的结果。需要下游接续的正式交付，将该次完整回执保存在既有任务成果旁；保留目标、时间、message_id和提醒结果，不只截取delivered或next_action。留信成功不等于对方被提醒；原生受理不等于业务完成，最终看对方实际读取与产物。需要接续的新交付使用首次提醒，即使对方正在工作；省略 `--remind` 仅用于不要求接续的留档告知。相同 message-id 的高层重放保留已完成提醒，不再第二次注入；正文或目标改变时是新输入，使用新标识。
 
@@ -74,7 +74,7 @@ OpenCode 正在工作也可以受理新的交付；accepted 时不因 busy 重�
 | `native_busy` / `native_rejected` / STOP / 明确离线 | 本次提醒被明确拒绝或停止；不等于 Mail 未保存。 | 按回执的 `repair_owner` / `next_action` 处理；不循环重试。 |
 | Mail delivered / reminder accepted | 只证明保存与本次受理，不等于同事已读取、已处理或业务已完成。 | 等实际读取/产物；需要接续时按原信继续，不重复发送。 |
 
-Codex的`wake status <project> <home>`与`status`使用同一Contact事实：`receiver.state=process_not_running`表示登记进程已退出；`process_identity_mismatch`表示同号PID已不是原receiver实例，即使pid_alive=true也不是prepared。prepared须核OS实例，不等于原生可用或业务消费。一次提醒明确区分receiver_offline/receiver_not_prepared、native_busy、native_stopped及delivery_uncertain，回执附error_code、repair_owner和next_action。状态未确认仍是unknown；调用方不再自己读登记、查PID/端口或重置绑定。
+Codex的`wake status <project> <本人Sxxx>`与`status`使用同一Contact事实：`receiver.state=process_not_running`表示登记进程已退出；`process_identity_mismatch`表示同号PID已不是原receiver实例，即使pid_alive=true也不是prepared。prepared须核OS实例，不等于原生可用或业务消费。一次提醒明确区分receiver_offline/receiver_not_prepared、native_busy、native_stopped及delivery_uncertain，回执附error_code、repair_owner和next_action。状态未确认仍是unknown；调用方不再自己读登记、查PID/端口或重置绑定。
 
 `attach`描述人工打开或接入Runtime的方式。已配置 native target 的 `binding_status=configured` 只表示目标存在，不等于 bound、online 或已消费；未配置仍为 `unbound`。`attach_undefined_for_driver` 不能单独说明原生提醒不可用；应看该驱动的接收状态及具体提醒回执。Codex 保留其 Desktop/thread 人工导航；其它 Runtime 显示自身已配置的 `manual_open` 或诚实未知，不套用 Codex 路径。Codex读`receiver.prepared/pid_alive`；WorkBuddy还需其已授权扩展实际运行。
 
@@ -119,8 +119,8 @@ CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。
 | 看房间概况 | `paos cat show <room>` |
 | 看同桌状态 | `paos cat members <room>` |
 | 读新增发言 | `paos cat read <room> --after <已读seq>` |
-| 保存当前公共原件 | `paos cat send <room> --from <本人Home> --body @<原件> --message-id <id>` |
-| 调整本人席位 | `paos cat seat <room> --home <本人Home> --state participant/observer/left` |
+| 保存当前公共原件 | `paos cat send <room> --from <本人Sxxx> --body @<原件> --message-id <id>` |
+| 调整本人席位 | `paos cat seat <room> --home <本人Sxxx> --state participant/observer/left` |
 
 participant接提醒并可发言；observer只读、不接提醒；left退出席位，历史保留。按当前责任选择，新的收口责任仍沿Mail/Contact交付。轮次交流按业务流程选择提醒对象；只保存公共发言时用cat send的`--no-notify`。
 
@@ -134,12 +134,12 @@ show默认只返回房间概况、人数、消息数与last_seq，普通与JSON�
 
 | 目的 | 安装入口 |
 | --- | --- |
-| 读本人 TODO 与 Notice | `paos attention show <project> <home>` |
-| 改本人 Current 字段 | `paos attention todo-update <project> <home> --set 'objective=当前目标' --set 'next_action=下一步'` |
-| 更新 Tasks 或恢复完整 TODO | `paos attention todo-write <project> <home> --body @<候选载荷文件>` |
-| 处理输入 | `paos attention handle <project> <home> <notice> --resolution "处理结果" --action-ref <任务或成果>` |
-| 展示归档 | `paos attention notice-update <project> <home> <notice> --archive` |
-| 登记已落盘的直接输入 | `paos attention source-register <project> <home> --source-ref <绝对路径或URL> --summary "索引"` |
+| 读本人 TODO 与 Notice | `paos attention show <project> <本人Sxxx>` |
+| 改本人 Current 字段 | `paos attention todo-update <project> <本人Sxxx> --set 'objective=当前目标' --set 'next_action=下一步'` |
+| 更新 Tasks 或恢复完整 TODO | `paos attention todo-write <project> <本人Sxxx> --body @<候选载荷文件>` |
+| 处理输入 | `paos attention handle <project> <本人Sxxx> <notice> --resolution "处理结果" --action-ref <任务或成果>` |
+| 展示归档 | `paos attention notice-update <project> <本人Sxxx> <notice> --archive` |
+| 登记已落盘的直接输入 | `paos attention source-register <project> <本人Sxxx> --source-ref <绝对路径或URL> --summary "索引"` |
 | 核已存在的输入 | `paos attention source-status --help` |
 | Rooter Home | `paos attention rooter-show`；同组 `rooter-*` 子命令维护自己的输入和 TODO |
 

@@ -13,7 +13,8 @@ import sys
 import tempfile
 from urllib.parse import unquote
 
-from paos_contact import _team_role_summaries
+from paos_agent_numbers import NumbersProblem, load_numbers, resolve_numbers_path
+from paos_contact import _team_heading_home, _team_role_summaries
 from paos_installation import effective_data_root, load_installation_descriptor
 from paos_registry import ProjectRegistry
 from paos_workstation import posix_windows_drive_locator
@@ -135,7 +136,8 @@ def _powershell(*args: str) -> str:
     return '& ' + ' '.join("'" + str(arg).replace("'", "''") + "'" for arg in args)
 
 
-def _team_harness_summaries(team: Path, registered_ids: set[str]) -> dict[str, str]:
+def _team_harness_summaries(team: Path, registered_ids: set[str],
+                            numbers_map: dict[str, str] | None = None) -> dict[str, str]:
     """Read actual Harness values from the current TEAM member sections."""
     try:
         lines = team.read_text(encoding='utf-8-sig').splitlines()
@@ -149,8 +151,7 @@ def _team_harness_summaries(team: Path, registered_ids: set[str]) -> dict[str, s
             in_current = line.strip() == '## 当前成员'
             current = None
         elif in_current and line.startswith('### '):
-            candidate = line[4:].strip()
-            current = candidate if candidate in registered_ids else None
+            current = _team_heading_home(line[4:].strip(), registered_ids, numbers_map)
         elif current:
             match = re.match(r'^\s*-\s*Harness\s*[：:]\s*(.+)$', line)
             if match:
@@ -164,6 +165,11 @@ def render_overview(installation_file: Path, output: Path) -> str:
     if not installation.get('configured'):
         raise ValueError(f'安装描述未配置：{installation_file}')
     registry = ProjectRegistry(installation_file)
+    try:
+        numbers_path = resolve_numbers_path(None, installation_file, installation)
+        numbers_map = load_numbers(numbers_path)
+    except NumbersProblem as exc:
+        raise ValueError(f'员工号登记不可用，无法生成准确 PROJECTS：{exc}') from exc
     fingerprints: list[str] = []
 
     def read(path: Path) -> str:
@@ -183,6 +189,7 @@ def render_overview(installation_file: Path, output: Path) -> str:
         return ' '.join(value.split()).replace('|', r'\|')
 
     read(installation_file)
+    read(numbers_path)
     projects = []
     registry_dir = effective_data_root(installation) / 'project-registry/projects'
     for path in sorted(registry_dir.glob('*.json')):
@@ -192,27 +199,40 @@ def render_overview(installation_file: Path, output: Path) -> str:
         team = root / 'TEAM.md'
         read(team)
         home_ids = set(record['homes'])
-        projects.append((record, root, team, _team_role_summaries(root, home_ids),
-                         _team_harness_summaries(team, home_ids)))
+        projects.append((record, root, team,
+                         _team_role_summaries(root, home_ids, numbers_map),
+                         _team_harness_summaries(team, home_ids, numbers_map)))
 
-    members: list[tuple[str, Path]] = []
+    members: list[tuple[str, Path, str]] = []
 
     def row(home_id: str, home: Path, role: str, harness: str, source: str,
             source_path: Path) -> str:
         entry = home / 'ENTRY.md'
         read(entry)
+        staff = numbers_map.get(home_id)
+        if not staff:
+            raise ValueError(
+                f'员工号登记缺少 {home_id} 的映射；先补安装 AGENT-NUMBERS.json，不由 Home 尾号猜。')
+        anchor = staff.lower()
         contact = home / 'contact.py'
-        # Only file presence is observed; configuration is not an online check.
+        dsh = home / 'notices' / 'dsh.py'
+        # File presence only selects the generated command entry; it is not an
+        # online check. DSH Homes legitimately use notices/dsh.py without a
+        # contact.py, so do not label them unconfigured.
         fingerprints.append(f'{contact}:exists={contact.is_file()}')
+        fingerprints.append(f'{dsh}:exists={dsh.is_file()}')
         if contact.is_file():
-            members.append((home_id, contact))
-            wake = f'[命令](#{home_id})'
+            members.append((staff, contact, 'contact'))
+            wake = f'[命令](#{anchor})'
+        elif dsh.is_file():
+            members.append((staff, dsh, 'dsh'))
+            wake = f'[命令](#{anchor})'
         else:
             wake = '联系入口未配置，状态和接续见ENTRY'
         role_text = _relocate_source_links(role, source_path)
         harness_cell = (cell(_relocate_source_links(harness, source_path))
                         if harness else f'未注明，读 {source}')
-        return (f'| {home_id} | {cell(role_text)} | {harness_cell} | '
+        return (f'| {staff} | {cell(role_text)} | {harness_cell} | '
                 f'{link("ENTRY", entry)} · {link("TODO", home / "TODO.md")} | {wake} |')
 
     project_table = ['| Agent | 职责 / 专长 | Harness（TEAM） | 工位 | 唤醒 |',
@@ -252,11 +272,15 @@ def render_overview(installation_file: Path, output: Path) -> str:
     lines += ['## 外部唤醒', '',
               '适用于获准在本机执行命令的 Agent。下列命令只提醒原会话；持久留信按 OPS 的正式 Mail 入口。',
               '将消息替换为具体请求和原件绝对路径。`accepted=true` 只表示提醒受理；当前状态用同一脚本的 `status` 核对。', '']
-    for home_id, contact in members:
-        lines += [f'### {home_id}', '', '```powershell',
-                  _powershell(sys.executable, '-X', 'utf8', '-B', str(contact),
-                              'wake', '--message', '请处理：具体请求；相关原件：绝对路径。'),
-                  '```', '']
+    for label, contact, mode in members:
+        lines += [f'### {label}', '', '```powershell']
+        if mode == 'dsh':
+            lines += [_powershell(sys.executable, '-X', 'utf8', '-B', str(contact),
+                                  'wake', '--prompt', '请处理：具体请求；相关原件：绝对路径。')]
+        else:
+            lines += [_powershell(sys.executable, '-X', 'utf8', '-B', str(contact),
+                                  'wake', '--message', '请处理：具体请求；相关原件：绝对路径。')]
+        lines += ['```', '']
 
     source = Path(posix_windows_drive_locator(installation['source_root']))
     command = _powershell(sys.executable, '-X', 'utf8', '-B',
@@ -311,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(content, end='')
         return 0
-    except (OSError, ValueError, RuntimeError) as exc:
+    except (OSError, ValueError, RuntimeError, NumbersProblem) as exc:
         print(f'TEAM 聚合失败：{exc}', file=sys.stderr)
         return 2
 

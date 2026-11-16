@@ -465,6 +465,50 @@ class HeadlessTests(unittest.TestCase):
                        '--expected-fingerprint',fingerprint_todo(path),ok=False)
         self.assertNotEqual(rc,0);self.assertEqual(path.read_bytes(),before)
 
+    def test_global_staff_numbers_resolve_across_normal_cli_and_team(self):
+        (self.root / 'numbers.json').write_text(json.dumps({
+            '3002-s001': 'S032', '3002-s002': 'S029',
+            'rooter-001': 'S035', '2002-s001': 'S041',
+        }), encoding='utf-8')
+        (self.vault / 'TEAM.md').write_text(
+            '## 当前成员\n### S032\n- 职责/专长：协调\n- Harness：Codex\n'
+            '### S029\n- 职责/专长：审查\n- Harness：OpenCode\n',
+            encoding='utf-8')
+
+        team = self.call('team', '3002', 'S032')[1]
+        by_id = {row['agent_id']: row for row in team['agents']}
+        self.assertEqual(set(by_id), {'3002-s001', '3002-s002'})
+        self.assertEqual(by_id['3002-s002']['role_summary'], '审查')
+        self.assertEqual(by_id['3002-s002']['staff_number'], 'S029')
+
+        peers = self.call('peers', '3002', 'S032')[1]['peers']
+        self.assertEqual([row['agent_id'] for row in peers], ['3002-s002'])
+
+        status = self.call('status', '3002', 'S029')[1]
+        self.assertEqual(status['work']['identity']['agent_id'], '3002-s002')
+        inbox = self.call('inbox', '3002', 'S029')[1]
+        self.assertEqual(inbox['agent_id'], '3002-s002')
+        wake = self.call('wake', 'status', '3002', 'S029')[1]
+        self.assertEqual(wake['agent_id'], '3002-s002')
+        rooter = self.call('wake', 'status', 'rooter', 'S035')[1]
+        self.assertEqual(rooter['agent_id'], 'rooter-001')
+
+        sent = self.call('agent', 'send', '3002', '--to', 'S029',
+                         '--sender-kind', 'agent', '--sender-id', 'S032',
+                         '--subject', '全局号测试', '--body', '读取并继续',
+                         '--message-id', 'global-number-mail-001')[1]
+        self.assertEqual(sent['mail']['recipients'], ['3002-s002'])
+        self.assertTrue((self.vault / 'Workstations/3002-s002/mailbox/global-number-mail-001.md').is_file())
+
+        missing = self.call('status', '3002', 'S999', ok=False)[1]
+        self.assertEqual(missing['error_code'], 'staff_number_unknown')
+        orphan = self.call('status', '3002', 'S041', ok=False)[1]
+        self.assertEqual(orphan['error_code'], 'staff_number_history_unregistered')
+        wake_orphan = self.call('wake', 'status', '3002', 'S041', ok=False)[1]
+        self.assertEqual(wake_orphan['error_code'], 'staff_number_history_unregistered')
+        peers_orphan = self.call('peers', '3002', 'S041', ok=False)[1]
+        self.assertEqual(peers_orphan['error_code'], 'staff_number_history_unregistered')
+
     def test_peers_and_team_use_local_roster(self):
         for command in ('peers','team'):
             r=self.call(command,'3002','3002-s001')[1]

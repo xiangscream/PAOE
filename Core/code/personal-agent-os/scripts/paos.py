@@ -1036,7 +1036,8 @@ def _apply_fresh_probe(root: Path, entry: dict[str, Any]) -> None:
     runtime.update({"state_basis": "probe_never_run", "checked_at": None})
 
 
-def _installation_support_contacts(registry: ProjectRegistry) -> list[dict[str, Any]]:
+def _installation_support_contacts(registry: ProjectRegistry,
+                                   numbers_map: dict[str, str] | None = None) -> list[dict[str, Any]]:
     """Expose the registered Rooter locator, not a fake Project member or live status."""
     descriptor = load_installation_descriptor(registry.installation_path)
     raw = str(descriptor.get("rooter_home") or "").strip()
@@ -1044,6 +1045,7 @@ def _installation_support_contacts(registry: ProjectRegistry) -> list[dict[str, 
         return []
     home = Path(posix_windows_drive_locator(raw)).expanduser()
     entry = home / "ENTRY.md"
+    rooter_label = (numbers_map or {}).get("rooter-001") or "rooter-001"
     return [{
         "agent_id": "rooter-001",
         "home_kind": "rooter",
@@ -1053,8 +1055,8 @@ def _installation_support_contacts(registry: ProjectRegistry) -> list[dict[str, 
         "entry_path": str(entry),
         "entry_exists": entry.is_file(),
         "runtime_state": "not_probed",
-        "send_hint": "agent send <本人项目ID> --to rooter-001 --remind",
-        "contact_hint": "wake status rooter rooter-001",
+        "send_hint": f"agent send <本人项目ID> --to {rooter_label} --remind",
+        "contact_hint": f"wake status rooter {rooter_label}",
     }]
 
 
@@ -1067,7 +1069,8 @@ def execute_team(
     agents = build_team_rows(project, root, numbers_map=numbers_map)["agents"]
     if bool(getattr(args, "summary", False)):
         statuses = team_member_statuses(
-            str(root / "TEAM.md"), [str(entry.get("agent_id") or "") for entry in agents])
+            str(root / "TEAM.md"), [str(entry.get("agent_id") or "") for entry in agents],
+            numbers_map=numbers_map)
         agents = [summarize_team_row(entry, statuses) for entry in agents]
     for entry in agents:
         if bool(getattr(args, "probe", False)):
@@ -1083,7 +1086,7 @@ def execute_team(
         "agents": agents,
         "coordinator_home_id": project.get("coordinator_home_id"),
         "team_source": {"path": str(root / "TEAM.md"), "exists": (root / "TEAM.md").is_file()},
-        "installation_support": _installation_support_contacts(registry),
+        "installation_support": _installation_support_contacts(registry, numbers_map),
         "meta": {
             "backend": "local_files",
             "installation": installation,
@@ -1111,7 +1114,8 @@ def execute_peers(args: argparse.Namespace, registry: ProjectRegistry) -> Any:
     roster = build_team_rows(project, root, numbers_map=numbers_map)["agents"]
     if bool(getattr(args, "summary", False)):
         statuses = team_member_statuses(
-            str(root / "TEAM.md"), [str(entry.get("agent_id") or "") for entry in roster])
+            str(root / "TEAM.md"), [str(entry.get("agent_id") or "") for entry in roster],
+            numbers_map=numbers_map)
         roster = [summarize_team_row(entry, statuses) for entry in roster]
     peers: list[dict[str, Any]] = [
         entry
@@ -1131,7 +1135,7 @@ def execute_peers(args: argparse.Namespace, registry: ProjectRegistry) -> Any:
         "peers": peers,
         "coordinator_home_id": project.get("coordinator_home_id"),
         "team_source": {"path": str(root / "TEAM.md"), "exists": (root / "TEAM.md").is_file()},
-        "installation_support": _installation_support_contacts(registry),
+        "installation_support": _installation_support_contacts(registry, numbers_map),
     }
     if bool(getattr(args, "summary", False)):
         payload["summary"] = True
@@ -1349,7 +1353,12 @@ def _home_uses_todo(root: Path, agent_id: str) -> bool:
 
 
 def _resolve_staff_number_recipients(args: argparse.Namespace) -> list[str]:
-    """Resolve S numbers through the registered local staff map."""
+    """Resolve S numbers through the registered local staff map.
+
+    This is the one CLI identity boundary for normal Home and recipient
+    parameters. Home ids stay machine locators; only an explicit Sxxx token is
+    reverse-mapped, and unknown/ambiguous/history-only mappings raise.
+    """
     registry_path = getattr(args, "agent_numbers_file", None)
     installation_path = getattr(args, "installation_file", None) or resolve_installation_path()
     resolved: list[str] = []
@@ -1369,7 +1378,59 @@ def _resolve_staff_number_recipients(args: argparse.Namespace) -> list[str]:
     agents = getattr(args, "agents", None)
     if isinstance(agents, list):
         args.agents = [_swap(raw) for raw in list(agents)]
+    resolved_fields: dict[str, tuple[str, str]] = {}
+    for field in ("agent_id", "session_id", "sender_id", "from_agent",
+                  "home_id", "coordinator"):
+        value = getattr(args, field, None)
+        if isinstance(value, (str, bytes)) and str(value or "").strip():
+            original = str(value).strip()
+            mapped = _swap(original)
+            setattr(args, field, mapped)
+            if mapped != original and original.upper().startswith("S") and original[1:].isdigit():
+                resolved_fields[field] = (original.upper(), mapped)
+    args._staff_number_resolved = resolved_fields
+    home_values = getattr(args, "home", None)
+    if isinstance(home_values, list):
+        args.home = [_swap(raw) for raw in list(home_values)]
+    elif isinstance(home_values, (str, bytes)) and str(home_values or "").strip():
+        args.home = _swap(str(home_values))
     return resolved
+
+
+def _validate_resolved_identity_subject(args: argparse.Namespace,
+                                         registry: ProjectRegistry,
+                                         installation_path: Path) -> None:
+    """Reject an Sxxx that resolves to an unregistered/history Home.
+
+    The same Sxxx must not appear as a normal unbound target merely because the
+    SSOT still contains an old mapping. Creation/registration paths are excluded.
+    """
+    if args.command not in {"status", "orient", "inbox", "peers", "team", "wake"}:
+        return
+    entry = (getattr(args, "_staff_number_resolved", {}) or {}).get("agent_id")
+    if not entry:
+        return
+    label, home = entry
+    project_id = str(getattr(args, "project_id", "") or "").strip()
+    if project_id == "rooter":
+        route = _rooter_home_root(installation_path)
+        if route and home == route[0]:
+            return
+        raise CliError(
+            f"员工号 {label} 映射到 {home}，但不是本安装 Rooter Home。",
+            error_code="staff_number_history_unregistered",
+            details={"staff_number": label, "agent_id": home, "project_id": project_id},
+        )
+    try:
+        project = registry.read(project_id)
+    except (CliError, RegistryProblem):
+        return
+    if home not in set(project.get("homes") or []):
+        raise CliError(
+            f"员工号 {label} 映射到未登记 Home {home}；不能当普通未绑定目标。",
+            error_code="staff_number_history_unregistered",
+            details={"staff_number": label, "agent_id": home, "project_id": project_id},
+        )
 
 
 def _cross_project_target_lookup(
@@ -2742,11 +2803,13 @@ def execute(
     *,
     installation_path: Path | None = None,
 ) -> Any:
-    if args.command == "cat":
-        return execute_cat(args, RestClient(args.url, service="CAT"), text_arg)
     resolved_installation_path = installation_path or resolve_installation_path(
         getattr(args, "installation_file", None)
     )
+    _resolve_staff_number_recipients(args)
+    _validate_resolved_identity_subject(args, registry, resolved_installation_path)
+    if args.command == "cat":
+        return execute_cat(args, RestClient(args.url, service="CAT"), text_arg)
 
 
     if args.command == "install":
@@ -3117,7 +3180,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     x.add_argument("project_id")
     recipients = x.add_mutually_exclusive_group(required=True)
-    recipients.add_argument("--to", action="append", help="Exact target Agent id; repeatable")
+    recipients.add_argument("--to", action="append", help="Global staff number Sxxx or exact Home id; repeatable")
     recipients.add_argument("--broadcast", action="store_true")
     x.add_argument("--subject", required=True)
     x.add_argument("--body", required=True, help=BODY_HELP)
@@ -3126,7 +3189,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="human",
         choices=["human", "system", "coordinator", "agent", "external"],
     )
-    x.add_argument("--sender-id")
+    x.add_argument("--sender-id", help="Global staff number Sxxx or exact sender Home id")
     x.add_argument("--message-id")
     x.add_argument(
         "--activate",
@@ -3278,7 +3341,7 @@ def build_parser() -> argparse.ArgumentParser:
     peers = sub.add_parser(
         "peers",
         help="Find registered Project colleagues (TEAM role, TODO) plus installation Rooter without probing",
-        epilog="Example: paos peers 3002 3002-s001; send via agent send 3002 --to 3002-s002, or --to rooter-001. Read TEAM.md for roles not shown.",
+        epilog="Example: paos peers 3002 S032; send via agent send 3002 --to S029, or --to S035 (Rooter). Read TEAM.md for roles not shown.",
     )
     peers.add_argument("project_id")
     peers.add_argument("agent_id")
@@ -3289,7 +3352,7 @@ def build_parser() -> argparse.ArgumentParser:
     team = sub.add_parser(
         "team",
         help="Read registered Project team, TEAM roles and separately registered installation Rooter",
-        epilog="Example: paos team 3002 3002-s001; TEAM.md owns expertise; the installation Rooter is listed separately. Contact is not live availability.",
+        epilog="Example: paos team 3002 S032; TEAM.md owns expertise; the installation Rooter is listed separately. Contact is not live availability.",
     )
     team.add_argument("project_id")
     team.add_argument("agent_id")
@@ -3313,18 +3376,18 @@ def build_parser() -> argparse.ArgumentParser:
             "intent only (no inline wake). With --remind: also send one native reminder via Contact/"
             "runtime_injection; no polling or retry."
         ),
-        epilog=("Example: paos agent send 3002 --to rooter-001 --sender-kind agent "
-                "--sender-id 3002-s001 --subject '安装协助' --body @request.md "
+        epilog=("Example: paos agent send 3002 --to S035 --sender-kind agent "
+                "--sender-id S032 --subject '安装协助' --body @request.md "
                 "--message-id unique-001 --remind. First positional Project is sender context; "
-                "the target Home may be another Project or installation Rooter. "
-                "Mail saved != reminder accepted != task completed."),
+                "Sxxx is resolved through the installation staff registry; the target may be "
+                "another Project or installation Rooter. Mail saved != reminder accepted != task completed."),
     )
     x.add_argument("project_id")
     recipients = x.add_mutually_exclusive_group(required=True)
     recipients.add_argument(
         "--to",
         action="append",
-        help="Exact stable Agent id; repeatable",
+        help="Global staff number Sxxx or exact Home id; repeatable",
     )
     recipients.add_argument(
         "--broadcast",
@@ -3342,7 +3405,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="human",
         choices=["human", "system", "coordinator", "agent", "external"],
     )
-    x.add_argument("--sender-id")
+    x.add_argument("--sender-id", help="Global staff number Sxxx or exact sender Home id")
     x.add_argument("--message-id", help="Stable idempotency key for the whole Agent message")
     x.add_argument(
         "--remind",
@@ -3357,7 +3420,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     x.add_argument("project_id")
     x.add_argument("--room", required=True, help="CAT Room id with activation_owner=paos")
-    x.add_argument("--to", required=True, help="Exact stable target Agent id")
+    x.add_argument("--to", required=True, help="Global staff number Sxxx or exact Home id")
     x.add_argument("--body", required=True, help=CAT_BODY_HELP)
     x.add_argument("--from-agent", help="Stable sender Agent id; omit for human")
     x.add_argument("--message-id", help="Stable idempotency key for CAT send + Agent activation")
@@ -3389,7 +3452,7 @@ def build_parser() -> argparse.ArgumentParser:
         dest="agents",
         action="append",
         help=(
-            "Optional exact stable Agent expected from the durable source. "
+            "Optional global staff number Sxxx or exact Home expected from the durable source. "
             "Repeatable for Mail; CAT accepts at most one."
         ),
     )
@@ -3465,7 +3528,7 @@ def build_parser() -> argparse.ArgumentParser:
     x = mails.add_parser("send", help="Persist targeted or broadcast Workstation Mail")
     x.add_argument("project_id")
     recipients = x.add_mutually_exclusive_group(required=True)
-    recipients.add_argument("--to", action="append", help="Exact Agent ID; repeatable")
+    recipients.add_argument("--to", action="append", help="Global staff number Sxxx or exact Home ID; repeatable")
     recipients.add_argument(
         "--broadcast",
         action="store_true",
@@ -3482,7 +3545,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="human",
         choices=["human", "system", "coordinator", "agent", "external"],
     )
-    x.add_argument("--sender-id")
+    x.add_argument("--sender-id", help="Global staff number Sxxx or exact sender Home id")
     x.add_argument("--message-id", help="Stable idempotency key for retry")
     x.add_argument("--root")
 
@@ -3596,7 +3659,7 @@ def build_parser() -> argparse.ArgumentParser:
     x = prs.add_parser("register", help="Register one existing OB project root and Coordinator Home; never overwrite")
     x.add_argument("project_id")
     x.add_argument("--root", required=True, help="Existing absolute project vault directory")
-    x.add_argument("--coordinator", required=True, help="Current Coordinator Home ID, e.g. 3002-s010")
+    x.add_argument("--coordinator", required=True, help="Current Coordinator global staff number or Home ID, e.g. S010")
     x.add_argument("--home", action="append", help="Additional registered Home ID; repeatable")
     x = prs.add_parser("home-add", help="Append one Home to an existing registration; preserve root and Coordinator")
     x.add_argument("project_id")

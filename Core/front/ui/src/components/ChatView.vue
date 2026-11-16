@@ -84,8 +84,14 @@ export default {
     name(id) {
       if (id==='human') return 'Human';
       const member=this.state?.members.find(item=>item.home_id===id);
-      if (member?.label && member.label!==id) return member.label;
-      return this.people.find(person=>person.id===id)?.name || member?.label || id;
+      const person=this.people.find(item=>item.id===id);
+      const label=member?.label && member.label!==id ? member.label : '';
+      const name=person?.name && person.name!==id ? person.name : '';
+      const number=person?.number || '';
+      const suffix=label || name;
+      if (number) return suffix && !suffix.includes(number) ? number+' · '+suffix : (suffix || number);
+      if (suffix) return '未编号 · '+suffix;
+      return '员工资料未补齐';
     },
     avatar(id) {
       if (id==='human') return '你';

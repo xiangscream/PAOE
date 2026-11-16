@@ -103,9 +103,9 @@ class StageTwoDiscoveryTests(unittest.TestCase):
 
     def test_cli_help_has_contact_routes_and_library_source_semantics(self):
         for args, terms in [
-            (("peers", "--help"), ("TEAM.md", "rooter-001", "no native probe")),
+            (("peers", "--help"), ("TEAM.md", "S035", "no native probe")),
             (("team", "--help"), ("TEAM.md", "Rooter", "no native probe")),
-            (("agent", "send", "--help"), ("sender context", "rooter-001", "--remind")),
+            (("agent", "send", "--help"), ("sender context", "S035", "--remind")),
             (("library", "search", "--help"), ("source_path", "source_locator", "--kind")),
             (("library", "tools", "--help"), ("installed", "authorized")),
         ]:
@@ -117,6 +117,18 @@ class StageTwoDiscoveryTests(unittest.TestCase):
                 for term in terms:
                     self.assertIn(term, result.stdout)
 
+
+    def test_rooter_hints_follow_installation_staff_mapping(self):
+        numbers = self.f.root / 'numbers.json'
+        numbers.write_text(json.dumps({
+            '3002-s001': 'S001', '3002-s002': 'S002', 'rooter-001': 'S099',
+        }), encoding='utf-8')
+        install = json.loads(self.f.install.read_text(encoding='utf-8'))
+        install['agent_numbers_config'] = str(numbers)
+        self.f.install.write_text(json.dumps(install), encoding='utf-8')
+        support = self.f.call('peers', '3002', 'S001')[1]['installation_support'][0]
+        self.assertIn('--to S099', support['send_hint'])
+        self.assertIn('wake status rooter S099', support['contact_hint'])
 
     def test_team_and_peers_summary_is_explicit_compact_and_lossless_for_lookup(self):
         team = self.f.vault / "TEAM.md"
