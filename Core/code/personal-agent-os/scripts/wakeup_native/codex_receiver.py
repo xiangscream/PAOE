@@ -6,15 +6,19 @@ tool proxy, thread selector, model override, consumer, or automatic resend.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import hmac
 import json
+import ntpath
 import os
+import re
 import secrets
 import sys
 import time
 import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.client import HTTPException
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 
@@ -41,17 +45,26 @@ def _native_status(value):
     return "unrecognized"
 
 
+def desktop_connection_identity(pipe):
+    """Compare captured Windows pipe locators without publishing the locator."""
+    return "sha256:" + hashlib.sha256(ntpath.normcase(pipe).encode("utf-8")).hexdigest()
+
+
 class SelfReminder:
-    def __init__(self, client, session_id, stop_file, process_identity=None):
+    def __init__(self, client, session_id, stop_file, process_identity=None, desktop_connection_id=None):
         self.client = client
         self.session_id = session_id
         self.stop_file = Path(stop_file)
         self.process_identity = process_identity
+        self.desktop_connection_id = desktop_connection_id
 
     def status(self):
         """Return only the authenticated target's own session/instance proof."""
-        return {"session_id": self.session_id, "pid": os.getpid(),
-                "process_identity": self.process_identity}
+        result = {"session_id": self.session_id, "pid": os.getpid(),
+                  "process_identity": self.process_identity}
+        if self.desktop_connection_id is not None:
+            result["desktop_connection_id"] = self.desktop_connection_id
+        return result
 
     @classmethod
     def from_desktop(cls, stop_file):
@@ -59,7 +72,8 @@ class SelfReminder:
         pipe = os.environ.get("CODEX_APP_TOOLS_PIPE_PATH", "").strip()
         if not session or not pipe:
             raise ReceiverError("codex_caller_unavailable", "Start from the target's own Codex Desktop environment", 503)
-        return cls(DesktopPipeClient(pipe, session), session, stop_file)
+        return cls(DesktopPipeClient(pipe, session), session, stop_file,
+                   desktop_connection_id=desktop_connection_identity(pipe))
 
     def send(self, payload, *, observe=None):
         """Validate exact self-thread + STOP *before* native submission.
@@ -292,6 +306,55 @@ def verified_owned_runtime(runtime_file, reminder):
             or reminder.stop_file.exists()):
         raise ReceiverError("legacy_receiver_unverified", "Legacy authenticated identity changed or is unavailable; keep registration", 503)
     return original, old, process
+
+
+def reusable_owned_runtime(runtime_file, stop_file):
+    """Reuse a verified current connection, or retire a verified old connection.
+
+    PID readiness is not Desktop connection readiness. Only a real Owner
+    environment can prove the replacement connection; no business send occurs.
+    """
+    reminder = SelfReminder.from_desktop(stop_file)
+    target = {"runtime": "codex", "session_id": reminder.session_id, "stop_file": str(reminder.stop_file),
+              "extension": {"receiver_runtime_file": str(runtime_file)}}
+    with _native_lock(target):
+        if reminder.stop_file.exists():
+            raise ReceiverError("native_stopped", "Original STOP prevents receiver prepare")
+        view = _codex_receiver_view(target)
+        if (view["state"] in {"process_not_running", "process_identity_mismatch", "runtime_file_missing"}
+                or view.get("reason") == "legacy_identity_unverified"):
+            return None
+        if view.get("prepared") is not True:
+            raise ReceiverError("receiver_connection_unknown", "Own receiver instance is unverified; keep registration", 503)
+        original = runtime_file.read_bytes()
+        old = json.loads(original)
+        try:
+            status, code = _request({"timeout_seconds": 2}, old["endpoint"], "GET", "/status", token=old["token"])
+            if (code != 200 or not isinstance(status, dict)
+                    or status.get("session_id") != reminder.session_id or status.get("pid") != old["pid"]
+                    or status.get("process_identity") != old["process_identity"]):
+                raise ReceiverError("receiver_connection_unknown", "Receiver identity response does not match registration", 503)
+            connection = status.get("desktop_connection_id")
+            if not isinstance(connection, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", connection):
+                raise ReceiverError("receiver_connection_unknown", "Receiver lacks connection identity; Owner must load accepted code with --update-current", 503)
+            current = reminder.client.thread_status(reminder.session_id)
+        except (OSError, EOFError, RuntimeError, ValueError, UnicodeError, HTTPException) as exc:
+            if isinstance(exc, ReceiverError):
+                raise
+            raise ReceiverError("receiver_connection_unknown", f"Own connection proof unavailable ({type(exc).__name__}); keep registration", 503) from exc
+        if current not in {"active", "idle", "notLoaded"}:
+            raise ReceiverError("receiver_connection_unknown", "Current Owner Desktop state is unavailable; keep registration", 503)
+        if reminder.stop_file.exists():
+            raise ReceiverError("native_stopped", "Original STOP prevents receiver prepare")
+        if runtime_file.read_bytes() != original:
+            raise ReceiverError("receiver_connection_unknown", "Receiver registration changed; keep it unchanged", 503)
+        if hmac.compare_digest(connection, reminder.desktop_connection_id):
+            return old["pid"]
+        verified, _, process = verified_owned_runtime(runtime_file, reminder)
+        if verified != original:
+            raise ReceiverError("receiver_connection_unknown", "Receiver registration changed before retirement", 503)
+        stop_windows_instance(old["pid"], process["identity"])
+        return None  # Normal prepare archives the exact retired grant and starts with the current environment.
 
 
 def retire_owned_runtime(runtime_file, stop_file):

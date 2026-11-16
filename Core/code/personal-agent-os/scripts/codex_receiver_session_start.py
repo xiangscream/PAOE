@@ -13,13 +13,13 @@ import sys
 from datetime import datetime, timezone
 
 from paos_attention_service import AttentionServiceProblem, _registry_projects_root
-from paos_contact import _codex_receiver_view, load_native_targets
+from paos_contact import load_native_targets
 from paos_home import HomeProblem, project_agent_home, rooter_home
 from paos_installation import InstallationProblem, load_installation_descriptor, resolve_installation_path
 from paos_registry import ProjectRegistry
 from paos_workstation import WorkstationProblem, posix_windows_drive_locator
 from runtime_injection import InjectionError
-from wakeup_native.codex_receiver import ReceiverError, retire_owned_runtime
+from wakeup_native.codex_receiver import ReceiverError, reusable_owned_runtime, retire_owned_runtime
 
 
 def registered_target(thread_id, descriptor):
@@ -89,9 +89,9 @@ def prepare_current(*, event=None, update=False):
     if update:
         retire_owned_runtime(runtime, stop)
     elif runtime.exists():
-        view = _codex_receiver_view(target)
-        if view.get("prepared") is True:
-            return f"receiver_prepare_reused: {home['home_id']} PID {view['pid']}; original receiver unchanged."
+        pid = reusable_owned_runtime(runtime, stop)
+        if pid is not None:
+            return f"receiver_prepare_reused: {home['home_id']} PID {pid}; original receiver unchanged."
     scripts = Path(posix_windows_drive_locator(descriptor["source_root"])) / "scripts"
     runtime.parent.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -125,7 +125,8 @@ def main():
             message = prepare(event)
     except (OSError, UnicodeError, ValueError, KeyError, HomeProblem, InstallationProblem,
             AttentionServiceProblem, WorkstationProblem, ReceiverError, InjectionError) as exc:
-        message = f"receiver_prepare_unavailable: {exc}"
+        detail = f"{exc.code}: {exc}" if isinstance(exc, ReceiverError) else str(exc)
+        message = f"receiver_prepare_unavailable: {detail}"
         exit_code = 1 if args.prepare_current or args.update_current else 0
     print(json.dumps({"systemMessage": message}, ensure_ascii=False))
     return exit_code

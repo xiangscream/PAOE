@@ -6,7 +6,9 @@
 
 由目标本人从 Codex Desktop 正常提供的原生工具环境执行人工 prepare：使用已安装 Windows Python，工作目录为安装 Source 的 `scripts`，运行 `python -X utf8 -B codex_receiver_session_start.py --prepare-current`。本入口沿 installation、registry 和 Contact 唯一定位调用者本人的 Home，读取已登记 Python、运行文件和 STOP；不接收目标、pipe 或身份覆盖参数，也不读取伪造的 Hook 事件。
 
-人工 prepare、真实 SessionStart 和 UserPromptSubmit 共用环境、Home、STOP 校验及同一启动段。正常 prepare 先读已有接收器的正式实例状态；已核 prepared 的本人实例直接返回 `receiver_prepare_reused`，不创建子进程或准备日志。需要启动时使用 `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB`，标准输入关闭，stdout/stderr 仍留原运行文件旁。`CREATE_NO_WINDOW` 只隐藏控制台；当宿主 Job 允许 breakaway 时，第二个标志使新接收器脱离该工具 Job。[Microsoft 进程创建标志](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)及[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)说明了这一机制。
+人工 prepare、真实 SessionStart 和 UserPromptSubmit 共用环境、Home、STOP 校验及同一启动段。正常 prepare 先读已有接收器的正式实例状态；prepared的本人实例还须通过鉴权/status核对实例和捕获连接标记，并从当前Owner的Desktop连接只读确认本人状态。连接相同且当前本人状态有效时返回 `receiver_prepare_reused`，不创建子进程或准备日志。需要启动时使用 `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB`，标准输入关闭，stdout/stderr 仍留原运行文件旁。`CREATE_NO_WINDOW` 只隐藏控制台；当宿主 Job 允许 breakaway 时，第二个标志使新接收器脱离该工具 Job。[Microsoft 进程创建标志](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)及[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)说明了这一机制。
+
+旧receiver仍活而当前Owner连接已更换时，正常prepare在原锁内用既有精确启动调用、OS实例与鉴权空消息拒绝核本人旧服务，再经原Windows实例停止入口退休它；随后同一正常启动段沿原locator归档旧登记并加载当前Owner环境。未知、STOP、身份变化或当前Desktop连接无法核定时保留原服务，明确报receiver_connection_unknown，不回退或循环重试。逐次打开旧pipe不等于其名称会更新。
 
 宿主拒绝创建时只尝试一次，输出 `receiver_prepare_unavailable` 及原错误，人工命令以非零状态退出；不改 Job 策略，不重试或换启动路径。环境缺失、未登记、歧义或 STOP 仍明确停止。创建成功只报告启动器 PID；随后读正式 `wake status` 确认就绪。正常 prepare 与 SessionStart 不替换健康实例，登记迁移也不加载新代码。
 
@@ -34,7 +36,9 @@ Installed communication details are documented in System/Guide; this receiver on
 
 一次提醒明确区分receiver_offline（陈旧死进程或连接明确拒绝）、receiver_not_prepared（未登记/无有效grant）、native_busy、native_stopped、native_rejected与delivery_uncertain。使用协议error_code而非错误字符串猜状态；Windows子回执和两CLI保留原因、负责Owner、动作及retry=false。未知仍accepted=null，不自动换路或重发。
 
-`GET <endpoint>/status`，请求头同样是 `Authorization: Bearer <本人入口授权>`，只返回 `session_id`、目标自身 `pid` 和 `process_identity`；不读取消息、Desktop、token 或调用方凭据。`POST <endpoint>/send`，请求头 `Authorization: Bearer <本人入口授权>`，JSON 恰为 `{"session_id":"<目标本人>","message":"<一次提醒>"}`。两者都在原生调用前拒绝错目标；`/send` 成功回执还带同一 `process_identity`，供发送方确认状态核验与提交仍是同一 OS 实例。多余字段、空消息或不匹配身份都拒绝；不接受 model/caller/tool/method/pipe 参数。调用方不持有 Desktop 凭据，不能向入口索取历史或调用其他工具。
+`GET <endpoint>/status`，请求头同样是 `Authorization: Bearer <本人入口授权>`，返回 `session_id`、目标自身 `pid`、`process_identity`及已加载的`desktop_connection_id`；不读取消息、Desktop、token 或调用方凭据。连接标记由receiver实际捕获的Windows pipe定位作规范化后计算不可逆摘要，只用于与当前Owner定位比较，不代替鉴权或OS实例验证，不公开原始pipe。私有运行文件格式保持原样。旧服务缺连接标记时返回明确unknown，由原Owner按已接受代码正常`--update-current`一次加载，不手工补grant字段。
+
+`POST <endpoint>/send`，请求头 `Authorization: Bearer <本人入口授权>`，JSON 恰为 `{"session_id":"<目标本人>","message":"<一次提醒>"}`。两者都在原生调用前拒绝错目标；`/send` 成功回执还带同一 `process_identity`，供发送方确认状态核验与提交仍是同一 OS 实例。多余字段、空消息或不匹配身份都拒绝；不接受 model/caller/tool/method/pipe 参数。调用方不持有 Desktop 凭据，不能向入口索取历史或调用其他工具。
 
 目标状态明确为active、idle或notLoaded时，入口向既有 `send_message_to_thread` 提交一次已授权提醒；未知状态仍在提交前拒绝。它不传queue、model或设置覆盖，宿主决定如何处理跟进。成功为 HTTP 200、`accepted:true`、准确 `session_id`、`completed:false`，并含 `native_status_before_submit`。该字段只是提交前观察，不保证加入当前turn或下一turn排队。[官方提示说明](https://learn.chatgpt.com/docs/prompting#steering-and-queuing)区分两者；App Server的turn/steer不是本入口调用合同。
 
