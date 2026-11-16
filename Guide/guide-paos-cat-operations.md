@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 95
+version: 96
 ---
 
 # PAOS 操作指南
@@ -90,19 +90,19 @@ S号寻址和跨Project参数查安装 `agent send --help`。普通消息使用�
 
 ### Codex 目标上线准备
 
-正式入职或配置由登记方通过正常 `wake bind` 一次补完整目标配置；需要显式配置时按同版 help 使用可选 `--driver-config`。Windows 补默认定位并保留显式定位与 STOP；非 Windows 使用已有或明确的 Windows 定位。
+正式入职或换Runtime时，通过正常 `wake bind` 一次补完整Contact。恢复沿原Home、Thread、模型和STOP，不重复绑定或复制同事凭据；配置缺项按同版帮助修准确登记。
 
-目标本人从原 Desktop 环境 prepare，只读 Contact 并启动自己的入口。配置缺项交回正式登记入口补齐；多人恢复不改共享 Contact。WSL 发送按已登记的 Windows 执行入口一次 stdin 交接，不在失败后改走另一条路径。
+安装人用一份用户级定义，将安装Source的 `scripts/codex_receiver_session_start.py` 接入SessionStart的startup/resume及UserPromptSubmit。目标本人须从原Desktop环境接收真实事件；脚本沿installation、Registry和Contact定位本人，不含逐Agent参数，不读取或转发prompt。新员工完成正常Home/Contact登记后复用该定义。
 
-普通发信仍用 `agent send --remind`，调用者不用查 pipe、PID或端口。健康接收器只在行为代码需要更新时由本人加载。纯版本公告向未启动入口只留持久通知；需要实际接续的业务仍按当前项目 `AGENTS.md` 的公共运行区办理。
+正常准备会核本人进程实例、已鉴权接收器和其实际捕获的Desktop连接。同一有效连接复用；宿主连接已更换时，沿已确认本人的恢复路径处理。缺连接证明、查询未知、外Thread或STOP按准确错误保留，由原Owner维护，不凭进程存活判断连接有效。
 
-原会话、模型和 STOP 保持；发送者不借目标 pipe、token 或身份，也不自行启动同事服务。启动条件及配置正文见**当前安装的** `source_root/docs/CODEX-SELF-REMINDER.md`（先用 `paos install show` 获取 `source_root`，不使用旧电脑绝对路径）。运行文件存在不等于进程存活；缺失或离线如实记录。生命周期日志帮助定位后续退出，不自动重启、不把 prepared 称为送达。
+需要人工恢复时，本人从当前安装Source的scripts目录执行 `python -X utf8 -B codex_receiver_session_start.py --prepare-current`。旧接收器缺本版连接证明，或需要载入新的接收行为时，使用同一入口的 `--update-current`；它只管理已核本人的原实例，保留原locator与STOP。健康且对应当前Desktop的实例不需要反复重载。
 
-本人正常prepare在原锁下仅归档同Thread、正向已死或正向身份失配的登记，再发布新入口；不终止同号无关进程，不手改grant或rebind。缺实例字段的旧活receiver先核OS精确启动合同：runtime-file与目标stop-file都须按规范化路径或samefile核为同一位置，再核既有授权空消息拒绝，保留旧原件并原子补身份，保持原服务与token；不能只回填当前PID。任一路径无法核定则unknown，不发迁移探测。实例相符的活服务、查询未知、外Thread与STOP不覆盖。旧迁移验证不调用模型，失败保留旧登记；细节读已安装接收器说明。统一用户级SessionStart已正常安装，沿既有installation/registry/Contact定位本人Home，不需逐员工复制Hook；新员工仍需完成正常Home/Contact登记。自动准备须由原Owner确认正常review/trust及真实startup/resume继承本人环境后才算采用。定义文件、信任记录和prepared状态不能代替真实恢复结果；现场采用进度读已安装接收器说明所指的原记录。正常审阅入口与定义见上述已安装说明，不写信任缓存或绕策略。
+当前采用记录分别说明：脚本版本、精确定义的正常review/trust、真实事件触发、本人 `wake status` 和实际消费。安装定义由Rooter维护；本人接收器仍由所属Desktop环境准备。Source已更新、旧信任记录或prepared只说明相应一层的事实。正常审阅走宿主支持入口，不写信任缓存或绕策略。
 
-接收器行为代码需要重新加载时，由本人从相同Desktop工具环境、安装Source的`scripts`目录运行`python -X utf8 -B codex_receiver_session_start.py --update-current`。入口只管理已确认本人的旧实例，在原锁下核self/Thread、runtime-file/stop-file、OS实例和既有鉴权；停止前再核同一Windows进程句柄。STOP、未知、外Thread或身份变化不停止。旧登记由正常prepare归档，新实例沿原locator启动。随后读正式`wake status`的已核新实例、`prepared=true`与`receiver_behavior=native_followup`确认加载；只迁登记、只看启动器PID或源码已更新均不代替它。只更新受接收器行为影响的实例，不由Rooter代管，也不要求操作者拼终止命令。正常prepare与SessionStart仍不替换健康实例。
+普通发送仍用 `agent send --remind`，调用方不用查pipe、PID、端口或替同事启动服务。Desktop离线时保留持久消息并报告不可达，不自动启动Harness、不重放旧请求。Windows/WSL调用沿登记的正常入口，不在失败后改走另一条路。
 
-Core/bridge 的独立运行由 Rooter 和运行维护者处理；本人接收器依赖所属 Harness。关闭 Harness 后的可用条件分别记录，不能把 Core 在线当作目标会话在线。
+精确启动、连接比对、旧实例处理和退出记录读当前安装的 `source_root/docs/CODEX-SELF-REMINDER.md`；Source定位取 `paos install show`，不沿旧电脑路径读取。实际接续按当前项目AGENTS处理。
 
 ## CAT 圆桌
 
