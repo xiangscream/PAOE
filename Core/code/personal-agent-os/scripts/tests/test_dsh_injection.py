@@ -176,12 +176,14 @@ class DshInjectionTests(unittest.TestCase):
         self.assertEqual(contact["receiver"]["state"], "receiver_heartbeat_unknown")
         self.assertFalse(contact["receiver"]["prepared"])
         self.assertEqual(contact["receiver"]["reason"], "heartbeat_missing")
+        self.assertNotIn("由正常 DSH 工位 bind 登记", contact["receiver"]["next_action"])
         self.write_record(heartbeatAt="not-a-timestamp")
         contact = runtime_contact(project_root, "agent")
         self.assertEqual(contact["receiver"]["state"], "receiver_heartbeat_unknown")
         self.assertFalse(contact["receiver"]["prepared"])
         self.assertEqual(contact["receiver"]["reason"], "heartbeat_invalid")
         self.assertIsNone(contact["receiver"]["record_fresh"])
+        self.assertNotIn("由正常 DSH 工位 bind 登记", contact["receiver"]["next_action"])
 
     def test_stop_prevents_any_receiver_access(self):
         stop = self.root / "STOP"
@@ -345,6 +347,10 @@ class DshInjectionTests(unittest.TestCase):
         self.assertEqual(contact["runtime"], "dsh")
         self.assertEqual(contact["receiver"]["state"], "receiver_record_present")
         self.assertTrue(contact["receiver"]["prepared"])
+        self.assertEqual(contact["receiver"]["reason"], "")
+        self.assertEqual(contact["receiver"]["next_action"], "")
+        self.assertIsNone(contact["receiver"]["repair_owner"])
+        self.assertNotIn("receiver_file_not_registered", json.dumps(contact))
         self.assertTrue(contact["receiver"]["secret_registered"])
         self.assertTrue(contact["receiver"]["secret_present"])
         self.assertFalse(contact["native_cancel_supported"])
