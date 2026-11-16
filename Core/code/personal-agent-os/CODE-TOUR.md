@@ -55,8 +55,10 @@ external Runtime, and a successful transport receipt is **not** task completion.
    `build_parser`, then `main`, before reading the middle of its large file.
 5. **External execution:** `paos_contact.py`, `paos_wakeup.py`,
    `runtime_injection.py`, `wakeup_native/codex_receiver.py`. Trace STOP,
-   caller identity and the uncertain-delivery case. Do not call it in a real
-   Desktop session while learning unless explicitly authorized.
+   caller identity and the uncertain-delivery case. DSH is the loopback
+   `wake-receiver` path; Codex/WorkBuddy retain their own transports. Do not
+   call it in a real Desktop session while learning unless explicitly
+   authorized.
 
 ## Source modules by responsibility
 
@@ -74,7 +76,7 @@ external Runtime, and a successful transport receipt is **not** task completion.
 | `paos.py` team/peers `--summary` | Explicit compact structured roster for colleague lookup | Default full JSON/text unchanged; summary omits history and points to original paths |
 | `paos_cat_cli.py`, `paos_cat_activation.py`, `paos_external_contact.py` | Explicit CAT/cross-agent communication adapter | No implicit CAT server |
 | `paos_contact.py`, `paos_contact_package.py`, `paos_wakeup.py` | Registered native target, STOP, wake handling | Unknown delivery is not a negative receipt |
-| `runtime_injection.py`, `codex_receiver_session_start.py` | One explicit native submission and own-session preparation | Never borrow another Home's thread/token |
+| `runtime_injection.py`, `codex_receiver_session_start.py` | One explicit native submission (including DSH loopback) and own-session preparation | Never borrow another Home's thread/token or copy a receiver secret into Contact |
 | `paos_cat_relay_windows.py`, `paos_cat_relay_wsl_client.py` | Explicit Windows/WSL CAT transport | No background poll or automatic fallback |
 | `wakeup_native/*.py`, `workbuddy_extension/*.cjs` | Codex/WorkBuddy native transport implementation | Run only in an authorized native environment |
 | `paos_backup.py`, `release_check.py` | Deliberate backup and release checks | Restore boundaries and source-only release checks differ |

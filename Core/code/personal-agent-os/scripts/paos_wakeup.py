@@ -153,6 +153,35 @@ def bind_wakeup(
         extension.setdefault("execution_environment", "windows")
         target["extension"] = extension
         target.setdefault("stop_file", previous.get("stop_file") or str(PureWindowsPath(extension["receiver_runtime_file"]).parent / "STOP"))
+    elif target["runtime"] == "dsh":
+        receiver_file = target.get("receiver_file")
+        if not isinstance(receiver_file, str) or not receiver_file.strip():
+            raise WakeProblem(
+                "wake_dsh_receiver_config_required",
+                "DSH bind 需要 driver-config.receiver_file；未保存不完整 Contact。",
+                {"agent_id": agent_id},
+            )
+        locator = receiver_file.strip()
+        if not (PureWindowsPath(locator).is_absolute() or Path(locator).expanduser().is_absolute()):
+            raise WakeProblem(
+                "wake_dsh_receiver_config_invalid",
+                "DSH receiver_file 必须是绝对路径；未保存 Contact。",
+                {"agent_id": agent_id},
+            )
+        mode = target.get("mode", "queue")
+        if mode not in {"queue", "steer"}:
+            raise WakeProblem(
+                "wake_dsh_mode_invalid",
+                "DSH mode 只能是 queue 或 steer；未保存 Contact。",
+                {"agent_id": agent_id, "mode": mode},
+            )
+        target["receiver_file"] = locator
+        target["mode"] = mode
+        previous = targets.get(agent_id) if isinstance(targets.get(agent_id), dict) else {}
+        if (previous.get("runtime") == "dsh"
+                and previous.get("session_id") == native_session_id
+                and not target.get("stop_file")):
+            target["stop_file"] = previous.get("stop_file")
     targets[agent_id] = target
     store = save_native_targets(root, targets)
     return {

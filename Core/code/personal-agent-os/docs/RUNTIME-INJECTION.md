@@ -21,10 +21,11 @@ receipt = inject(target, message)  # scripts 已在 Python 模块路径中
 | opencode v1 | `session_id`、`base_url`；原服务应已运行；`api_version`省略或为1 |
 | opencode v2 | `session_id`、`base_url`、`api_version:2`、`auth_file`；使用已启动服务的正常Basic授权 |
 | workbuddy | `session_id`、`runtime_file`；正常加载的本地扩展须已授权该目标 |
+| dsh | `session_id`、`receiver_file`、可选 `mode`（`queue`/`steer`）；DSH `wake-receiver` 已加载且固定 Session 的工作目录为项目根 |
 
-三者均可提供显式 `stop_file`。文件存在即停止发送；不从 Project 或 Work 推导停止路径。OpenCode/WorkBuddy HTTP 可用 `timeout_seconds` 设置原生调用超时，默认 30 秒。Windows locator 在 WSL 按已有路径解析合同处理。
+四者均可提供显式 `stop_file`。文件存在即停止发送；不从 Project 或 Work 推导停止路径。OpenCode/WorkBuddy/DSH HTTP 可用 `timeout_seconds` 设置原生调用超时，默认 30 秒。Windows locator 在 WSL 按已有路径解析合同处理。
 
-默认省略模型参数，继承目标当前选择。只有 Human 明确指定时才给 `inject(..., model=...)` 或输入 JSON 的 `model`：Codex/WorkBuddy 为原生模型名字符串，OpenCode v1为含 `providerID` 与 `modelID` 的对象。v2.0.32的单条prompt不接受模型参数；本工具遇到显式模型参数会拒绝，不额外调用持久化模型切换接口。
+默认省略模型参数，继承目标当前选择。只有 Human 明确指定时才给 `inject(..., model=...)` 或输入 JSON 的 `model`：Codex/WorkBuddy 为原生模型名字符串，OpenCode v1为含 `providerID` 与 `modelID` 的对象。OpenCode v2 与 DSH 的单条prompt不接受模型参数；本工具遇到显式模型参数会拒绝，不额外调用持久化模型切换接口。
 
 `paos wake trigger <project> <home> --model MODEL` 使用同一合同。OpenCode 必须传一个完整 JSON 参数，不能传 `provider/model` 字符串。Bash/WSL 示例（替换 Project、Home 和现存消息路径，仅在 Human 已指定该模型时执行）：
 
@@ -35,13 +36,33 @@ paos wake trigger <project> <home> --prompt @<message-file> \
 
 Codex/WorkBuddy 的 `--model` 值是各自的原生模型名字符串，不使用上述 OpenCode 对象。其他 Shell 也须将整个 JSON 保留为一个参数；上例的引用方式适用于 Bash/WSL。
 
-受理结果含 `accepted:true`、`runtime` 和 `session_id`。Codex正常接收器还返回 `native_status_before_submit`，只表示提交前观察；OpenCode v1含原生 `http_status:204`，v2为200并返回已关联的`message_id`和原生`native_disposition`（steer或queue）；WorkBuddy含本次原生 `request_id` 与 `native_disposition`，不返回整段SDK内容。明确拒绝为 `InjectionError` / `accepted:false`；可能已发送但回执不明为 `InjectionUncertain` / `accepted:null`、`retry:false`。受理不代表业务消费或成果。
+受理结果含 `accepted:true`、`runtime` 和 `session_id`。Codex正常接收器还返回 `native_status_before_submit`，只表示提交前观察；OpenCode v1含原生 `http_status:204`，v2为200并返回已关联的`message_id`和原生`native_disposition`（steer或queue）；WorkBuddy含本次原生 `request_id` 与 `native_disposition`，不返回整段SDK内容；DSH含本次 `request_id`、`native_disposition` 与 `http_status:200`。明确拒绝为 `InjectionError` / `accepted:false`；可能已发送但回执不明为 `InjectionUncertain` / `accepted:null`、`retry:false`。受理不代表业务消费或成果。
 
 Codex正常接收器对明确active/idle/notLoaded向既有App Tools跟进入口提交一次，不因active预先拒绝，也不指定或保证steer/queue；模型与Follow-up设置沿Human。未知状态、STOP和实例核验保持。目标本人更新接收器及确认实际加载，读[本人接收器说明](CODEX-SELF-REMINDER.md)。OpenCode v1按原目录读会话与状态后提交一次prompt_async，204仅表示原生受理，不推定queue或完成；v2的发送与关联回执见下方接入说明。两者仍使用进程退出自动释放的互斥。WorkBuddy使用产品自身调用合同。
 
 WorkBuddy回环建立连接前明确被拒绝时，返回 `receiver_offline` / `receiver_connection_refused` / `accepted:false`。当前扩展在调用sendPrompt前返回的400/401/404为明确拒绝；SDK调用后502、连接超时/复位、响应丢失或关联回执不符仍是结果未知，不据此自动重发。S014等目标仍须取得产品支持的正常扩展安装与权限入口，错误分类不代替恢复。
 
+DSH 只从 receiver 发现文件读取 `url` 与 `secretFile`，secret 内容不写入 Contact、命令行、结果或 Git。目标必须是 `127.0.0.1` 回环；400/401/403/404/409/413 与 503 是明确拒绝（503 为 Session controller 未挂载），5xx（含 500）和连接超时/复位、回执丢失或身份不符均保持 unknown，不自动重发。409 `session/agent-busy` 表示另一写入者占用目标，不重试；接收器不创建 Session、不取消回合，STOP 只阻止后续发送，不能声称已停止运行中的回合。
+
 工具不自动重试、启动Runtime、保存attempt或观察模型完成，也不加载Project Store、Work或Notice。旧消息是否已处理由调用方在工位当前读面判断；既有拒绝和不确定回执保持原样，不因实现更新重放。
+
+## DSH 固定 Session 接入
+
+DSH 的 `wake-receiver` 插件在 DSH 进程内监听本机回环，并把一条消息准入到已有 Session。PAOE 只登记接收器发现文件和固定 Session，不保存 secret：
+
+```json
+{
+  "runtime": "dsh",
+  "session_id": "固定 DSH Session ID",
+  "receiver_file": "C:/Users/<you>/.dsh/wake-receiver/receiver.json",
+  "mode": "queue",
+  "stop_file": "C:/原目标的STOP路径"
+}
+```
+
+`receiver_file` 必须指向 DSH 正常写出的 `dsh-wake-receiver/v1` 记录；其中 `url` 只能为 `127.0.0.1` 回环，`secretFile` 由驱动在发送时读取。固定 Session 必须以项目根为 cwd 创建；绑错 cwd 会得到 `session/not-found`，本工具不自动创建或换 Session。`mode` 省略时为 `queue`，`steer` 只在目标会话正在运行时由 DSH 自身处理。
+
+一次提醒生成一个本次 `requestId`，随请求提交并在受理回执中核对。传输超时或回执丢失时保留该 ID 并返回 unknown；不自动重发，也不生成第二个 UUID 冒充同一次幂等提交。`paos wake status` 的 DSH `receiver` 视图只读发现文件、PID 与 heartbeat，不连接接收器；在线事实仍由 DSH 侧 `dsh_wake.py status` 或真实受理验证。
 
 ## OpenCode v2 Windows接入
 

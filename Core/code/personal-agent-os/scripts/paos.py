@@ -2280,10 +2280,24 @@ def execute_wake(
                 return {"ok": True, "schema": "paos-wake-action/v1", "action": "stop", "state": "not_configured", "agent_id": args.agent_id}
             stop_file = str(target.get("stop_file") or "").strip()
             if not stop_file:
-                return {"ok": True, "schema": "paos-wake-action/v1", "action": "stop", "state": "no_stop_file", "agent_id": args.agent_id}
+                result = {"ok": True, "schema": "paos-wake-action/v1", "action": "stop", "state": "no_stop_file", "agent_id": args.agent_id}
+                if target.get("runtime") == "dsh":
+                    result.update(
+                        native_cancel_supported=False,
+                        stop_effect="blocks_future_injections_only",
+                        note="DSH STOP 只阻止后续注入；接收器不支持取消已运行回合。",
+                    )
+                return result
             Path(stop_file).parent.mkdir(parents=True, exist_ok=True)
             Path(stop_file).write_text("PAOS explicit stop marker\n", encoding="utf-8")
-            return {"ok": True, "schema": "paos-wake-action/v1", "action": "stop", "state": "stopped", "agent_id": args.agent_id, "stop_file": stop_file}
+            result = {"ok": True, "schema": "paos-wake-action/v1", "action": "stop", "state": "stopped", "agent_id": args.agent_id, "stop_file": stop_file}
+            if target.get("runtime") == "dsh":
+                result.update(
+                    native_cancel_supported=False,
+                    stop_effect="blocks_future_injections_only",
+                    note="DSH STOP 只阻止后续注入；接收器不支持取消已运行回合。",
+                )
+            return result
         if args.wake_command == "test":
             return {"ok": True, "schema": "paos-wake-action/v1", "action": "test", "state": "retired", "note": "试唤醒退役；不额外发模型测试请求。"}
         if args.wake_command == "trigger":
@@ -3381,7 +3395,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     x.add_argument("project_id")
     x.add_argument("agent_id")
-    x.add_argument("--driver", required=True, help="原生 runtime 名（codex / opencode / workbuddy）")
+    x.add_argument("--driver", required=True, help="原生 runtime 名（codex / opencode / workbuddy / dsh）")
     x.add_argument("--runtime-id")
     x.add_argument("--native-session-id")
     x.add_argument(

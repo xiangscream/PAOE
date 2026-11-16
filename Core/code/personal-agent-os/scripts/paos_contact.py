@@ -229,6 +229,18 @@ def derive_attach(target: dict[str, Any]) -> dict[str, Any]:
             return {"driver": driver, "session_id": native_session_id, "command": command, "source": "derived_from_native_target"}
         missing = "base_url" if not base_url else "native_session_id"
         return {"driver": driver, "session_id": native_session_id, "command": None, "reason": f"binding_missing_{missing}", "source": "derived_from_native_target"}
+    if driver == "dsh":
+        return {
+            "driver": driver, "session_id": native_session_id, "command": None,
+            "reason": "attach_undefined_for_driver:dsh",
+            "manual_open": {
+                "native_session": native_session_id,
+                "command": None,
+                "note": ("在 DSH Web/客户端中打开工作目录为项目根的同一 Session；本读面不创建、"
+                         "不启动会话，也不提供未核定的 attach 命令。"),
+            },
+            "source": "derived_from_native_target",
+        }
     explicit_manual = str(details.get("manual_open") or "").strip()
     if explicit_manual and driver == "codex":
         manual_open = {
@@ -406,13 +418,104 @@ def _codex_receiver_view(target: dict[str, Any]) -> dict[str, Any]:
     return view
 
 
+def _dsh_receiver_view(target: dict[str, Any]) -> dict[str, Any]:
+    """Read DSH's receiver discovery file without reading its secret or probing HTTP."""
+    locator = str(target.get("receiver_file") or "").strip()
+    view: dict[str, Any] = {
+        "registered": bool(locator), "receiver_file": locator or None,
+        "file_state": "not_registered", "state": "not_registered", "prepared": False,
+        "schema": None, "pid": None, "pid_alive": None,
+        "heartbeat_at": None, "heartbeat_age_seconds": None, "record_fresh": None,
+        "secret_registered": False, "secret_present": None,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "reason": "receiver_file_not_registered", "repair_owner": "target_owner",
+        "next_action": "由正常 DSH 工位 bind 登记 receiver_file；保留原 Session/STOP。",
+    }
+    if not locator:
+        return view
+    path = Path(posix_windows_drive_locator(locator)).expanduser()
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        view.update(file_state="missing", state="receiver_record_missing",
+                    reason="receiver_record_missing",
+                    next_action="启动 DSH 并确认 wake-receiver 已加载；保留原 Session/STOP。")
+        return view
+    except (OSError, UnicodeError) as error:
+        view.update(file_state="unreadable", state="receiver_record_unreadable",
+                    reason=type(error).__name__)
+        return view
+    except ValueError:
+        view.update(file_state="invalid", state="receiver_record_invalid",
+                    reason="invalid_json")
+        return view
+    if not isinstance(record, dict) or record.get("schema") != "dsh-wake-receiver/v1":
+        view.update(file_state="invalid", state="receiver_record_invalid",
+                    reason="invalid_schema")
+        return view
+    url = record.get("url")
+    secret_file = record.get("secretFile")
+    if not isinstance(url, str) or not url.strip() or not isinstance(secret_file, str) or not secret_file.strip():
+        view.update(file_state="invalid", state="receiver_record_invalid",
+                    reason="missing_url_or_secret")
+        return view
+    try:
+        endpoint = urlsplit(url)
+        port = endpoint.port
+    except ValueError:
+        view.update(file_state="invalid", state="receiver_record_invalid",
+                    reason="invalid_endpoint")
+        return view
+    if (endpoint.scheme != "http" or endpoint.hostname != "127.0.0.1"
+            or not port or endpoint.username or endpoint.password
+            or endpoint.path not in {"", "/"} or endpoint.query or endpoint.fragment):
+        view.update(file_state="invalid", state="receiver_record_invalid",
+                    reason="receiver_endpoint_not_loopback")
+        return view
+    view.update(file_state="available", state="receiver_record_present",
+                prepared=True, schema=record.get("schema"), url=url)
+    pid = record.get("pid")
+    if type(pid) is int and 0 < pid <= 0xFFFFFFFF:
+        view["pid"] = pid
+        if os.name == "nt":
+            alive, _ = _local_pid_alive(pid)
+            view["pid_alive"] = alive
+    heartbeat = record.get("heartbeatAt")
+    if isinstance(heartbeat, str) and heartbeat.strip():
+        view["heartbeat_at"] = heartbeat
+        try:
+            observed = datetime.fromisoformat(heartbeat.replace("Z", "+00:00"))
+            if observed.tzinfo is None:
+                observed = observed.replace(tzinfo=timezone.utc)
+            age = max(0.0, (datetime.now(timezone.utc) - observed).total_seconds())
+            view["heartbeat_age_seconds"] = round(age, 1)
+            view["record_fresh"] = age <= 90
+            if age > 90:
+                view["state"] = "receiver_record_stale"
+                view["prepared"] = False
+                view["reason"] = "heartbeat_stale"
+        except (TypeError, ValueError):
+            view["record_fresh"] = None
+    view["secret_registered"] = True
+    secret_path = Path(posix_windows_drive_locator(secret_file)).expanduser()
+    view["secret_present"] = secret_path.is_file()
+    if not view["secret_present"]:
+        view.update(state="receiver_secret_missing", prepared=False,
+                    reason="secret_file_missing")
+    elif view.get("pid_alive") is False:
+        view.update(state="receiver_process_missing", prepared=False,
+                    reason="pid_not_alive")
+    return view
+
+
 def runtime_contact(root: Path, agent_id: str) -> dict[str, Any]:
     """Runtime contact facts for one Agent from its Contact native-target 项。
 
     Workless 语义：读面只反映已配置的本机原生 target（runtime/base_url/
     session_id/…）与显式 STOP 文件；不再报 attempt 状态，也不自动探测
     ——online/oracle 不由 PAOS 冒称， 失败与不可达如实返回。Codex接收入口
-    只读运行文件/PID准备事实，不连接入口、不发送提醒。缺失与损坏
+    只读运行文件/PID准备事实，不连接入口、不发送提醒。DSH接收器只读
+    discovery/PID/heartbeat，不读secret内容、不连接入口。缺失与损坏
     的 target 配置保持可见区别。
     """
     root = Path(root)
@@ -458,6 +561,12 @@ def runtime_contact(root: Path, agent_id: str) -> dict[str, Any]:
         contact["thread_registered"] = True
         contact["target_status"] = "thread_registered"
         contact["receiver"] = _codex_receiver_view(target)
+        if contact["receiver"].get("repair_owner") == "target_owner":
+            contact["receiver"]["repair_owner"] = agent_id
+    elif contact["runtime"] == "dsh":
+        contact["receiver"] = _dsh_receiver_view(target)
+        contact["native_cancel_supported"] = False
+        contact["stop_effect"] = "blocks_future_injections_only"
         if contact["receiver"].get("repair_owner") == "target_owner":
             contact["receiver"]["repair_owner"] = agent_id
     contact["attach"] = derive_attach(contact)

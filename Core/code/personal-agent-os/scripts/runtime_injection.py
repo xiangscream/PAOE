@@ -577,6 +577,210 @@ def _workbuddy(target, message, model):
     return {"request_id": request_id, "native_disposition": bridge.get("disposition") if isinstance(bridge, dict) else None}
 
 
+DSH_RECEIVER_SCHEMA = "dsh-wake-receiver/v1"
+DSH_MODES = frozenset({"queue", "steer"})
+
+
+def _dsh_config(target):
+    """Read the receiver discovery and owner-only secret without exposing either."""
+    raw = target.get("receiver_file")
+    if not isinstance(raw, str) or not raw.strip():
+        raise InjectionError(
+            "dsh target requires receiver_file", code="dsh_receiver_config_missing",
+            state="receiver_not_prepared",
+            next_action="原Owner核 DSH 接收器发现文件与私有 secret；保留原会话/STOP，不重发。",
+        )
+    path = Path(posix_windows_drive_locator(raw.strip())).expanduser()
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise InjectionError(
+            "dsh receiver record is missing", code="dsh_receiver_missing",
+            state="receiver_offline",
+            next_action="启动 DSH 并确认 wake-receiver 已加载；保留原会话/STOP，不重发。",
+        ) from exc
+    except (OSError, UnicodeError) as exc:
+        raise InjectionError(
+            "dsh receiver record is unreadable", code="dsh_receiver_unreadable",
+            state="receiver_not_prepared",
+        ) from exc
+    except ValueError as exc:
+        raise InjectionError(
+            "dsh receiver record is invalid JSON", code="dsh_receiver_invalid",
+            state="receiver_not_prepared",
+        ) from exc
+    if not isinstance(record, dict) or record.get("schema") != DSH_RECEIVER_SCHEMA:
+        raise InjectionError(
+            "dsh receiver record has an unsupported schema", code="dsh_receiver_invalid",
+            state="receiver_not_prepared",
+        )
+    url = record.get("url")
+    secret_file = record.get("secretFile")
+    if not isinstance(url, str) or not url.strip() or not isinstance(secret_file, str) or not secret_file.strip():
+        raise InjectionError(
+            "dsh receiver record is missing url or secretFile", code="dsh_receiver_invalid",
+            state="receiver_not_prepared",
+        )
+    try:
+        origin = _origin(url)
+    except ValueError as exc:
+        raise InjectionError(
+            "dsh receiver url must be an HTTP(S) origin", code="dsh_receiver_invalid",
+            state="receiver_not_prepared",
+        ) from exc
+    parsed = urlsplit(origin)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise InjectionError(
+            "dsh receiver url has an invalid port", code="dsh_receiver_invalid",
+            state="receiver_not_prepared",
+        ) from exc
+    if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not port:
+        raise InjectionError(
+            "dsh receiver must be a 127.0.0.1 loopback origin", code="dsh_receiver_invalid",
+            state="receiver_not_prepared",
+        )
+    secret_path = Path(posix_windows_drive_locator(secret_file.strip())).expanduser()
+    try:
+        secret = secret_path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise InjectionError(
+            "dsh receiver secret is unreadable", code="dsh_secret_unreadable",
+            state="receiver_not_prepared",
+            next_action="由原Owner恢复 DSH 私有 secret；不得把它写入 Contact 或命令参数。",
+        ) from exc
+    if len(secret) < 32:
+        raise InjectionError(
+            "dsh receiver secret is too short", code="dsh_secret_invalid",
+            state="receiver_not_prepared",
+        )
+    return origin, secret
+
+
+def _dsh(target, message, model):
+    """Submit one prompt to the DSH receiver; acceptance is not consumption."""
+    # A DSH wake inherits the target Session's current model. A one-shot model
+    # override would silently change a persistent user choice, so reject it.
+    if model is not None:
+        raise ValueError("dsh 驱动按目标会话当前模型执行，不接受显式 model。")
+    mode = target.get("mode", "queue")
+    if mode not in DSH_MODES:
+        raise ValueError("dsh mode must be queue or steer")
+    origin, secret = _dsh_config(target)
+    _check_stop(target)
+    request_id = uuid.uuid4().hex
+    payload = {
+        "sessionId": target["session_id"],
+        "text": message,
+        "mode": mode,
+        "requestId": request_id,
+    }
+    diagnostic = {"request_id": request_id, "phase": "http_wait"}
+    try:
+        result, status = _request(
+            target, origin, "POST", "/wake", payload,
+            authorization="Bearer " + secret, request_id=request_id,
+        )
+    except HTTPError as exc:
+        body = {}
+        try:
+            raw = exc.read()
+            body = json.loads(raw.decode("utf-8")) if raw else {}
+        except (OSError, UnicodeError, ValueError):
+            body = {}
+        finally:
+            exc.close()
+        remote = body if isinstance(body, dict) else {}
+        diagnostic.update(
+            exception_fields(exc), http_status=exc.code,
+            remote_code=remote.get("code") if isinstance(remote.get("code"), str) else None,
+            remote_retry=remote.get("retry") if isinstance(remote.get("retry"), bool) else None,
+            remote_reason=remote.get("reason") if isinstance(remote.get("reason"), str) else None,
+        )
+        if exc.code == 409:
+            raise InjectionError(
+                "dsh target Session is busy; no reminder admitted", code="native_busy",
+                state="native_busy",
+                next_action="目标正在执行；保留原信，由原Owner接续，不自动重发。",
+                diagnostic=diagnostic,
+            ) from exc
+        if exc.code in {401, 403}:
+            raise InjectionError(
+                "dsh receiver rejected the owner secret", code="dsh_unauthorized",
+                state="native_rejected",
+                next_action="原Owner核 DSH 私有 secret 与接收器；不重发或换路。",
+                diagnostic=diagnostic,
+            ) from exc
+        if exc.code == 404:
+            raise InjectionError(
+                "dsh target Session was not found", code="dsh_session_not_found",
+                state="native_rejected",
+                next_action="核固定的 DSH Session ID 与工作目录；不自动新建或重发。",
+                diagnostic=diagnostic,
+            ) from exc
+        if exc.code == 503:
+            raise InjectionError(
+                "dsh receiver is not ready", code="dsh_unavailable",
+                state="native_unavailable",
+                next_action="原Owner恢复 DSH Session controller；保留原信，不重发。",
+                diagnostic=diagnostic,
+            ) from exc
+        if 400 <= exc.code < 500:
+            raise InjectionError(
+                f"dsh receiver rejected the reminder (HTTP {exc.code})",
+                code="dsh_rejected", state="native_rejected",
+                diagnostic=diagnostic,
+            ) from exc
+        # A 5xx can arrive after the controller admitted the prompt. The caller
+        # cannot prove whether it was consumed, so preserve unknown and do not
+        # resend under a fresh request ID.
+        raise InjectionUncertain(
+            f"dsh receiver HTTP {exc.code}; delivery not confirmed, do not resend",
+            diagnostic=diagnostic,
+        ) from exc
+    except (URLError, TimeoutError, OSError, HTTPException, ValueError, UnicodeError) as exc:
+        reason = exc.reason if isinstance(exc, URLError) else exc
+        diagnostic.update(exception_fields(exc))
+        if isinstance(reason, ConnectionRefusedError) or (
+                isinstance(reason, OSError) and reason.errno == errno.ECONNREFUSED):
+            raise InjectionError(
+                "dsh receiver connection refused; no reminder delivered",
+                code="receiver_connection_refused", state="receiver_offline",
+                diagnostic=diagnostic,
+            ) from exc
+        raise InjectionUncertain(
+            "dsh delivery result unknown; do not resend",
+            diagnostic=diagnostic,
+        ) from exc
+    if status != 200 or not isinstance(result, dict):
+        raise InjectionUncertain(
+            "dsh receipt is unreadable or has the wrong status; do not resend",
+            diagnostic={**diagnostic, "http_status": status},
+        )
+    if result.get("accepted") is False:
+        raise InjectionError(
+            "dsh receiver did not accept the reminder", code="dsh_rejected",
+            state="native_rejected",
+            diagnostic={**diagnostic, "http_status": status,
+                        "remote_code": result.get("code") if isinstance(result.get("code"), str) else None},
+        )
+    if (result.get("accepted") is not True or result.get("ok") is not True
+            or result.get("sessionId") != target["session_id"]
+            or result.get("requestId") != request_id
+            or result.get("mode") != mode):
+        raise InjectionUncertain(
+            "dsh receipt identity was not confirmed; do not resend",
+            diagnostic={**diagnostic, "http_status": status,
+                        "reason": "receipt_identity_mismatch"},
+        )
+    return {
+        "http_status": status,
+        "request_id": result["requestId"],
+        "native_disposition": result["mode"],
+    }
+
+
 def inject(target, message, *, model=None):
     """Return native acceptance or raise; never persist/observe business status.
 
@@ -591,7 +795,7 @@ def inject(target, message, *, model=None):
     if not isinstance(target.get("session_id"), str) or not target["session_id"].strip():
         raise ValueError("session_id must be an explicit native target")
     runtime = target["runtime"]
-    functions = {"codex": _codex, "opencode": _opencode, "workbuddy": _workbuddy}
+    functions = {"codex": _codex, "opencode": _opencode, "workbuddy": _workbuddy, "dsh": _dsh}
     if runtime not in functions:
         raise ValueError(f"Unsupported native Runtime: {runtime}")
     extension = target.get("extension") or {}
