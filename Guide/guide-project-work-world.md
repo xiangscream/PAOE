@@ -5,7 +5,7 @@ title: Project 文件与 Git
 description: 成果归项目、当前入口清楚、历史可读，文本版本使用现有 Git。
 tags: project, files, git, current
 status: active
-version: 23
+version: 24
 ---
 
 # Project 文件与 Git
@@ -63,6 +63,8 @@ Project 根的 HISTORY 按业务主题汇总阶段成果、关键判断和经验
 ### 工位收敛
 
 每个Home只有一份当前`TODO.md`。ENTRY负责导航，TODO负责行动；个人规则仅保留项目指南未覆盖的真实差异。当前Contact、正常工具和必要笔记按实际用途保留，母版不是删除文件的白名单。
+
+归档已完成或已结束的 TODO 记录时，将任务块连同原状态、结果和追溯入口归入历史；业务成果和仍在用的输入留在原位。成果被后续任务引用，不要求已完成任务常驻当前 TODO。归档后修正相对链接，未完责任继续留在本人 TODO。
 
 旧Assignment、Handoff、TODO备份和写入载荷不留作当前入口。有未完责任先由本人接入当前TODO；结束且无依赖的文件移到项目库外历史，保留成果与位置映射，修正现行引用。旧版本迁移JSON、快照和已失效等待退出恢复正文；Mail/Notice走正式归档接口。
 
