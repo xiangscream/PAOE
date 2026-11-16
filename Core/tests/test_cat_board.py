@@ -118,7 +118,7 @@ class CatBoardTests(unittest.TestCase):
         installation = json.loads(self.fixture.install.read_text(encoding="utf-8"))
         installation["agent_numbers_config"] = str(numbers)
         self.fixture.install.write_text(json.dumps(installation), encoding="utf-8")
-        self.board.installation = installation
+        self.board.installation["agent_numbers_config"] = str(numbers)
         team = self.fixture.roots["1001"] / "TEAM.md"
         team.write_text("# 团队\n## 当前成员\n### S040\n- 职责/专长：产品定义\n", encoding="utf-8")
         before = team.read_bytes()
