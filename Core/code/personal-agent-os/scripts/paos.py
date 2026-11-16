@@ -2196,6 +2196,7 @@ def execute_wake(
 ) -> dict[str, Any]:
     """Workless wake surface: native-target config + one-shot injection only.
 
+    prepare-current prepares only the caller's registered Codex receiver.
     bind/unbind/status operate the Contact native-target store (no attempt
     machine); trigger calls the standalone native injection tool; probe/
     recover/stop/test are explicitly retired. The original reasons stay
@@ -2208,6 +2209,25 @@ def execute_wake(
     installation_path = installation_path or resolve_installation_path(
         getattr(args, "installation_file", None)
     )
+    if args.wake_command == "prepare-current":
+        from codex_receiver_session_start import prepare_current
+        from wakeup_native.codex_receiver import ReceiverError
+
+        try:
+            message = prepare_current()
+        except (ReceiverError, InjectionError, KeyError) as problem:
+            raise CliError(
+                str(problem),
+                error_code=getattr(problem, "code", "receiver_prepare_failed"),
+            ) from None
+        return {
+            "ok": not message.startswith("receiver_prepare_skipped:"),
+            "schema": "paos-wake-action/v1",
+            "action": "prepare-current",
+            "runtime": "codex",
+            "systemMessage": message,
+            "reminder_sent": False,
+        }
     route = _rooter_home_root(installation_path)
     is_rooter_home = bool(route and args.agent_id == route[0])
     if is_rooter_home:
@@ -3385,9 +3405,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     wake = sub.add_parser(
         "wake",
-        help="Workless contact surface: native-target bind/status/unbind + one-shot trigger; probe/recover/stop/test retired (not on help)",
+        help="Native receiver preparation, Contact bind/status/unbind and one-shot reminders",
     )
     wakes = wake.add_subparsers(dest="wake_command", required=True)
+
+    wakes.add_parser(
+        "prepare-current",
+        help="Prepare only this Codex Desktop Owner's registered receiver; reuse a healthy instance, send no reminder",
+    )
 
     x = wakes.add_parser(
         "bind",

@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import codex_receiver_session_start as hook
+import paos
 import paos_wakeup as wake
 
 
@@ -54,15 +55,54 @@ class SessionStartGuardTests(unittest.TestCase):
         Path(self.descriptor["path"]).write_text(json.dumps(self.descriptor), encoding="utf-8")
         return target
 
-    def prepare(self, event=None, *, manual=False):
+    def prepare(self, event=None, *, manual=False, cli=False):
         Path(self.descriptor["path"]).write_text(json.dumps(self.descriptor), encoding="utf-8")
         with patch.object(hook, "os", SimpleNamespace(name="nt", environ=self.environment)), \
              patch.object(hook, "load_installation_descriptor", return_value=self.descriptor), \
              patch.object(hook.subprocess, "CREATE_NO_WINDOW", 0x08000000, create=True), \
              patch.object(hook.subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000, create=True), \
              patch.object(hook.subprocess, "Popen", return_value=SimpleNamespace(pid=123)) as launch:
-            result = hook.prepare_current() if manual else hook.prepare(event or self.event)
+            if cli:
+                args = paos.build_parser().parse_args(["wake", "prepare-current"])
+                result = paos.execute_wake(args, object(), Path(self.descriptor["path"]))
+            else:
+                result = hook.prepare_current() if manual else hook.prepare(event or self.event)
             return result, launch
+
+    def test_cli_prepares_registered_owner_without_project_or_target_arguments(self):
+        result, launch = self.prepare(cli=True)
+        self.assertTrue(result["ok"])
+        self.assertIn("receiver_prepare_started: 3002-s031", result["systemMessage"])
+        self.assertFalse(result["reminder_sent"])
+        launch.assert_called_once()
+        self.assertEqual(launch.call_args.args[0][0], self.target["extension"]["windows_python"])
+
+    def test_cli_rooter_needs_no_project_route(self):
+        self.register_rooter()
+        self.environment["CODEX_THREAD_ID"] = "rooter-thread"
+        result, launch = self.prepare(cli=True)
+        self.assertTrue(result["ok"])
+        self.assertIn("receiver_prepare_started: rooter-001", result["systemMessage"])
+        launch.assert_called_once()
+
+    def test_cli_missing_owner_environment_is_not_success(self):
+        self.environment = {}
+        result, launch = self.prepare(cli=True)
+        self.assertFalse(result["ok"])
+        self.assertIn("original_desktop_environment_missing", result["systemMessage"])
+        launch.assert_not_called()
+
+    def test_cli_stop_preserves_registration_and_does_not_start(self):
+        stop = Path(self.target["stop_file"])
+        stop.write_text("Human STOP", encoding="utf-8")
+        contact = self.root / "3002/private-data/contact/native-targets.json"
+        original = contact.read_bytes()
+        result, launch = self.prepare(cli=True)
+        self.assertFalse(result["ok"])
+        self.assertIn("original_STOP_present", result["systemMessage"])
+        launch.assert_not_called()
+        self.assertEqual(contact.read_bytes(), original)
+        self.assertEqual(stop.read_text(encoding="utf-8"), "Human STOP")
 
     def register_rooter(self, thread="rooter-thread", directory="rooter-001"):
         root = self.root / directory
