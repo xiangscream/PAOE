@@ -1,0 +1,16 @@
+{
+  "extends": "../front/ui/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "obsidian": ["types/obsidian.d.ts"],
+      "vue": ["../front/ui/node_modules/vue"],
+      "vue/*": ["../front/ui/node_modules/vue/*"],
+      "@vue-flow/core": ["../front/ui/node_modules/@vue-flow/core"],
+      "@vue-flow/core/*": ["../front/ui/node_modules/@vue-flow/core/*"]
+    },
+    "types": [],
+    "allowJs": false
+  },
+  "include": ["**/*.ts", "**/*.vue", "types/*.d.ts"]
+}

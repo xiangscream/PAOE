@@ -480,7 +480,7 @@ class Board:
             return {"ok": False, "error_code": "cat_not_configured", "error": "CAT 未配置；工位文件功能仍可使用。"}
         return self.run_paos(["cat", "--url", self.cat_url, *args], input_text=input_text)
 
-    def dashboard(self, project_id: str = "") -> dict:
+    def dashboard(self, project_id: str = "", *, include_cat: bool = True) -> dict:
         projects = self.projects()
         selected = self.registry.read_record(project_id) if project_id else (projects[0] if projects else None)
         agents = []
@@ -490,7 +490,12 @@ class Board:
                     agents.append(self._agent_summary(self.agent(home_id)))
                 except READ_ERRORS as exc:
                     agents.append({"id": home_id, "ok": False, **error_view(exc)})
-        rooms_result = self.cat(["list"]) if self.cat_url else self.cat([])
+        if include_cat:
+            rooms_result = self.cat(["list"]) if self.cat_url else self.cat([])
+        else:
+            # A project plugin must render files even when the optional CAT
+            # backend is configured but offline. Rooms load only on explicit CAT.
+            rooms_result = {"ok": True, "rooms": [], "deferred": True}
         rooms = rooms_result["rooms"] if rooms_result.get("ok") else []
         root = runtime_path(selected["root_path"]) if selected else None
         index = root / "INDEX.md" if root else None
@@ -512,7 +517,8 @@ class Board:
                 "projects": [{"id": p["id"], "name": runtime_path(p["root_path"]).name} for p in projects],
                 "index": index.read_text(encoding="utf-8") if index and index.is_file() else "",
                 "examples": self.examples(), "rooms": rooms,
-                "cat": {"ok": True} if rooms_result.get("ok") else rooms_result}
+                "cat": ({**rooms_result} if rooms_result.get("deferred")
+                        else {"ok": True}) if rooms_result.get("ok") else rooms_result}
 
     def rooms(self, project_id: str = "") -> dict:
         homes = set(self.registry.read_record(project_id)["homes"]) if project_id else None
@@ -590,6 +596,95 @@ class Board:
                               "--message-id", f"board-reference-{uuid.uuid4().hex}"])
 
 
+def dispatch_request(board: Board, method: str, path: str,
+                     body: dict | None = None, *, defer_cat: bool = False) -> tuple[int, dict]:
+    """Dispatch one existing frontend request without HTTP.
+
+    The HTTP Handler and the Obsidian process bridge share this exact map so the
+    two hosts cannot drift into separate writers. Streaming events are owned by
+    the host and deliberately are not turned into request/response calls.
+    """
+    method = str(method or "").upper()
+    url = urlsplit(str(path or ""))
+    payload = body if isinstance(body, dict) else {}
+    try:
+        if method == "GET":
+            parts = url.path.strip("/").split("/")
+            if url.path == "/api/cat/rooms":
+                value = board.rooms(parse_qs(url.query).get("project", [""])[0])
+            elif url.path == "/api/cat/people":
+                value = {"ok": True, "people": board.people()}
+            elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "events":
+                return 400, {"ok": False, "error": "实时流由宿主直连 CAT，不走单次进程桥。",
+                             "error_code": "stream_not_supported"}
+            elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "messages":
+                try:
+                    after = int(parse_qs(url.query).get("after", ["0"])[0])
+                except ValueError as exc:
+                    raise BoardProblem("invalid_cursor", "消息位置必须是整数。") from exc
+                if after < 0:
+                    raise BoardProblem("invalid_cursor", "消息位置不能为负数。")
+                value = board.cat(["read", unquote(parts[2]), "--after", str(after)])
+            elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "members":
+                value = board.cat(["members", unquote(parts[2])])
+            elif url.path == "/api/layout":
+                value = board.layout(parse_qs(url.query).get("project", [""])[0])
+            elif url.path == "/api/library/resource":
+                query = parse_qs(url.query)
+                value = board.resource(query.get("kind", [""])[0], query.get("id", [""])[0])
+            elif url.path == "/api/document":
+                query = parse_qs(url.query)
+                value = board.document(query.get("project", [""])[0], query.get("path", [""])[0])
+            elif url.path == "/api/collaboration":
+                query = parse_qs(url.query)
+                value = board.collaboration_status(
+                    query.get("project", [""])[0], query.get("mode", [""])[0],
+                    query.get("message_id", [""])[0], query.get("room_id", [""])[0])
+            elif url.path == "/api/dashboard":
+                value = board.dashboard(
+                    parse_qs(url.query).get("project", [""])[0],
+                    include_cat=not defer_cat)
+            elif url.path.startswith("/api/agent/"):
+                value = board.agent(unquote(url.path.rsplit("/", 1)[-1]))
+            elif url.path.startswith("/api/room/"):
+                value = board.room(unquote(url.path.rsplit("/", 1)[-1]))
+            else:
+                return 404, {"ok": False, "error": "未找到此入口。", "error_code": "not_found"}
+            return 200, value
+        if method == "POST":
+            if url.path == "/api/room":
+                members = payload.get("members")
+                if not isinstance(members, list) or len(members) < 2 or not all(isinstance(x, str) for x in members):
+                    raise BoardProblem("members_invalid", "请选择至少两个登记工位。")
+                value = board.create_room(str(payload.get("title") or "画板沟通"), members)
+            elif url.path == "/api/hint":
+                value = board.hint(str(payload.get("agent_id") or ""), payload.get("example") or {})
+            elif url.path.startswith("/api/room/") and url.path.endswith("/message"):
+                if payload.get("sender_id", "human") != "human":
+                    raise BoardProblem("human_sender_only", "此网页使用 Human 身份发言。")
+                text = str(payload.get("body") or "").strip()
+                if not text:
+                    raise BoardProblem("empty_body", "请输入发言内容。")
+                value = board.send_message(unquote(url.path.rsplit("/", 2)[-2]),
+                                           "human", text,
+                                           str(payload.get("message_id") or f"board-{uuid.uuid4().hex}"),
+                                           str(payload.get("reply_to") or ""),
+                                           bool(payload.get("notify", True)))
+            elif url.path == "/api/collaboration":
+                value = board.collaboration(payload)
+            else:
+                return 404, {"ok": False, "error": "未找到此入口。", "error_code": "not_found"}
+            return 200, value
+        if method == "PUT":
+            if url.path != "/api/layout":
+                return 404, {"ok": False, "error": "未找到此入口。", "error_code": "not_found"}
+            value = board.save_layout(str(payload.get("project") or ""), payload.get("layout"))
+            return 200, value
+        return 404, {"ok": False, "error": "未找到此入口。", "error_code": "not_found"}
+    except READ_ERRORS as exc:
+        return 422, error_view(exc)
+
+
 class Handler(BaseHTTPRequestHandler):
     def _cat_events(self, room_id: str, after: str):
         origin = self.server.board.cat_url
@@ -665,52 +760,12 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         if self._workbench_file(url):
             return
-        try:
-            parts = url.path.strip("/").split("/")
-            if url.path == "/api/cat/rooms":
-                value = self.server.board.rooms(parse_qs(url.query).get("project", [""])[0])
-            elif url.path == "/api/cat/people":
-                value = {"ok": True, "people": self.server.board.people()}
-            elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "events":
-                self._cat_events(unquote(parts[2]), parse_qs(url.query).get("after", ["0"])[0])
-                return
-            elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "messages":
-                try:
-                    after = int(parse_qs(url.query).get("after", ["0"])[0])
-                except ValueError as exc:
-                    raise BoardProblem("invalid_cursor", "消息位置必须是整数。") from exc
-                if after < 0:
-                    raise BoardProblem("invalid_cursor", "消息位置不能为负数。")
-                value = self.server.board.cat(["read", unquote(parts[2]), "--after", str(after)])
-            elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "members":
-                value = self.server.board.cat(["members", unquote(parts[2])])
-            elif url.path == "/api/layout":
-                value = self.server.board.layout(parse_qs(url.query).get("project", [""])[0])
-            elif url.path == "/api/library/resource":
-                query = parse_qs(url.query)
-                value = self.server.board.resource(query.get("kind", [""])[0],
-                                                  query.get("id", [""])[0])
-            elif url.path == "/api/document":
-                query = parse_qs(url.query)
-                value = self.server.board.document(query.get("project", [""])[0],
-                                                   query.get("path", [""])[0])
-            elif url.path == "/api/collaboration":
-                query = parse_qs(url.query)
-                value = self.server.board.collaboration_status(
-                    query.get("project", [""])[0], query.get("mode", [""])[0],
-                    query.get("message_id", [""])[0], query.get("room_id", [""])[0])
-            elif url.path == "/api/dashboard":
-                value = self.server.board.dashboard(parse_qs(url.query).get("project", [""])[0])
-            elif url.path.startswith("/api/agent/"):
-                value = self.server.board.agent(unquote(url.path.rsplit("/", 1)[-1]))
-            elif url.path.startswith("/api/room/"):
-                value = self.server.board.room(unquote(url.path.rsplit("/", 1)[-1]))
-            else:
-                self._json({"ok": False, "error": "未找到此入口。", "error_code": "not_found"}, 404)
-                return
-            self._json(value)
-        except READ_ERRORS as exc:
-            self._json(error_view(exc), 422)
+        parts = url.path.strip("/").split("/")
+        if len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "events":
+            self._cat_events(unquote(parts[2]), parse_qs(url.query).get("after", ["0"])[0])
+            return
+        status, value = dispatch_request(self.server.board, "GET", self.path)
+        self._json(value, status)
 
     def do_POST(self):
         try:
@@ -720,33 +775,8 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeError) as exc:
             self._json({"ok": False, "error": str(exc), "error_code": "bad_json"}, 400)
             return
-        try:
-            if self.path == "/api/room":
-                members = payload.get("members")
-                if not isinstance(members, list) or len(members) < 2 or not all(isinstance(x, str) for x in members):
-                    raise BoardProblem("members_invalid", "请选择至少两个登记工位。")
-                value = self.server.board.create_room(str(payload.get("title") or "画板沟通"), members)
-            elif self.path == "/api/hint":
-                value = self.server.board.hint(str(payload.get("agent_id") or ""), payload.get("example") or {})
-            elif self.path.startswith("/api/room/") and self.path.endswith("/message"):
-                if payload.get("sender_id", "human") != "human":
-                    raise BoardProblem("human_sender_only", "此网页使用 Human 身份发言。")
-                body = str(payload.get("body") or "").strip()
-                if not body:
-                    raise BoardProblem("empty_body", "请输入发言内容。")
-                value = self.server.board.send_message(unquote(self.path.rsplit("/", 2)[-2]),
-                                                      "human", body,
-                                                      str(payload.get("message_id") or f"board-{uuid.uuid4().hex}"),
-                                                      str(payload.get("reply_to") or ""),
-                                                      bool(payload.get("notify", True)))
-            elif self.path == "/api/collaboration":
-                value = self.server.board.collaboration(payload)
-            else:
-                self._json({"ok": False, "error": "未找到此入口。", "error_code": "not_found"}, 404)
-                return
-            self._json(value)
-        except READ_ERRORS as exc:
-            self._json(error_view(exc), 422)
+        status, value = dispatch_request(self.server.board, "POST", self.path, payload)
+        self._json(value, status)
 
     def do_PUT(self):
         try:
@@ -756,16 +786,8 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, UnicodeError) as exc:
             self._json({"ok": False, "error": str(exc), "error_code": "bad_json"}, 400)
             return
-        try:
-            url = urlsplit(self.path)
-            if url.path != "/api/layout":
-                self._json({"ok": False, "error": "未找到此入口。", "error_code": "not_found"}, 404)
-                return
-            value = self.server.board.save_layout(
-                str(payload.get("project") or ""), payload.get("layout"))
-            self._json(value)
-        except READ_ERRORS as exc:
-            self._json(error_view(exc), 422)
+        status, value = dispatch_request(self.server.board, "PUT", self.path, payload)
+        self._json(value, status)
 
     def log_message(self, fmt, *args):
         return

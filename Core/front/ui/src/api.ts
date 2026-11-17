@@ -10,6 +10,9 @@ import type {
   LibraryItem,
   ResourceResponse,
 } from './types'
+import { requestTransport, setApiTransport, type TransportResponse } from './transport'
+export { requestTransport, setApiTransport }
+export type { TransportResponse }
 
 export class ApiError extends Error {
   code: string
@@ -32,9 +35,9 @@ function messageOf(value: any): string {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  let response: Response
+  let response: TransportResponse
   try {
-    response = await fetch(url, { cache: 'no-store', ...init })
+    response = await requestTransport(url, init)
   } catch {
     throw new ApiError('本地服务未连接', 'network_error', 0, true)
   }
@@ -53,9 +56,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 const projectQuery = (project: string) => '?project=' + encodeURIComponent(project)
 
 async function receipt<T extends { status?: number }>(url: string, init?: RequestInit): Promise<T> {
-  let response: Response
+  let response: TransportResponse
   try {
-    response = await fetch(url, { cache: 'no-store', ...init })
+    response = await requestTransport(url, init)
   } catch {
     throw new ApiError('本地服务未连接', 'network_error', 0, true)
   }
