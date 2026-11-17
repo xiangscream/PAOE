@@ -76,7 +76,7 @@ describe('CAT protocol', () => {
     expect(uri).toContain('vault=System')
     expect(uri).toContain('room=room-a+b')
     expect(catRoomFromParams({ vault: 'System', room: 'room-a' }, 'System')).toEqual({ room: 'room-a' })
-    expect(catRoomFromParams({ vault: '6faa35d59395acfc', room: 'room-a' }, 'System', ['6faa35d59395acfc'])).toEqual({ room: 'room-a' })
+    expect(catRoomFromParams({ vault: '0123456789abcdef', room: 'room-a' }, 'System', ['0123456789abcdef'])).toEqual({ room: 'room-a' })
     expect(catRoomFromParams({ vault: 'Other', room: 'room-a' }, 'System').room).toBe('')
   })
 })
