@@ -7,7 +7,7 @@ import { bridgeTransport } from '../shared/bridge'
 import { createShadowHost, readPluginCss } from '../shared/host'
 import { normalizeSettings, resolveBridge, type PaosBridgeSettings } from '../shared/settings'
 import { PaosSettingsTab } from '../shared/settings-tab'
-import { buildCatUri } from '../shared/uri'
+import { buildCatUri, dispatchCatUri } from '../shared/uri'
 import '../../front/ui/src/styles.css'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -142,8 +142,8 @@ export default class ProjectPlugin extends Plugin {
       return
     }
     const uri = buildCatUri(vault, roomId)
-    const opened = window.open(uri, '_blank')
-    if (!opened) new Notice('无法请求打开 System CAT。可直接打开 URI：' + uri)
+    const error = dispatchCatUri(uri, (url, target) => window.open(url, target))
+    if (error) new Notice('无法请求打开 System CAT：' + error + '。URI：' + uri)
   }
 
   private vaultRoot(): string {

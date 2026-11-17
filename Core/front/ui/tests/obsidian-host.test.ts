@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ChatView from '../src/components/ChatView.vue'
 import { setApiTransport } from '../src/transport'
 import { bridgeTransport, runBridge } from '../../../obsidian/shared/bridge'
-import { buildCatUri, catRoomFromParams } from '../../../obsidian/shared/uri'
+import { buildCatUri, catRoomFromParams, dispatchCatUri } from '../../../obsidian/shared/uri'
 import { nativeEventSource } from '../../../obsidian/shared/stream'
 import http from 'http'
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
@@ -78,6 +78,23 @@ describe('CAT protocol', () => {
     expect(catRoomFromParams({ vault: 'System', room: 'room-a' }, 'System')).toEqual({ room: 'room-a' })
     expect(catRoomFromParams({ vault: '0123456789abcdef', room: 'room-a' }, 'System', ['0123456789abcdef'])).toEqual({ room: 'room-a' })
     expect(catRoomFromParams({ vault: 'Other', room: 'room-a' }, 'System').room).toBe('')
+  })
+
+  it('does not treat a null window handle as a URI dispatch failure', () => {
+    const calls: Array<[string, string]> = []
+    const error = dispatchCatUri('obsidian://paos-cat?vault=System&room=room-a', (url, target) => {
+      calls.push([url, target])
+      return null
+    })
+    expect(error).toBeNull()
+    expect(calls).toEqual([['obsidian://paos-cat?vault=System&room=room-a', '_blank']])
+  })
+
+  it('reports only a real URI dispatch exception', () => {
+    const error = dispatchCatUri('obsidian://paos-cat?vault=System&room=room-a', () => {
+      throw new Error('blocked by host')
+    })
+    expect(error).toBe('blocked by host')
   })
 })
 
