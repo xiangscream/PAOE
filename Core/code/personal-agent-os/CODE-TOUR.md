@@ -82,7 +82,25 @@ external Runtime, and a successful transport receipt is **not** task completion.
 | `paos_backup.py`, `release_check.py` | Deliberate backup and release checks | Restore boundaries and source-only release checks differ |
 | `check_architecture.py`, `verify.py` | Test architectural invariants and run isolated suites | Test pass is not production runtime validation |
 | `Core/portable.py` | Create initial local config and validate external Library pointers | Never create/copy Libraries or Homes |
-| `Core/front/` | Optional read/display UI | CLI survives when the board is off |
+| `Core/front/` | Optional read/display UI and one shared request map | CLI survives when the board is off |
+| `Core/front/paos_obsidian_bridge.py` | One JSON request from the current Obsidian vault | Reuses Board and CLI writers; no HTTP listener or business database |
+| `Core/obsidian/` | Project panel and System CAT desktop plugin hosts | Bundles existing Vue components; CAT uses the existing backend |
+
+## Follow an Obsidian action
+
+The project plugin obtains its actual vault path from Obsidian and invokes
+`paos_obsidian_bridge.py` once with JSON on stdin. The bridge matches that path
+against the installation registry. `dispatch_request` in `paos_front_server.py`
+is shared by the website and plugin; `Board` reads the original files and calls
+the existing CLI writers for Human actions. Layout is saved in the project's
+`.paos/ui/board.json`; connecting people starts a topic and does not edit TEAM.
+
+A project dashboard skips CAT requests, so opening a vault needs no web server
+or running CAT. Explicit Chat actions still use the existing CAT backend.
+The project plugin opens the System CAT view with the known room ID. System's
+plugin hosts the same mature ChatView and listens to the original event stream;
+it does not create another room or message when navigating. Plugin settings
+locate the installed tools and target vault; they do not hold Agent state.
 
 ## Learning exercises (all use disposable paths)
 

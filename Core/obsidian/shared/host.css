@@ -1,0 +1,48 @@
+.paos-obsidian-root {
+  --paper: #f4f6f7;
+  --surface: #fff;
+  --ink: #25323d;
+  --muted: #75818b;
+  --line: #e1e7e9;
+  --accent: #326b68;
+  --accent-content: #fff;
+  --jade: #4d8a72;
+  --shadow: 0 10px 35px #183b3810;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.paos-obsidian-root[data-theme="dark"] {
+  --paper: #171d24;
+  --surface: #202832;
+  --ink: #e0e8ee;
+  --muted: #98a8b5;
+  --line: #34414c;
+  --accent: #71b4ac;
+  --accent-content: #142a27;
+  --jade: #82bea3;
+  --shadow: 0 12px 36px #0003;
+}
+.paos-obsidian-root[data-theme="corporate"] {
+  --paper: #f3f5fa;
+  --surface: #fff;
+  --ink: #263449;
+  --muted: #72809a;
+  --line: #dfe5ee;
+  --accent: #4266a6;
+  --jade: #558873;
+}
+.paos-obsidian-root[data-theme="retro"] {
+  --paper: #f2eee4;
+  --surface: #fffcf4;
+  --ink: #484238;
+  --muted: #887d67;
+  --line: #ddd5c4;
+  --accent: #8a694b;
+  --jade: #7a8656;
+}
