@@ -18,6 +18,7 @@ export function nativeEventSource(url: string): NativeSse {
   let retry: ReturnType<typeof setTimeout> | null = null
   let closed = false
   let abort: (() => void) | null = null
+  let lastEventId = ''
 
   const stream = {
     onerror: null as (() => void) | null,
@@ -48,7 +49,11 @@ export function nativeEventSource(url: string): NativeSse {
       port: target.port,
       path: target.pathname + target.search,
       method: 'GET',
-      headers: { Accept: 'text/event-stream', 'Cache-Control': 'no-cache' },
+      headers: {
+        Accept: 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        ...(lastEventId ? { 'Last-Event-ID': lastEventId } : {}),
+      },
     }, (response: any) => {
       if (closed) { response.destroy(); return }
       if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
@@ -77,6 +82,7 @@ export function nativeEventSource(url: string): NativeSse {
           if (!line) { dispatch() }
           else if (line.startsWith(':')) { /* heartbeat */ }
           else if (line.startsWith('event:')) name = line.slice(6).trim()
+          else if (line.startsWith('id:')) lastEventId = line.slice(3).trim()
           else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''))
           index = buffer.search(/\r?\n/)
         }
