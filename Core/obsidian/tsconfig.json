@@ -1,0 +1,12 @@
+{
+  "extends": "../front/ui/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "obsidian": ["types/obsidian.d.ts"]
+    },
+    "types": [],
+    "allowJs": false
+  },
+  "include": ["**/*.ts", "**/*.vue", "types/*.d.ts"]
+}

@@ -5,6 +5,7 @@ import {findMessages, messagePreview} from '../../../cat-content.mjs';
 import CatIcon from './ChatIcon.vue';
 import MessageContent from './ChatMessageContent.vue';
 import {readDraft, writeDraft} from '../state/chat-drafts.mjs';
+import {requestTransport} from '../transport';
 
 const dayFormat = new Intl.DateTimeFormat('zh-CN', {month:'long',day:'numeric',weekday:'short'});
 const timeFormat = new Intl.DateTimeFormat('zh-CN', {hour:'2-digit',minute:'2-digit',hour12:false});
@@ -17,7 +18,7 @@ async function request(path, options={}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.method==='POST' ? 20000 : 15000);
   try {
-    const response = await fetch(path, {...options,signal:controller.signal,cache:'no-store'});
+    const response = await requestTransport(path, {...options,signal:controller.signal,cache:'no-store'});
     const value = await response.json();
     if (!response.ok && value.status===undefined) value.status=response.status;
     return value;
@@ -26,7 +27,7 @@ async function request(path, options={}) {
 function checked(value) { if (!value.ok) throw new Error(errorText(value)); return value; }
 
 export default {
-  props:{project:{type:String,required:true},initialRoom:{type:String,default:''}},
+  props:{project:{type:String,required:true},initialRoom:{type:String,default:''},embedded:{type:Boolean,default:false},eventUrl:{type:Function,default:null}},
   emits:['new-discussion','board','room-selected'],
   components:{CatIcon, MessageContent},
   data() {
@@ -210,8 +211,8 @@ export default {
     async loadPeople() { this.people=checked(await request('/api/cat/people')).people; },
     clearRoom() {
       this.stopStream();this.selection++;this.roomId='';this.endingWaiting=false;
-      document.title='CAT · PAOE';
-      const url=new URL(location.href);url.searchParams.delete('room');history.replaceState(null,'',url);
+      if(!this.embedded){document.title='CAT · PAOE';
+      const url=new URL(location.href);url.searchParams.delete('room');history.replaceState(null,'',url);}
       this.$emit('room-selected','');
     },
     async selectRoom(id) {
@@ -233,14 +234,15 @@ export default {
       this.atLatest=state.atLatest;
       this.$nextTick(this.resizeComposer);
       if (summary) {state.title=summary.title;state.status=summary.status;this.roomScope=summary.status;}
-      const url=new URL(location.href);url.searchParams.set('room',id);history.replaceState(null,'',url);
+      if(!this.embedded){const url=new URL(location.href);url.searchParams.set('room',id);history.replaceState(null,'',url);}
       this.connection='正在读取';this.connectionError=false;this.unseen=0;
       try {
         const room=checked(await request(endpoint(id)));
         Object.assign(state,{title:room.title,status:room.status,members:room.members,loaded:true},readPage(state,room.messages));
         this.confirmPending(state);
         if (generation!==this.selection) return;
-        this.roomScope=room.status;document.title=(room.title||'圆桌')+' · CAT';
+        this.roomScope=room.status;
+        if(!this.embedded)document.title=(room.title||'圆桌')+' · CAT';
         this.$emit('room-selected',id);
         await this.$nextTick();this.resizeComposer();
         if(state.atLatest)this.scrollBottom();else this.restorePosition(state.position);
@@ -254,7 +256,8 @@ export default {
     startStream(state) {
       this.stopStream();
       if(!this.active || document.hidden || this.roomId!==state.id)return;
-      const stream=markRaw(new EventSource(endpoint(state.id,'/events?after='+state.cursor)));
+      const target=this.eventUrl ? this.eventUrl(state.id,state.cursor) : endpoint(state.id,'/events?after='+state.cursor);
+      const stream=markRaw(new EventSource(target));
       this.stream=stream;const generation=this.selection;
       this.connection='正在接入实时消息';this.connectionError=false;
       stream.addEventListener('room',async event=>{
@@ -293,7 +296,7 @@ export default {
       finally{this.refreshing=false;this.$nextTick(this.resizeComposer);}
     },
     async openInitialRoom() {
-      const wanted=this.initialRoom || new URLSearchParams(location.search).get('room');
+      const wanted=this.initialRoom || (!this.embedded ? new URLSearchParams(location.search).get('room') : '');
       const first=this.rooms.find(room=>room.status==='open')||this.rooms[0];
       if(wanted||first)await this.selectRoom(wanted||first.id);else this.connection='已连接';
     },
