@@ -4,6 +4,8 @@ import { nextTick } from 'vue'
 import CatPanel from '../../../obsidian/system-cat/CatPanel.vue'
 import ChatView from '../src/components/ChatView.vue'
 import { setApiTransport } from '../src/transport'
+import http from 'http'
+import { nativeEventSource } from '../../../obsidian/shared/stream'
 
 afterEach(() => { setApiTransport(null); vi.unstubAllGlobals() })
 
@@ -40,4 +42,25 @@ it('keeps the requested room when the initial room list finishes after the cross
     await flushPromises()
     expect((wrapper.findComponent(ChatView).vm as any).roomId).toBe('room-target')
   } finally { releaseRooms(); wrapper.unmount() }
+})
+
+it('resumes the native CAT stream from its last delivered SSE event ID', async () => {
+  let resolveReconnect!: (value: string | undefined) => void
+  const reconnected = new Promise<string | undefined>(resolve => { resolveReconnect = resolve })
+  let connections = 0
+  const server = http.createServer((request: any, response: any) => {
+    connections++
+    response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+    if (connections === 1) response.end('id: 2\nevent: room\ndata: {"cursor":2}\n\n')
+    else resolveReconnect(request.headers['last-event-id'])
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const port = (server.address() as any).port
+  const stream = nativeEventSource(`http://127.0.0.1:${port}/events?after=1`)
+  try {
+    expect(await reconnected).toBe('2')
+  } finally {
+    stream.close()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
 })
