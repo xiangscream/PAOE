@@ -480,7 +480,7 @@ class Board:
             return {"ok": False, "error_code": "cat_not_configured", "error": "CAT 未配置；工位文件功能仍可使用。"}
         return self.run_paos(["cat", "--url", self.cat_url, *args], input_text=input_text)
 
-    def dashboard(self, project_id: str = "") -> dict:
+    def dashboard(self, project_id: str = "", *, include_cat: bool = True) -> dict:
         projects = self.projects()
         selected = self.registry.read_record(project_id) if project_id else (projects[0] if projects else None)
         agents = []
@@ -490,7 +490,12 @@ class Board:
                     agents.append(self._agent_summary(self.agent(home_id)))
                 except READ_ERRORS as exc:
                     agents.append({"id": home_id, "ok": False, **error_view(exc)})
-        rooms_result = self.cat(["list"]) if self.cat_url else self.cat([])
+        if include_cat:
+            rooms_result = self.cat(["list"]) if self.cat_url else self.cat([])
+        else:
+            # A project plugin must render files even when the optional CAT
+            # backend is configured but offline. Rooms load only on explicit CAT.
+            rooms_result = {"ok": True, "rooms": [], "deferred": True}
         rooms = rooms_result["rooms"] if rooms_result.get("ok") else []
         root = runtime_path(selected["root_path"]) if selected else None
         index = root / "INDEX.md" if root else None
@@ -512,7 +517,8 @@ class Board:
                 "projects": [{"id": p["id"], "name": runtime_path(p["root_path"]).name} for p in projects],
                 "index": index.read_text(encoding="utf-8") if index and index.is_file() else "",
                 "examples": self.examples(), "rooms": rooms,
-                "cat": {"ok": True} if rooms_result.get("ok") else rooms_result}
+                "cat": ({**rooms_result} if rooms_result.get("deferred")
+                        else {"ok": True}) if rooms_result.get("ok") else rooms_result}
 
     def rooms(self, project_id: str = "") -> dict:
         homes = set(self.registry.read_record(project_id)["homes"]) if project_id else None
@@ -591,7 +597,7 @@ class Board:
 
 
 def dispatch_request(board: Board, method: str, path: str,
-                     body: dict | None = None) -> tuple[int, dict]:
+                     body: dict | None = None, *, defer_cat: bool = False) -> tuple[int, dict]:
     """Dispatch one existing frontend request without HTTP.
 
     The HTTP Handler and the Obsidian process bridge share this exact map so the
@@ -635,7 +641,9 @@ def dispatch_request(board: Board, method: str, path: str,
                     query.get("project", [""])[0], query.get("mode", [""])[0],
                     query.get("message_id", [""])[0], query.get("room_id", [""])[0])
             elif url.path == "/api/dashboard":
-                value = board.dashboard(parse_qs(url.query).get("project", [""])[0])
+                value = board.dashboard(
+                    parse_qs(url.query).get("project", [""])[0],
+                    include_cat=not defer_cat)
             elif url.path.startswith("/api/agent/"):
                 value = board.agent(unquote(url.path.rsplit("/", 1)[-1]))
             elif url.path.startswith("/api/room/"):

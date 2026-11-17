@@ -45,6 +45,15 @@ class ObsidianBridgeTests(unittest.TestCase):
         status, dashboard = self.call("GET", "/api/dashboard")
         self.assertEqual(status, 200)
         self.assertEqual(dashboard["project"], "1001")
+
+    def test_project_dashboard_never_calls_configured_cat(self):
+        self.board.cat_url = "http://127.0.0.1:1"
+        with patch.object(self.board, "cat", side_effect=AssertionError("project files must not wait for CAT")):
+            status, dashboard = self.call("GET", "/api/dashboard")
+        self.assertEqual(status, 200)
+        self.assertTrue(dashboard["ok"])
+        self.assertTrue(dashboard["cat"]["deferred"])
+        self.assertEqual(dashboard["rooms"], [])
         status, other = self.call("GET", "/api/agent/2001-s009")
         self.assertEqual(status, 422)
         self.assertEqual(other["error_code"], "project_scope_mismatch")

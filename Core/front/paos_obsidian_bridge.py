@@ -119,7 +119,8 @@ def handle_request(board: Board, request: dict, *, vault_root: Path | str) -> tu
         scoped_path, payload = _project_scope(board, context, method, path, body)
     except READ_ERRORS as exc:
         return 422, error_view(exc)
-    return dispatch_request(board, method, scoped_path, payload)
+    return dispatch_request(board, method, scoped_path, payload,
+                            defer_cat=context.get("kind") == "project")
 
 
 def main(argv: list[str] | None = None) -> int:
