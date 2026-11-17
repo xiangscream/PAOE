@@ -75,7 +75,7 @@ class SystemReleaseTests(unittest.TestCase):
         sdk = 'Core/obsidian/types/obsidian.d.ts'
         release.scan_machine_paths(sdk, (ROOT/sdk).read_bytes())
         with self.assertRaises(ValueError):
-            release.scan_machine_paths(sdk, ('C:'+'/Users/Someone/private').encode())
+            release.scan_machine_paths(sdk, ('C:'+'/Users/'+'Someone/private').encode())
         with self.assertRaises(ValueError):
             release.scan_machine_paths('Core/README.md',('C:'+'/Users/' + 'remo').encode())
         with self.assertRaises(ValueError):
