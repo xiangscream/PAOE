@@ -5,7 +5,7 @@ title: Workstation ENTRY 母本
 description: 本人运行定位与业务入口；规则引用项目公共正文，机器配置引用本机登记。
 tags: template, workstation, entry
 status: active
-version: 24
+version: 25
 ---
 
 # {{staff_number}} · 个人工位入口
@@ -22,7 +22,7 @@ version: 24
 | 正常命令与公开联系包 | {{guide_index_link}} · {{ops_link}}；OPS选择“生成本人公开联系包” |
 | 方法与工具 | 下方CLI的 `library search` / `library tools`，再读命中的原件 |
 
-首次入职读 `notices/README.md`，完成本人 `ONBOARD`。创建者按母版带入 README、codex.py、opencode.py、wake_entry.py 与入职任务；当前CLI不自动带入。已完成入职的工位保持现状。
+首次入职读 `notices/README.md`，完成本人 `ONBOARD`。创建者按母版带入 `notices/README.md`、共用 `wake_entry.py` 和当前 Harness 对应薄入口（`codex.py` / `opencode.py` / `dsh.py`），并合并入职任务；当前CLI不自动带入。已完成入职的工位保持现状。
 
 ### 本机运行入口
 
