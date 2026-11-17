@@ -19,6 +19,7 @@ export function nativeEventSource(url: string): NativeSse {
   let closed = false
   let abort: (() => void) | null = null
   let lastEventId = ''
+  let pendingEventId: string | null = null
 
   const stream = {
     onerror: null as (() => void) | null,
@@ -40,6 +41,7 @@ export function nativeEventSource(url: string): NativeSse {
 
   const connect = () => {
     if (closed) return
+    pendingEventId = null
     let target: URL
     try { target = new URL(url) } catch { stream.onerror?.(); return }
     const client = target.protocol === 'https:' ? https : http
@@ -70,6 +72,8 @@ export function nativeEventSource(url: string): NativeSse {
         const payload = { data: data.join('\n') }
         const list = listeners.get(name) || []
         for (const listener of list) listener(payload)
+        if (pendingEventId !== null) lastEventId = pendingEventId
+        pendingEventId = null
         name = 'message'
         data = []
       }
@@ -82,7 +86,7 @@ export function nativeEventSource(url: string): NativeSse {
           if (!line) { dispatch() }
           else if (line.startsWith(':')) { /* heartbeat */ }
           else if (line.startsWith('event:')) name = line.slice(6).trim()
-          else if (line.startsWith('id:')) lastEventId = line.slice(3).trim()
+          else if (line.startsWith('id:')) pendingEventId = line.slice(3).trim()
           else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''))
           index = buffer.search(/\r?\n/)
         }

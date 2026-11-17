@@ -3,7 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import tailwindcss from 'tailwindcss'
 import autoprefixer from 'autoprefixer'
 import path from 'node:path'
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -61,5 +61,7 @@ for (const name of plugins) {
     '.paos-obsidian-host{height:100%;min-height:0;overflow:hidden}\n',
     'utf8',
   )
+  const bundle = path.join(obsidian, name, 'main.js')
+  writeFileSync(bundle, readFileSync(bundle, 'utf8').replace(/[ \t]+$/gm, ''), 'utf8')
   console.log('built', name)
 }

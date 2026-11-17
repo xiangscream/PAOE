@@ -95,6 +95,40 @@ it('consumes an SSE stream without CORS headers through the native adapter', asy
   await new Promise<void>(resolve => server.close(() => resolve()))
 })
 
+it('does not commit a partial SSE event id before the full event is delivered', async () => {
+  let connections = 0
+  let resolveSecond!: (id: string | undefined) => void
+  let resolveThird!: (id: string | undefined) => void
+  const second = new Promise<string | undefined>(resolve => { resolveSecond = resolve })
+  const third = new Promise<string | undefined>(resolve => { resolveThird = resolve })
+  const server = http.createServer((request: any, response: any) => {
+    connections++
+    response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+    if (connections === 1) {
+      response.end('id: 1\nevent: room\ndata: {"cursor":1}\n\nid: 2\n')
+    } else if (connections === 2) {
+      resolveSecond(request.headers['last-event-id'])
+      response.end('id: 2\nevent: room\ndata: {"cursor":2}\n\n')
+    } else {
+      resolveThird(request.headers['last-event-id'])
+      response.end()
+    }
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address() as any
+  const stream = nativeEventSource(`http://127.0.0.1:${address.port}/events?after=0`)
+  try {
+    expect(await second).toBe('1')
+    expect(await third).toBe('2')
+    stream.close()
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(connections).toBe(3)
+  } finally {
+    stream.close()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
+})
+
 describe('embedded CAT lifecycle', () => {
   it('uses the direct CAT event URL, leaves browser history alone and closes the stream on unmount', async () => {
     history.replaceState(null, '', '/cat?room=room-a')

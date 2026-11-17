@@ -57,6 +57,8 @@ class CatView extends ItemView {
       eventUrl: (roomId: string, cursor: number) =>
         config.catUrl.replace(/\/$/, '') + '/api/rooms/' + encodeURIComponent(roomId) + '/events?after=' + cursor,
       streamFactory: nativeEventSource,
+      onNewDiscussion: () => new Notice('新讨论请从项目面板的协作/连线入口发起；System CAT 页签用于接续现有房间。'),
+      onBoard: () => new Notice('项目面板在项目库中打开；当前是 System CAT。'),
     })
     this.panel = this.appInstance.mount(root)
   }
