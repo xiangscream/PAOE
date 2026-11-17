@@ -39,7 +39,7 @@ def validate_path(name: str) -> None:
 # Split drive literals keep this table from being mistaken for deployed paths.
 EXAMPLE_PATHS = {
     'Core/obsidian/types/obsidian.d.ts': {
-        'C:' + '/Users/John/Documents/ObsidianVault/foo/bar.md',
+        'C:' + '/Users/' + 'John/Documents/ObsidianVault/foo/bar.md',
         'C:' + r'\Users\John\Documents\ObsidianVault\foo\bar.md'},
     'Core/front/ui/tests/markdown.test.ts': {'C:' + '/example/Doc.md'},
     'Core/code/personal-agent-os/docs/RUNTIME-INJECTION.md': {
