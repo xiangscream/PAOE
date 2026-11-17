@@ -25,6 +25,7 @@
 │       │   ├── README.md # 入职与按 Harness 配置唤醒器
 │       │   ├── codex.py   # Codex 可执行入口
 │       │   ├── opencode.py # OpenCode 可执行入口
+│       │   ├── dsh.py      # DSH 固定 Session 可执行入口
 │       │   └── wake_entry.py # 共用当前安装与本人工位校验
 │       └── Contact     # 如已配置，原生接收/STOP 等入口
 └── Archive/            # 可选历史导航；大批历史正文放在 Vault 外
@@ -40,7 +41,7 @@
 | [HISTORY](HISTORY.md) | 有价值的阶段成果、判断与经验 | 归并已完成 TODO，联动 INDEX 与库外清理 |
 | [ENTRY](Workstations/_workstation/ENTRY.md) | 分开说明流程约束与本人业务入口，CLI直接读取 | 生成器只填数据；已有入口按受影响部分合并，重复初始化不覆盖 |
 | [TODO](Workstations/_workstation/TODO.md) | TODO v4 的合法样例 | 只校验格式与身份；当前行动由本人维护，不复制样例任务 |
-| [入职与唤醒说明](Workstations/_workstation/notices/README.md) | 入职四项要求及 Codex / OpenCode 使用入口 | 创建者须补入 notices 的 README、codex.py、opencode.py、wake_entry.py，并沿 TODO v4 写入 ONBOARD；当前 CLI 不自动带入，已有人工内容不覆盖 |
+| [入职与唤醒说明](Workstations/_workstation/notices/README.md) | 入职四项要求及 Codex / OpenCode / DSH 使用入口 | 创建者按下方第 4 步补齐 notices 文件与 ONBOARD；当前 CLI 不自动带入，已有人工内容不覆盖 |
 | [采用公告](../Guide/Templates/project-announcement.md) | 一次真实采用事项的消息样板 | 需要时使用；不作为持续规则或任务状态 |
 
 页面可以互相导航；运行规则归 AGENTS，当前业务口径归 INDEX，成员与分工归 TEAM，阶段成果归 HISTORY。正文只在其归属处维护，导航引用原件，派生区通过现有工具更新。完成项汇总和归位随日常交付一起进行，不另抄一份任务流水账。
@@ -65,7 +66,7 @@ Human 已编辑或确认的正文作为后续修改基线。更新只改当前�
 paos workstation init '<project-id>' '<home-id>' --root '<已登记项目根>' --objective '<本人目标>'
 ```
 
-4. 将本母版的 `notices/README.md`、`codex.py`、`opencode.py`、`wake_entry.py` 带入新工位，在本人 TODO 合并 `ONBOARD` 入职任务：了解 PAOE、继承业务理解、更新 TEAM、按实际 Harness 配置并验证唤醒器。当前 CLI 初始化不会自动复制这些文件或导入母版任务，创建者须补齐这一步；已有 ENTRY/TODO/说明和脚本保留人工编辑，已完成入职不重置。任务由本人沿 TODO v4 写入入口维护，不用母版整份覆盖。
+4. 将本母版 `notices/` 中的 `README.md`、`codex.py`、`opencode.py`、`dsh.py`、`wake_entry.py` 带入新工位，在本人 TODO 合并 `ONBOARD` 入职任务：了解 PAOE、继承业务理解、更新 TEAM、按实际 Harness 配置并验证唤醒器。各 Harness 的入口和参数见 [入职与唤醒说明](Workstations/_workstation/notices/README.md)。当前 CLI 初始化不会自动复制这些文件或导入母版任务，创建者须补齐这一步；已有 ENTRY/TODO/说明和脚本保留人工编辑，已完成入职不重置。任务由本人沿 TODO v4 写入入口维护，不用母版整份覆盖。
 5. 从实际 Home 打开生效 AGENTS/INDEX/ENTRY/TODO 与必要业务原件，验证 Guide、Library、Tool 定位，检查旧工作循环路径已退出；已有项目普通文件只在批准范围内修改。TEAM/ENTRY 改动后，Rooter沿现有 `paos_team_overview.py` 更新PROJECTS聚合，并执行本页“修改后检查”；不手改派生成员表。
 
 通用行为写入 AGENTS 公共母本；专题操作在 [Guide](../Guide/README.md)，专业方法在独立 Libraries。代码仓库自身的 AGENTS 保持独立的工程约定，不被项目公共区同步器覆盖。
