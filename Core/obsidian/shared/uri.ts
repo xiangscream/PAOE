@@ -16,3 +16,15 @@ export function catRoomFromParams(params: Record<string, string>, currentVault: 
   }
   return { room }
 }
+
+export function dispatchCatUri(
+  uri: string,
+  open: (url: string, target: string) => unknown = (url, target) => window.open(url, target),
+): string | null {
+  try {
+    open(uri, '_blank')
+    return null
+  } catch (error) {
+    return String((error as Error)?.message || error)
+  }
+}
