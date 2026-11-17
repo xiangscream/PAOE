@@ -27,7 +27,7 @@ async function request(path, options={}) {
 function checked(value) { if (!value.ok) throw new Error(errorText(value)); return value; }
 
 export default {
-  props:{project:{type:String,required:true},initialRoom:{type:String,default:''},embedded:{type:Boolean,default:false},eventUrl:{type:Function,default:null}},
+  props:{project:{type:String,required:true},initialRoom:{type:String,default:''},embedded:{type:Boolean,default:false},eventUrl:{type:Function,default:null},streamFactory:{type:Function,default:null}},
   emits:['new-discussion','board','room-selected'],
   components:{CatIcon, MessageContent},
   data() {
@@ -257,7 +257,7 @@ export default {
       this.stopStream();
       if(!this.active || document.hidden || this.roomId!==state.id)return;
       const target=this.eventUrl ? this.eventUrl(state.id,state.cursor) : endpoint(state.id,'/events?after='+state.cursor);
-      const stream=markRaw(new EventSource(target));
+      const stream=markRaw(this.streamFactory ? this.streamFactory(target) : new EventSource(target));
       this.stream=stream;const generation=this.selection;
       this.connection='正在接入实时消息';this.connectionError=false;
       stream.addEventListener('room',async event=>{

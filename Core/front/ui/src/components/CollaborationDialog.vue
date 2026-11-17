@@ -291,7 +291,7 @@ onMounted(() => {
         <label>其他参与者</label>
         <div class="row"><span v-for="id in otherParticipants" :key="id" class="participant-chip">
           {{ label(props.agents.find(agent=>agent.id===id) || {id}) }}
-          <button type="button" :disabled="locked" :aria-label="'移除参与者 ' + id" @click="draft.participants=draft.participants?.filter(item=>item!==id)">×</button>
+          <button type="button" :disabled="locked" :aria-label="'移除参与者 ' + id" @click="draft.participants=draft.participants?.filter((item: string)=>item!==id)">×</button>
         </span></div>
       </div>
 

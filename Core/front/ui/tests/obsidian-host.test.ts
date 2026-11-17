@@ -2,8 +2,13 @@ import { describe, expect, it, vi, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ChatView from '../src/components/ChatView.vue'
 import { setApiTransport } from '../src/transport'
-import { bridgeTransport } from '../../../obsidian/shared/bridge'
+import { bridgeTransport, runBridge } from '../../../obsidian/shared/bridge'
 import { buildCatUri, catRoomFromParams } from '../../../obsidian/shared/uri'
+import { nativeEventSource } from '../../../obsidian/shared/stream'
+import http from 'http'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
+import os from 'os'
+import path from 'path'
 
 afterEach(() => setApiTransport(null))
 
@@ -24,6 +29,44 @@ describe('obsidian bridge adapter', () => {
     expect(failed.status).toBe(503)
     expect((await failed.json()).error_code).toBe('cat_offline')
   })
+
+  it('uses UTF-8 Python output and decodes Chinese split across child chunks', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'paos-bridge-'))
+    const script = path.join(dir, 'bridge.py')
+    writeFileSync(script, [
+      'import sys, time',
+      'sys.stdin.read()',
+      'sys.stdout.write(\'{"status":200,"body":{"ok":true,"text":"中文\')',
+      'sys.stdout.flush()',
+      'time.sleep(0.05)',
+      'sys.stdout.write(\'回执"}}\')',
+      'sys.stdout.flush()',
+    ].join('\n'), 'utf8')
+    try {
+      const response = await runBridge({ pythonPath: 'python', installationFile: 'x', bridgePath: script, vaultRoot: 'x' }, { method: 'GET', path: '/api/context' })
+      expect(response.status).toBe(200)
+      expect(response.body.text).toBe('中文回执')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects extra stdout instead of guessing a JSON line', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'paos-bridge-'))
+    const script = path.join(dir, 'bridge.py')
+    writeFileSync(script, [
+      'import sys',
+      'sys.stdin.read()',
+      'sys.stdout.write(\'noise\\n{"status":200,"body":{"ok":true}}\')',
+    ].join('\n'), 'utf8')
+    try {
+      const response = await runBridge({ pythonPath: 'python', installationFile: 'x', bridgePath: script, vaultRoot: 'x' }, { method: 'GET', path: '/api/context' })
+      expect(response.status).toBe(0)
+      expect(response.body.error_code).toBe('bridge_invalid_output')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('CAT protocol', () => {
@@ -36,6 +79,20 @@ describe('CAT protocol', () => {
     expect(catRoomFromParams({ vault: '6faa35d59395acfc', room: 'room-a' }, 'System', ['6faa35d59395acfc'])).toEqual({ room: 'room-a' })
     expect(catRoomFromParams({ vault: 'Other', room: 'room-a' }, 'System').room).toBe('')
   })
+})
+
+it('consumes an SSE stream without CORS headers through the native adapter', async () => {
+  const server = http.createServer((_request: any, response: any) => {
+    response.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' })
+    response.write('event: room\ndata: {"ok":true}\n\n')
+  })
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address() as any
+  const source = nativeEventSource(`http://127.0.0.1:${address.port}/api/rooms/room-a/events?after=0`)
+  const payload = await new Promise<string>(resolve => source.addEventListener('room', event => resolve(event.data)))
+  expect(payload).toBe('{"ok":true}')
+  source.close()
+  await new Promise<void>(resolve => server.close(() => resolve()))
 })
 
 describe('embedded CAT lifecycle', () => {

@@ -7,6 +7,7 @@ import { bridgeTransport } from '../shared/bridge'
 import { createShadowHost, readPluginCss } from '../shared/host'
 import { normalizeSettings, resolveBridge, type PaosBridgeSettings } from '../shared/settings'
 import { PaosSettingsTab } from '../shared/settings-tab'
+import { nativeEventSource } from '../shared/stream'
 import { catRoomFromParams } from '../shared/uri'
 import { vaultAliases } from '../shared/vaults'
 import '../../front/ui/src/styles.css'
@@ -55,6 +56,7 @@ class CatView extends ItemView {
       initialRoom: this.pendingRoom,
       eventUrl: (roomId: string, cursor: number) =>
         config.catUrl.replace(/\/$/, '') + '/api/rooms/' + encodeURIComponent(roomId) + '/events?after=' + cursor,
+      streamFactory: nativeEventSource,
     })
     this.panel = this.appInstance.mount(root)
   }

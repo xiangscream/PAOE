@@ -30,6 +30,8 @@ export const runBridge: BridgeRunner = (config, request) => new Promise(resolve 
   let settled = false
   let stdout = ''
   let stderr = ''
+  const stdoutDecoder = new TextDecoder('utf-8')
+  const stderrDecoder = new TextDecoder('utf-8')
   const finish = (response: BridgeResponse) => {
     if (settled) return
     settled = true
@@ -39,23 +41,26 @@ export const runBridge: BridgeRunner = (config, request) => new Promise(resolve 
   const timer = setTimeout(() => finish(errorResponse('PAOS 桥请求超时（45 秒）', 'bridge_timeout')), 45000)
   try {
     const child = spawn(config.pythonPath, [
+      '-X', 'utf8',
       config.bridgePath,
       '--installation-file', config.installationFile,
       '--vault-root', config.vaultRoot,
       ...(config.catUrl ? ['--cat-url', config.catUrl] : []),
     ], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
-    child.stdout?.on('data', (chunk: any) => { stdout += String(chunk) })
-    child.stderr?.on('data', (chunk: any) => { stderr += String(chunk) })
+    child.stdout?.on('data', (chunk: any) => { stdout += stdoutDecoder.decode(chunk, { stream: true }) })
+    child.stderr?.on('data', (chunk: any) => { stderr += stderrDecoder.decode(chunk, { stream: true }) })
     child.on('error', (error: any) => finish(errorResponse(error, 'bridge_unavailable')))
     child.on('close', (code: any) => {
       if (settled) return
-      const line = stdout.trim().split(/\r?\n/).reverse().find(item => item.trim().startsWith('{'))
-      if (!line) {
+      stdout += stdoutDecoder.decode()
+      stderr += stderrDecoder.decode()
+      const text = stdout.trim()
+      if (!text) {
         finish(errorResponse(stderr || `PAOS 桥退出，状态码 ${code}`, 'bridge_invalid_output'))
         return
       }
       try {
-        const parsed = JSON.parse(line)
+        const parsed = JSON.parse(text)
         if (!parsed || typeof parsed.status !== 'number' || typeof parsed.body !== 'object') {
           finish(errorResponse('PAOS 桥响应缺少 status/body', 'bridge_invalid_output'))
           return

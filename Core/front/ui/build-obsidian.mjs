@@ -7,9 +7,9 @@ import { writeFileSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const front = path.resolve(here, '..', 'front', 'ui')
-const tailwindConfig = (await import(pathToFileURL(path.join(front, 'tailwind.config.js')).href)).default
-
+const core = path.resolve(here, '..', '..')
+const obsidian = path.join(core, 'obsidian')
+const tailwindConfig = (await import(pathToFileURL(path.join(here, 'tailwind.config.js')).href)).default
 const plugins = ['project-panel', 'system-cat']
 
 for (const name of plugins) {
@@ -17,30 +17,37 @@ for (const name of plugins) {
     root: here,
     configFile: false,
     plugins: [vue()],
+    resolve: {
+      alias: [
+        { find: /^vue$/, replacement: path.join(here, 'node_modules', 'vue') },
+        { find: /^@vue-flow\/core$/, replacement: path.join(here, 'node_modules', '@vue-flow', 'core') },
+        { find: /^@vue-flow\/core\/(.*)$/, replacement: path.join(here, 'node_modules', '@vue-flow', 'core', '$1') },
+      ],
+    },
     css: {
       postcss: {
         plugins: [
           tailwindcss({
             ...tailwindConfig,
-            content: [path.join(front, 'index.html'), path.join(front, 'src/**/*.{vue,ts}')],
+            content: [path.join(here, 'index.html'), path.join(here, 'src/**/*.{vue,ts}')],
           }),
           autoprefixer(),
         ],
       },
     },
     build: {
-      outDir: path.join(here, name),
+      outDir: path.join(obsidian, name),
       emptyOutDir: false,
       cssCodeSplit: false,
       minify: 'esbuild',
       lib: {
-        entry: path.join(here, name, 'main.ts'),
+        entry: path.join(obsidian, name, 'main.ts'),
         formats: ['cjs'],
         fileName: () => 'main.js',
         cssFileName: 'paos-ui',
       },
       rollupOptions: {
-        external: ['obsidian', 'electron', 'fs', 'path', 'os', 'child_process', /^node:/],
+        external: ['obsidian', 'electron', 'fs', 'path', 'os', 'child_process', 'http', 'https', /^node:/],
         output: {
           entryFileNames: 'main.js',
           chunkFileNames: '[name].js',
@@ -50,7 +57,7 @@ for (const name of plugins) {
     },
   })
   writeFileSync(
-    path.join(here, name, 'styles.css'),
+    path.join(obsidian, name, 'styles.css'),
     '.paos-obsidian-host{height:100%;min-height:0;overflow:hidden}\n',
     'utf8',
   )

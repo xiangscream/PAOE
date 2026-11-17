@@ -6,6 +6,7 @@ const props = defineProps<{
   project: string
   initialRoom: string
   eventUrl: (roomId: string, cursor: number) => string
+  streamFactory?: (url: string) => any
 }>()
 const emit = defineEmits<{
   (event: 'new-discussion'): void
@@ -28,6 +29,7 @@ defineExpose({ selectRoom })
       :project="props.project"
       :initial-room="props.initialRoom"
       :event-url="props.eventUrl"
+      :stream-factory="props.streamFactory"
       embedded
       @new-discussion="emit('new-discussion')"
       @board="emit('board')"
