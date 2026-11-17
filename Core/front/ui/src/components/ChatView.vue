@@ -296,6 +296,7 @@ export default {
       finally{this.refreshing=false;this.$nextTick(this.resizeComposer);}
     },
     async openInitialRoom() {
+      if(this.roomId)return;
       const wanted=this.initialRoom || (!this.embedded ? new URLSearchParams(location.search).get('room') : '');
       const first=this.rooms.find(room=>room.status==='open')||this.rooms[0];
       if(wanted||first)await this.selectRoom(wanted||first.id);else this.connection='已连接';
