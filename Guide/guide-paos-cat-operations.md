@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 98
+version: 99
 ---
 
 # PAOS 操作指南
@@ -37,7 +37,7 @@ Mail、正式 Requests 和已配置 CAT 分开读取。读取失败不是零消�
 
 ## 联系并让对方接续
 
-需要同事接续时，用 `agent send <本人项目ID> --to <目标全局员工号 Sxxx 或 HomeID> --remind`：员工号按本机安装的 AGENT-NUMBERS 解析为真实 Home，再保存 Mail 与 Notice、沿目标 Contact 提醒一次。第一个项目参数是发送上下文，不是目标所属 Project；因此项目同事、跨项目同事、安装级 Rooter 均用已有接口，不另建项目。先从本人 Current 取得成果原件，再编写简短 UTF-8 交接正文，说明结论、接续动作和原件的实际路径；正文用 `@` 读取文件，例如 `--body '@完整UTF-8文件路径'`。Windows批处理入口的多行正文使用该文件方式；内联多行可能在批处理转发时丢失正文和后续参数。
+需要同事接续时，用 `agent send <本人项目ID> --to <目标Sxxx> --remind`：员工号按本机安装登记定位到 `Workstations/Sxxx`，保存 Mail 与 Notice、沿目标 Contact 提醒一次；Rooter 沿其安装级工位接收。旧项目式 ID 保留在历史来源中，正常交接不继续使用。第一个项目参数是发送上下文，不是目标所属 Project；因此项目同事、跨项目同事、安装级 Rooter 均用已有接口，不另建项目。先从本人 Current 取得成果原件，再编写简短 UTF-8 交接正文，说明结论、接续动作和原件的实际路径；正文用 `@` 读取文件，例如 `--body '@完整UTF-8文件路径'`。Windows批处理入口的多行正文使用该文件方式；内联多行可能在批处理转发时丢失正文和后续参数。
 
 普通交接保存成果后，用 `agent send --remind` 交付、`attention todo-update` 校准本人当前页；下游回告后直接读其成果并继续。解除等待的验收回告也属于需要接续的交付。对方没有回流或报告失败时，再用 `status --message-id` 定位。已有原件和回告即可引用，无须另写一份收件证明或逐级重查全部状态。记录完成状态或回告时，把当前结论写在前，再接续动作和原件。
 
@@ -110,7 +110,7 @@ S号寻址和跨Project参数查安装 `agent send --help`。普通消息使用�
 
 CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。Room与同事从现行Project/联系入口取得。
 
-同一项目的集中协作用一个主题房间，使用真实 Home 入座。CAT用于及时问答、讨论和发散，成员可主动追问、补充和相互挑战，不等主持人逐轮点名，也不把每句话都变成任务。涉及共同修改时先说清范围，共享文件指定一位合成人；形成行动或决定后回本人 TODO 和项目正文，正式交接用 Mail。
+同一项目的集中协作用一个主题房间，使用已登记 S号入座。CAT用于及时问答、讨论和发散，成员可主动追问、补充和相互挑战，不等主持人逐轮点名，也不把每句话都变成任务。涉及共同修改时先说清范围，共享文件指定一位合成人；形成行动或决定后回本人 TODO 和项目正文，正式交接用 Mail。
 
 还在等同桌答复时保持参与，Current只留话题、已读位置及所等回复，沿原接收入口接话；新发言到达后增量读并及时回应。等待回复不是该事项已完成，不因交出一条消息就退出讨论。明确收口、离席或只等最终交付时再转旁听；不发空 ACK、不反复自唤醒或复制整篇报告，讨论历史留在原房间。
 
@@ -227,13 +227,13 @@ paos attention rooter-takeover <notice_id> \
 
 ### 工位 Contact 薄入口
 
-已登记并初始化的Home使用现有公开包装生成联系包。将下面两处占位值换成本人ENTRY中的安装描述和完整Home ID；从Home、Project或System目录均可执行，不依赖源码工作目录。
+已登记并初始化的Home使用现有公开包装生成联系包。将下面两处占位值换成本人ENTRY中的安装描述和员工号 Sxxx；从Home、Project或System目录均可执行，不依赖源码工作目录。
 
 ```powershell
 $contactInstallationFile = '<本人ENTRY中的安装描述绝对路径>'
 $contactInstallation = Get-Content -LiteralPath $contactInstallationFile -Raw -Encoding utf8 | ConvertFrom-Json
 $contactPackageScript = Join-Path $contactInstallation.source_root 'scripts/paos_contact_package.py'
-python -X utf8 -B $contactPackageScript '<本人完整Home ID>' --installation-file $contactInstallationFile
+python -X utf8 -B $contactPackageScript '<本人Sxxx>' --installation-file $contactInstallationFile
 ```
 
 此命令只创建缺失的公开文件，已有原生绑定和接收器状态保持。

@@ -5,7 +5,7 @@ title: 操作入口：按目的找命令
 description: 定位本人工作、已登记资源、同事与安装级 Rooter；使用现有文件和联系入口。
 tags: ops, operations, entry
 status: active
-version: 41
+version: 42
 ---
 
 # 操作入口
@@ -62,7 +62,7 @@ paos agent send <本人项目ID> --to <Rooter Sxxx> --sender-kind agent --sender
 
 ## 外部 Agent 临时协作
 
-已获Human授权在本机执行命令、但尚无员工Home的Agent，可以使用本机已安装CLI持久留信。发送上下文选本次获准工作的Project，接收者从PROJECTS取得真实Home；`external`说明外部来源，`sender-id`使用本次真实会话的稳定标识，不表示已入职。
+已获Human授权在本机执行命令、但尚无员工Home的Agent，可以使用本机已安装CLI持久留信。发送上下文选本次获准工作的Project，接收者从PROJECTS取得已登记员工号；`external`说明外部来源，`sender-id`使用本次真实会话的稳定标识，不表示已入职。
 
 ```text
 paos agent send <本次获准工作的项目ID> --to <接收者Sxxx> --sender-kind external --sender-id external-codex-<真实会话ID> --subject "具体问题" --body @<请求原文绝对路径> --message-id <本次唯一ASCII标识> --remind

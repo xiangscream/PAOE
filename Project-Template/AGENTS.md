@@ -5,7 +5,7 @@ title: Project AGENTS 入口模板
 description: 项目公共工作指南的唯一编辑母本；项目副本承载派生公共区与本项目约定。
 tags: template, harness, entry
 status: active
-version: 25
+version: 26
 ---
 
 # 项目 <project-id> · Agent 工作入口
@@ -23,13 +23,13 @@ version: 25
 
 ### 1. 从当前任务恢复
 
-新会话、接班或压缩后，从本人 ENTRY 取得 CLI 前缀。已登记 Codex 接收器的本人，在原 Desktop 工具环境先执行 `wake prepare-current`；其他 Harness 沿 ENTRY 的正常入口。随后执行 `orient <project> <Sxxx> --read`，将当前 AGENTS、项目 INDEX、本人 ENTRY/TODO 的完整输出读入本轮上下文，再读当前任务所需原件；Home 只作底层定位。准备失败时保留具体错误交 Rooter，继续可独立完成的责任。摘要只帮助定位。Rooter 直接读本人工位和 System 入口，不虚构项目。
+新会话、接班或压缩后，从本人 ENTRY 取得 CLI 前缀。已登记 Codex 接收器的本人，在原 Desktop 工具环境先执行 `wake prepare-current`；其他 Harness 沿 ENTRY 的正常入口。随后执行 `orient <project> <Sxxx> --read`，将当前 AGENTS、项目 INDEX、本人 ENTRY/TODO 的完整输出读入本轮上下文，再读当前任务所需原件。准备失败时保留具体错误交 Rooter，继续可独立完成的责任。摘要只帮助定位。Rooter 直接读本人工位和 System 入口，不虚构项目。
 
 共同经历（EXM）是持续维护的外置记忆。恢复本人 Current 和当前输入后，在写新 TODO 或第一份实质计划前，读完页首“共同经历”中的短背景；进入新阶段、压缩恢复继续规划时也先读。主动联想可用的跨项目结论、成果与相关同事，结合本任务推进。
 
 具体检索读同处的“本机 EXM 方法”：明确名字、术语用词面检索，概念问题按任务意义宽召回，需要时精排；定位后读原文上下文与后续纠偏。词面零命中时，换说法、检索方式或沿已有来源追读。历史贡献沿原件找人，当前责任和业务口径读 TEAM、项目 INDEX。
 
-正常人员称呼、TEAM 标题和交接用本机安装 SSOT 的全局员工号 Sxxx；Home ID 只作本机内部定位，不得按尾号推算员工号。Project 号只表示业务上下文；跨机仍按机器 + Project + Home 定位，不能只凭 Sxxx 路由。
+正常身份、TEAM 标题、命令和交接统一使用本机登记的全局员工号 Sxxx，项目工位位于 `Workstations/Sxxx`。Project 号表示业务上下文；旧项目式 Home ID 只用于追溯历史，不再作为第二个当前身份，不按尾号推算员工号。Rooter 保持安装级工位。跨机按机器及其登记的员工定位，Project 提供业务上下文；本机 S号不自动代表另一台机器的同一人。
 
 从本人TODO和当前有效输入确定下一动作，同事记录用于补事实。普通通知和维护并入原责任，不打断Human明确的当前优先级；改变目标、解除阻碍的输入及时接续。已完成的旧议题只按需查结果。
 

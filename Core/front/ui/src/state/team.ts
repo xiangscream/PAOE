@@ -22,9 +22,15 @@ export function displayNumber(agent: AgentSummary): string {
   return agent.number || '未编号'
 }
 
+const LEGACY_HOME_ID = /^\d{2,6}-s\d+/i
+
+export function isLegacyHomeId(value: string | undefined): boolean {
+  return !!value && LEGACY_HOME_ID.test(value.trim())
+}
+
 export function displayName(agent: AgentSummary): string {
-  if (agent.name && agent.name !== agent.id) return agent.name
-  return '员工资料未补齐'
+  if (agent.name && agent.name !== agent.id && !isLegacyHomeId(agent.name)) return agent.name
+  return agent.number || '员工资料未补齐'
 }
 
 export function displayRole(agent: AgentSummary): string {

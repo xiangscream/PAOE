@@ -98,7 +98,7 @@ class ProjectRegistry:
         seen: set[str] = set()
         for home in homes:
             if (not isinstance(home, str) or
-                not re.fullmatch(rf"{project_id}-s(?:\d{{3}}|[1-9]\d{{3,}})", home) or home in seen):
+                not re.fullmatch(rf"(?:{project_id}-s(?:\d{{3}}|[1-9]\d{{3,}})|S\d{{3,}})", home) or home in seen):
                 raise RegistryProblem("project_members_invalid", "Home ID 无效或重复。", path=label)
             seen.add(home)
         coordinator = record.get("coordinator_home_id")
@@ -179,6 +179,79 @@ class ProjectRegistry:
             temp.unlink(missing_ok=True)
         return {"created": True, "record": record}
 
+    def replace_home(
+        self, project_id: str, old_home_id: str, new_home_id: str,
+        *, expected_fingerprint: str,
+    ) -> dict[str, Any]:
+        """Rename one registered Home without changing membership order.
+
+        This is the narrow registry writer used by Rooter's physical migration;
+        it does not move files, create a Home, or rewrite historical Mail.
+        """
+        if not isinstance(old_home_id, str) or not old_home_id.strip():
+            raise RegistryProblem("project_members_invalid", "旧 Home 不能为空。")
+        if (not isinstance(new_home_id, str) or
+                not re.fullmatch(rf"(?:{project_id}-s(?:\d{{3}}|[1-9]\d{{3,}})|S\d{{3,}})", new_home_id)):
+            raise RegistryProblem("project_members_invalid", "新 Home 必须是 Sxxx 或本项目的完整成员 ID。")
+        if not isinstance(expected_fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_fingerprint):
+            raise RegistryProblem("project_fingerprint_invalid", "必须提供当前登记原始字节的 SHA-256。")
+        path = self._path(project_id)
+        self.read_record(project_id)
+        if path.is_symlink():
+            raise RegistryProblem("project_registry_write_failed", "拒绝替换符号链接登记。", path=str(path))
+        try:
+            with _membership_lock(path):
+                original = path.read_bytes()
+                fingerprint = hashlib.sha256(original).hexdigest()
+                if fingerprint != expected_fingerprint:
+                    raise RegistryProblem("project_fingerprint_conflict", "项目登记已变化；回读后重新决定迁移。", path=str(path), actual=fingerprint)
+                record = self._check(json.loads(original), project_id, path)
+                homes = list(record["homes"])
+                if old_home_id not in homes:
+                    raise RegistryProblem("project_members_invalid", "旧 Home 不在当前登记中。", old_home_id=old_home_id)
+                if new_home_id in homes and new_home_id != old_home_id:
+                    raise RegistryProblem("project_members_invalid", "新 Home 已在当前登记中。", new_home_id=new_home_id)
+                updated = {
+                    **record,
+                    "homes": [new_home_id if home == old_home_id else home for home in homes],
+                    "coordinator_home_id": (
+                        new_home_id if record["coordinator_home_id"] == old_home_id
+                        else record["coordinator_home_id"]
+                    ),
+                }
+                self._check(updated, project_id, path)
+                encoded = (json.dumps(updated, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+                stage = path.with_name(f".{path.name}.members-{uuid.uuid4().hex}")
+                try:
+                    with stage.open("xb") as stream:
+                        stream.write(encoded)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    if path.read_bytes() != original:
+                        raise RegistryProblem("project_fingerprint_conflict", "提交前登记被外部修改；没有覆盖。", path=str(path))
+                    backups = path.parent / ".backups"
+                    backups.mkdir(exist_ok=True)
+                    backup = backups / f"{project_id}.{fingerprint}.json"
+                    try:
+                        with backup.open("xb") as stream:
+                            stream.write(original)
+                    except FileExistsError:
+                        if backup.read_bytes() != original:
+                            raise RegistryProblem("project_registry_write_failed", "登记备份与指针不一致；没有覆盖。", path=str(backup))
+                    os.replace(stage, path)
+                    return {
+                        "replaced": True, "old_home_id": old_home_id,
+                        "new_home_id": new_home_id, "record": updated,
+                        "backup": str(backup),
+                        "fingerprint": hashlib.sha256(encoded).hexdigest(),
+                    }
+                finally:
+                    stage.unlink(missing_ok=True)
+        except RegistryProblem:
+            raise
+        except Exception as exc:
+            raise RegistryProblem("project_registry_write_failed", "无法安全更新项目登记。", path=str(path), cause=str(exc)) from exc
+
     def add_home(self, project_id: str, home_id: str, *, expected_fingerprint: str) -> dict[str, Any]:
         """Append one member; preserve root, Coordinator and every existing member.
 
@@ -186,8 +259,9 @@ class ProjectRegistry:
         process lock protect this one registered locator; no schema is added.
         """
         path = self._path(project_id)
-        if not isinstance(home_id, str) or not re.fullmatch(rf"{project_id}-s(?:\d{{3}}|[1-9]\d{{3,}})", home_id):
-            raise RegistryProblem("project_members_invalid", "新增 Home 必须是本项目的完整成员 ID。")
+        if (not isinstance(home_id, str) or
+                not re.fullmatch(rf"(?:{project_id}-s(?:\d{{3}}|[1-9]\d{{3,}})|S\d{{3,}})", home_id)):
+            raise RegistryProblem("project_members_invalid", "新增 Home 必须是 Sxxx 或本项目的完整成员 ID。")
         if not isinstance(expected_fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", expected_fingerprint):
             raise RegistryProblem("project_fingerprint_invalid", "必须提供当前登记原始字节的 SHA-256。")
         # Read first: an absent/corrupt registration must not create directories.

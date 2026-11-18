@@ -32,7 +32,7 @@ class TemplateSyncTests(unittest.TestCase):
             (self.mother/name).write_text('# fixture\n','utf-8')
         self.template = station/'ENTRY.md'
         self.template.write_bytes(self.f.entry_template.read_bytes())
-        (station/'TODO.md').write_text(render_todo(home_kind='project_agent',home_id='3002-s099',project_id='3002',objective='fixture',next_action='read'),'utf-8')
+        (station/'TODO.md').write_text(render_todo(home_kind='project_agent',home_id='S099',project_id='3002',objective='fixture',next_action='read'),'utf-8')
         guide = self.system/'Guide';guide.mkdir()
         for name in ('README.md','guide-work-method.md','ops-entry.md'):
             (guide/name).write_text('# Guide\n','utf-8')

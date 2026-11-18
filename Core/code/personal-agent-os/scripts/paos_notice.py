@@ -838,6 +838,7 @@ def mark_notice_read(
     reader_home_kind: str,
     reader_home_id: str,
     reader_project_id: str = "",
+    reader_home_aliases: set[str] | None = None,
 ) -> dict[str, Any]:
     """Explicitly mark one Notice read, independently of handled state.
 
@@ -873,7 +874,7 @@ def mark_notice_read(
         )
     if (
         reader_home_kind != expected_kind
-        or reader_home_id != expected_id
+        or expected_id not in {reader_home_id, *(reader_home_aliases or ())}
         or reader_project_id != expected_project
     ):
         raise NoticeProblem(

@@ -32,7 +32,8 @@ from paos_installation import InstallationProblem, effective_data_root, load_ins
 from paos_library import LibraryProblem, load_library_roots, scan_skills, scan_workflows
 from paos_registry import ProjectRegistry, RegistryProblem
 from paos_workstation import posix_windows_drive_locator
-from paos_agent_numbers import NumbersProblem, agent_id_for_staff_number, staff_number
+from paos_agent_numbers import (NumbersProblem, agent_id_for_staff_number,
+                                load_numbers, resolve_numbers_path, staff_number)
 
 
 # Workbench assets must not depend on the host MIME database. Windows registries
@@ -90,6 +91,20 @@ class Board:
             raise BoardProblem("installation_missing", "先运行 portable.py init，或显式指定已有安装描述。")
         self.registry = ProjectRegistry(self.installation_file)
         self.cat_url = cat_url
+
+    def _legacy_home_aliases(self) -> dict[str, list[str]]:
+        """Read-only old-Home aliases from the one staff registry, never guessed."""
+        try:
+            numbers = load_numbers(resolve_numbers_path(
+                None, self.installation_file, self.installation))
+        except NumbersProblem as problem:
+            if problem.code == "agent_numbers_not_configured":
+                return {}
+            raise
+        aliases: dict[str, list[str]] = {}
+        for home_id, label in numbers.items():
+            aliases.setdefault(str(label), []).append(str(home_id))
+        return aliases
 
     def run_paos(self, args: list[str], *, input_text: str | None = None) -> dict:
         """One existing CLI invocation. Never infer success from missing output."""
@@ -193,9 +208,13 @@ class Board:
             if line.startswith("### "):
                 candidate = line[4:].strip()
                 if re.fullmatch(r"[Ss]\d+", candidate):
-                    candidate = agent_id_for_staff_number(
-                        candidate, installation_path=self.installation_file,
-                        installation=self.installation)
+                    canonical = candidate.upper()
+                    if canonical not in set(record.get("homes") or []):
+                        candidate = agent_id_for_staff_number(
+                            candidate, installation_path=self.installation_file,
+                            installation=self.installation)
+                    else:
+                        candidate = canonical
                 current = candidate
                 members[candidate] = {}
                 continue
@@ -359,13 +378,16 @@ class Board:
                 if not fields["can_contact"]:
                     raise BoardProblem("member_paused", f"{member} 在 TEAM 中明确暂停，不能发起协作或提醒。")
 
-    def _agent_summary(self, row: dict) -> dict:
+    def _agent_summary(self, row: dict, legacy_aliases: dict[str, list[str]] | None = None) -> dict:
         summary = {"ok": row.get("ok"), "id": row.get("id"), "project": row.get("project"),
                    "objective": row.get("objective", ""), "next_action": row.get("next_action", ""),
                    "tasks": row.get("tasks", {}), "pending_notices": row.get("pending_notices", 0),
                    "mail_total": row.get("mail_total", 0)}
         for key in ("number", "name", "role", "description", "member_status", "registered", "can_contact", "team_path"):
             summary[key] = row.get(key, "" if key not in {"registered", "can_contact"} else False)
+        aliases = legacy_aliases if legacy_aliases is not None else self._legacy_home_aliases()
+        summary["staff_number"] = row.get("number", "") or ""
+        summary["legacy_home_ids"] = aliases.get(str(summary["staff_number"]), [])
         if not row.get("ok"):
             summary.update({"error": row.get("error", ""), "error_code": row.get("error_code", "")})
         return summary
@@ -484,12 +506,16 @@ class Board:
         projects = self.projects()
         selected = self.registry.read_record(project_id) if project_id else (projects[0] if projects else None)
         agents = []
+        legacy_aliases = self._legacy_home_aliases()
         if selected:
             for home_id in selected["homes"]:
                 try:
-                    agents.append(self._agent_summary(self.agent(home_id)))
+                    agents.append(self._agent_summary(self.agent(home_id), legacy_aliases))
                 except READ_ERRORS as exc:
-                    agents.append({"id": home_id, "ok": False, **error_view(exc)})
+                    agents.append({"id": home_id, "ok": False,
+                                   "staff_number": home_id if str(home_id).startswith("S") else "",
+                                   "legacy_home_ids": legacy_aliases.get(home_id, []),
+                                   **error_view(exc)})
         if include_cat:
             rooms_result = self.cat(["list"]) if self.cat_url else self.cat([])
         else:
@@ -521,7 +547,16 @@ class Board:
                         else {"ok": True}) if rooms_result.get("ok") else rooms_result}
 
     def rooms(self, project_id: str = "") -> dict:
-        homes = set(self.registry.read_record(project_id)["homes"]) if project_id else None
+        homes = None
+        if project_id:
+            record = self.registry.read_record(project_id)
+            homes = set(record["homes"])
+            aliases = self._legacy_home_aliases()
+            for home_id in record["homes"]:
+                number = staff_number(
+                    home_id, installation_path=self.installation_file,
+                    installation=self.installation) or ""
+                homes.update(aliases.get(number, []))
         result = self.cat(["list"])
         if not result.get("ok") or homes is None:
             return result
@@ -549,18 +584,30 @@ class Board:
         return {"ok": True, "room_id": room_id}
 
     def people(self) -> list[dict]:
-        """Names come from the registered Homes, staff numbers and TEAM originals."""
+        """Names come from registered Homes, staff numbers and TEAM originals.
+
+        `id` is the canonical current Home. `legacy_home_ids` is a read-only
+        alias list from the single AGENT-NUMBERS registry so old CAT room seats
+        can resolve to the same S-numbered employee without a second map.
+        """
+        aliases = self._legacy_home_aliases()
         people = []
         for project in self.projects():
             for home_id in project["homes"]:
                 fields = self._team_fields(project["id"], home_id)
                 number, role = fields["number"], fields["role"]
-                people.append({"id": home_id, "number": number or "", "role": role,
+                people.append({"id": home_id, "home_id": home_id,
+                               "staff_number": number or "", "number": number or "",
+                               "legacy_home_ids": aliases.get(number or "", []),
+                               "role": role,
                                "name": (number or "未编号") + (" · " + role if role else ""),
                                "project": project["id"]})
         if self.installation.get("rooter_home"):
             number = staff_number("rooter-001", installation_path=self.installation_file, installation=self.installation)
-            people.append({"id": "rooter-001", "number": number or "", "role": "System 运行支持",
+            people.append({"id": "rooter-001", "home_id": "rooter-001",
+                           "staff_number": number or "", "number": number or "",
+                           "legacy_home_ids": aliases.get(number or "", []),
+                           "role": "System 运行支持",
                            "name": "Rooter", "project": "System"})
         return people
 

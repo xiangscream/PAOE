@@ -5,7 +5,7 @@ title: PAOS 接口参考：本地工位、项目登记与方法库
 description: Agent 无 Core HTTP 运行的本地入口；内容维护走原文件，不另建项目概览。
 tags: paos, interface, reference, cli
 status: active
-version: 31
+version: 32
 ---
 
 # PAOS 接口参考
@@ -42,8 +42,8 @@ TODO 写入走 `attention todo-update/todo-write`，Rooter 使用对应 `rooter-
 
 ## 项目与当前口径
 
-`project show <project>` 返回五字段 `paos-project-registry/v1` 原始登记：项目 ID、OB 根、Home IDs、现任 Coordinator Home ID；不返回另一份业务状态摘要。首次登记通过 `project register <project> --root <已存在绝对目录> --coordinator <现任Home>`，额外成员才使用 `--home`。登记不写业务材料，不创建工位，不自动绑 Runtime；已有不同 JSON 不覆盖。
-既有项目新增成员使用 `project home-add <project> <home> --expected-fingerprint <当前登记原始字节SHA-256>`。
+`project show <project>` 返回五字段 `paos-project-registry/v1` 原始登记：项目 ID、OB 根、成员工位 ID、现任 Coordinator 工位 ID（项目成员均用 Sxxx）；不返回另一份业务状态摘要。首次登记通过 `project register <project> --root <已存在绝对目录> --coordinator <现任Sxxx>`，额外成员才使用 `--home`。登记不写业务材料，不创建工位，不自动绑 Runtime；已有不同 JSON 不覆盖。
+既有项目新增成员使用 `project home-add <project> <Sxxx> --expected-fingerprint <当前登记原始字节SHA-256>`。
 它只追加本项目 Home，保留根路径、Coordinator 和已有成员；锁内核指纹、保留原字节备份并原子发布，失配则先回读。
 同一成员用当前指纹重复执行不写入。该命令不创建 Home 或 Runtime；随后分别执行 `workstation init` 和准确本机会话的 `wake bind`。
 项目最新口径是 Project Vault 中**一篇现有正文**，从 ENTRY/INDEX 或 TODO
@@ -77,7 +77,7 @@ TODO 写入走 `attention todo-update/todo-write`，Rooter 使用对应 `rooter-
 
 ## 联系与运行
 
-`peers/team` 只列 Project Registry 已登记且存在的成员 Home，现行职责从 Project `TEAM.md` 按需读取；另在 `installation_support` 列出已登记 Rooter，不伪造项目成员。未识别职责时打开返回的 `team_source`。联系人查询不探测在线，`status` 读取本人工位与 Contact，不另维护进度。
+`peers/team` 只列 Project Registry 已登记且存在的 S号成员工位，现行职责从 Project `TEAM.md` 按需读取；另在 `installation_support` 列出已登记 Rooter，不伪造项目成员。未识别职责时打开返回的 `team_source`。联系人查询不探测在线，`status` 读取本人工位与 Contact，不另维护进度。
 
 需要结构化找人时，显式使用 `team`/`peers` 的 `--summary`；默认文本与完整 JSON 保持原合同。
 

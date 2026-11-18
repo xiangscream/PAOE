@@ -17,7 +17,7 @@
 ├── Works/              # 正在形成的正文、报告和成果
 ├── Decisions/          # 正式决策和被接受结论
 ├── Workstations/
-│   └── <home-id>/
+│   └── <Sxxx>/
 │       ├── ENTRY.md    # 流程约束与本人业务入口
 │       ├── TODO.md     # Pinned / Current / Tasks / 结果
 │       ├── mailbox/    # 持久 Mail 原件
@@ -59,15 +59,15 @@ Human 已编辑或确认的正文作为后续修改基线。更新只改当前�
 ## 新项目和工位的创建
 
 1. Human 明确授权建立独立目录及 Obsidian Vault、登记项目；使用母版建立 AGENTS、INDEX、TEAM、HISTORY；当前业务写 INDEX，分工写 TEAM，特殊运行约定写 AGENTS；ENTRY 由正常初始化入口读取母本展开，TODO 使用现行写者初始化。不得由示例虚构成员、任务、凭据或业务结论。
-2. 新Project用 `project register` 登记；加入已有Project用 `project home-add` 增加获准的真实Home，再用 `workstation init` 创建工位。参数读各自同版 `--help`；已有ENTRY/TODO保留人工内容。身份登记、工位创建和原生绑定分别完成，详见[接口参考](../Guide/guide-paos-interface-reference.md#项目与当前口径)。
+2. 为新员工选定本机未使用的 Sxxx。新Project用 `project register` 登记；加入已有Project用 `project home-add` 增加该 Sxxx。随后用 `workstation init` 登记号码并创建同名工位。已有员工迁移沿原号码。参数读各自同版 `--help`；已有ENTRY/TODO保留人工内容。原生绑定在工位创建后完成，详见[接口参考](../Guide/guide-paos-interface-reference.md#项目与当前口径)。
 3. 使用[已安装机器入口](../README.md#已安装机器上的首次使用)取得真实CLI，不用包内示例配置覆盖本机登记。下面`paos`代表该完整前缀；Project根取当前登记：
 
 ```powershell
-paos workstation init '<project-id>' '<home-id>' --root '<已登记项目根>' --objective '<本人目标>'
+paos workstation init '<project-id>' '<本人Sxxx>' --root '<已登记项目根>' --objective '<本人目标>'
 ```
 
 4. 将本母版 `notices/` 中的 `README.md`、`codex.py`、`opencode.py`、`dsh.py`、`wake_entry.py` 带入新工位，在本人 TODO 合并 `ONBOARD` 入职任务：了解 PAOE、继承业务理解、更新 TEAM、按实际 Harness 配置并验证唤醒器。各 Harness 的入口和参数见 [入职与唤醒说明](Workstations/_workstation/notices/README.md)。当前 CLI 初始化不会自动复制这些文件或导入母版任务，创建者须补齐这一步；已有 ENTRY/TODO/说明和脚本保留人工编辑，已完成入职不重置。任务由本人沿 TODO v4 写入入口维护，不用母版整份覆盖。
-5. 从实际 Home 打开生效 AGENTS/INDEX/ENTRY/TODO 与必要业务原件，验证 Guide、Library、Tool 定位，检查旧工作循环路径已退出；已有项目普通文件只在批准范围内修改。TEAM/ENTRY 改动后，Rooter沿现有 `paos_team_overview.py` 更新PROJECTS聚合，并执行本页“修改后检查”；不手改派生成员表。
+5. 从实际 `Workstations/Sxxx` 打开生效 AGENTS/INDEX/ENTRY/TODO 与必要业务原件，验证 Guide、Library、Tool 定位，检查旧工作循环路径已退出；已有项目普通文件只在批准范围内修改。TEAM/ENTRY 改动后，Rooter沿现有 `paos_team_overview.py` 更新PROJECTS聚合，并执行本页“修改后检查”；不手改派生成员表。
 
 通用行为写入 AGENTS 公共母本；专题操作在 [Guide](../Guide/README.md)，专业方法在独立 Libraries。代码仓库自身的 AGENTS 保持独立的工程约定，不被项目公共区同步器覆盖。
 

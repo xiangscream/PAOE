@@ -114,6 +114,7 @@ from paos_agent_numbers import (
     NumbersProblem,
     agent_id_for_staff_number,
     allocate_number,
+    load_numbers,
     resolve_numbers_path,
     staff_number as agent_staff_number,
 )
@@ -790,6 +791,31 @@ def _remind_via_native(
     )
 
 
+def _native_target_for_home(
+    targets: dict[str, Any], agent_id: str,
+    installation_file: str | None = None,
+) -> dict[str, Any] | None:
+    """Exact current key first, then the one historical Home alias key."""
+    exact = targets.get(agent_id)
+    if isinstance(exact, dict):
+        return exact
+    try:
+        current = str(resolve_home_by_registry(
+            agent_id, installation_file=installation_file)["home_id"])
+    except (AttentionServiceProblem, HomeProblem, CliError):
+        return None
+    for key, target in targets.items():
+        if not isinstance(target, dict) or key == agent_id:
+            continue
+        try:
+            if str(resolve_home_by_registry(
+                    key, installation_file=installation_file)["home_id"]) == current:
+                return target
+        except (AttentionServiceProblem, HomeProblem, CliError):
+            continue
+    return None
+
+
 def _inject_from_contact_store(
     contact_home_root: Path,
     *,
@@ -805,7 +831,7 @@ def _inject_from_contact_store(
     STOP, uncertain/network/rejected outcomes stay honest; nothing is resent.
     """
     target_map = load_native_targets(contact_home_root) or {}
-    target = target_map.get(agent_id)
+    target = _native_target_for_home(target_map, agent_id)
     if not isinstance(target, dict):
         return {
             "agent_id": agent_id,
@@ -1200,15 +1226,42 @@ def render_contact(payload: dict[str, Any], *, include_self: bool,
     return "\n".join(lines)
 
 
+def _validate_new_staff_homes(registry: ProjectRegistry, project_id: str, homes: list[str],
+                              installation_path: Path) -> None:
+    staff = {home for home in homes if re.fullmatch(r"S\d{3,}", home)}
+    if not staff:
+        return
+    numbers = load_numbers(resolve_numbers_path(None, installation_path))
+    directory = registry._path(project_id).parent
+    existing = set()
+    for path in directory.glob("*.json"):
+        registered = staff.intersection(registry.read_record(path.stem)["homes"])
+        if registered and path.stem == project_id:
+            existing.update(registered)
+        elif registered:
+            raise CliError(f"员工号已在项目 {path.stem}：{', '.join(sorted(registered))}",
+                           error_code="staff_home_already_registered")
+    reserved = (staff - existing).intersection(label for home, label in numbers.items() if home != label)
+    if reserved:
+        raise CliError(f"员工号已分配给原工位：{', '.join(sorted(reserved))}",
+                       error_code="staff_home_requires_migration")
+
+
 def _allocate_staff_number(args: argparse.Namespace, installation_path: Path) -> str:
     try:
-        return allocate_number(
-            resolve_numbers_path(
-                getattr(args, "agent_numbers_file", None),
-                installation_path,
-            ),
-            args.session_id,
+        session_id = str(args.session_id or "").strip()
+        numbers_path = resolve_numbers_path(
+            getattr(args, "agent_numbers_file", None),
+            installation_path,
         )
+        if re.fullmatch(r"S\d{3,}", session_id):
+            # New physical workstations are born with their global S number;
+            # migrated staff already have that S as a value under the old key.
+            # Do not add a duplicate S->S entry for them.
+            if session_id in load_numbers(numbers_path).values():
+                return session_id
+            return allocate_number(numbers_path, session_id, explicit_label=session_id)
+        return allocate_number(numbers_path, session_id)
     except NumbersProblem as exc:
         if getattr(exc, "code", None) == "agent_numbers_not_configured":
             return ""
@@ -1358,21 +1411,88 @@ def _home_uses_todo(root: Path, agent_id: str) -> bool:
     return True
 
 
+def _resolve_agent_identity(
+    identity: str, *, installation_path: Path | None = None,
+) -> dict[str, Any]:
+    """Read-only identity entry for the independent CAT adapter.
+
+    The CAT backend may ask with its historical `home_id` or the canonical
+    S number. This returns the one registered Home and Project; it never
+    creates a seat, a mapping, or a Runtime.
+    """
+    try:
+        ref = resolve_home_by_registry(
+            identity, installation_file=str(installation_path or "") or None)
+    except AttentionServiceProblem as problem:
+        raise CliError(str(problem), error_code=problem.code,
+                       details=problem.details) from problem
+    except HomeProblem as problem:
+        raise CliError(str(problem), error_code=problem.code,
+                       details=problem.details) from problem
+    try:
+        numbers = load_numbers(resolve_numbers_path(
+            None, installation_path or Path(__file__).parent))
+    except NumbersProblem as problem:
+        raise CliError(f"员工号登记不可用：{problem}",
+                       error_code=problem.code,
+                       details=problem.details) from problem
+    home_id = str(ref["home_id"])
+    if home_id.upper().startswith("S") and home_id[1:].isdigit():
+        staff_number = home_id
+        aliases = sorted(
+            key for key, value in numbers.items()
+            if value.upper() == home_id.upper() and key != home_id)
+    else:
+        staff_number = str(numbers.get(home_id) or "")
+        aliases = [home_id] if home_id in numbers else []
+    if len(aliases) > 1:
+        raise CliError(
+            f"员工 {home_id} 对应多个历史 Home，无法给出唯一遗留别名：{aliases}",
+            error_code="attention_recipient_home_ambiguous",
+            details={"home_id": home_id, "matches": aliases},
+        )
+    return {
+        "ok": True,
+        "schema": "paos-agent-identity/v1",
+        "input": identity,
+        "home_id": home_id,
+        "staff_number": staff_number,
+        "legacy_home_id": aliases[0] if aliases else "",
+        "project_id": ref["project_id"],
+        "home_kind": ref["home_kind"],
+        "home_path": ref["home_path"],
+    }
+
+
 def _resolve_staff_number_recipients(args: argparse.Namespace) -> list[str]:
     """Resolve S numbers through the registered local staff map.
 
     This is the one CLI identity boundary for normal Home and recipient
-    parameters. Home ids stay machine locators; only an explicit Sxxx token is
-    reverse-mapped, and unknown/ambiguous/history-only mappings raise.
+    parameters. Home ids stay machine locators; an explicit Sxxx token resolves
+    through the current registry (or the still-registered old Home before
+    migration). Unknown/ambiguous mappings raise instead of falling back.
     """
-    registry_path = getattr(args, "agent_numbers_file", None)
     installation_path = getattr(args, "installation_file", None) or resolve_installation_path()
     resolved: list[str] = []
 
     def _swap(token: str) -> str:
         token = str(token).strip()
         if token.upper().startswith("S") and token[1:].isdigit():
-            return agent_id_for_staff_number(token, explicit_path=registry_path, installation_path=installation_path)
+            # resolve_home_by_registry returns the real current Home: post-
+            # migration Sxxx, or the still-registered old Home pre-migration.
+            try:
+                ref = resolve_home_by_registry(
+                    token, installation_file=str(installation_path))
+                return str(ref["home_id"])
+            except AttentionServiceProblem as problem:
+                # Preserve the CLI's existing precise number errors for an
+                # unknown/history-only S. Broken number config is not caught.
+                if problem.code != "attention_recipient_home_not_registered":
+                    raise
+                return agent_id_for_staff_number(
+                    token,
+                    explicit_path=getattr(args, "agent_numbers_file", None),
+                    installation_path=installation_path)
         return token
 
     to_value = getattr(args, "to", None)
@@ -1477,10 +1597,12 @@ def _cross_project_target_lookup(
     membership + house existence only.  Returns a lookup callable or None
     (None => keep the invoked-project path unchanged)."""
     try:
-        project_id = agent_project_id(target_agent_id)
+        home_ref = resolve_home_by_registry(
+            target_agent_id, installation_file=str(registry.installation_path))
+        project_id = str(home_ref.get("project_id") or "")
         project = registry.read(project_id)
-    except (CliError, AgentActivationProblem, HomeProblem):
-        # Non-convention ids (rooter-001 etc.) never enter the cross-project
+    except (CliError, AgentActivationProblem, AttentionServiceProblem, HomeProblem):
+        # Non-project ids (rooter-001 etc.) never enter the cross-project
         # branch: keep the invoked-project path unchanged instead of leaking.
         return None
     if not isinstance(project, dict):
@@ -1635,6 +1757,9 @@ def execute_agent(
     installation_path: Path | None = None,
 ) -> dict[str, Any]:
     """Agent-first durable communication (durable delivery + persisted intent only); an independent wake trigger is executed once by a legitimate native caller."""
+    if args.agent_command == "resolve":
+        return _resolve_agent_identity(
+            str(args.identity), installation_path=installation_path)
     project = registry.read(args.project_id)
     root_raw = str(getattr(args, "root", None) or project.get("root_path") or "").strip()
     if not root_raw:
@@ -1819,6 +1944,7 @@ def execute_agent(
                         reply_to=str(args.reply_to or ""),
                         request_activation=True,
                         target_project_lookup=cross_lookup,
+                        installation_file=str(installation_path or ""),
                     ),
                 }
             return {
@@ -1941,7 +2067,12 @@ def execute_attention(
     installation_path: Path,
 ) -> dict[str, Any]:
     """V1.3 Home service; public paths persist facts but never submit native turns."""
-    _resolve_staff_number_recipients(args)
+    recipient_aliases = None
+    if args.attention_command != "history-read":
+        if getattr(args, "agent_id", None):
+            args.agent_id, recipient_aliases = _canonical_identity_and_aliases(
+                str(args.agent_id), installation_path)
+        _resolve_staff_number_recipients(args)
     try:
         if args.attention_command == "rooter-history-read":
             try:
@@ -2070,23 +2201,37 @@ def execute_attention(
                         home_ref=home_ref,
                         source_kind=str(args.source_kind),
                         source_ref=str(args.source_ref),
+                        installation_file=str(installation_path),
                     ),
                 }
 
         if args.attention_command == "history-read":
+            identity = str(args.agent_id)
+            request = {"history_root": str(args.history_root),
+                       "message_id": str(args.message_id or ""),
+                       "notice_id": str(args.notice_id or "")}
             try:
-                history = attention_read_history_input(
-                    history_root=str(args.history_root),
-                    agent_id=str(args.agent_id),
-                    message_id=str(args.message_id or ""),
-                    notice_id=str(args.notice_id or ""),
-                )
-            except (MailProblem, NoticeProblem) as problem:
-                raise AttentionServiceProblem(
-                    str(getattr(problem, "code", "attention_history_read_failed")),
-                    str(problem),
-                    dict(getattr(problem, "details", {}) or {}),
-                ) from problem
+                history = attention_read_history_input(agent_id=identity, **request)
+            except (AttentionServiceProblem, MailProblem, NoticeProblem) as problem:
+                if problem.code not in {"attention_history_home_missing", "mail_message_missing", "notice_missing"}:
+                    raise
+                try:
+                    numbers = load_numbers(resolve_numbers_path(None, installation_path))
+                except NumbersProblem as numbers_problem:
+                    if numbers_problem.code == "agent_numbers_not_configured":
+                        raise problem from numbers_problem
+                    raise
+                label = numbers.get(identity, identity)
+                aliases = [home for home, number in numbers.items() if number == label]
+                if len(aliases) > 1:
+                    raise CliError(f"员工号 {label} 对应多个历史工位。",
+                                   error_code="staff_number_ambiguous",
+                                   details={"staff_number": label, "matches": aliases})
+                alternate = label if identity != label else next(
+                    (home for home in aliases if home != identity), None)
+                if not alternate:
+                    raise
+                history = attention_read_history_input(agent_id=alternate, **request)
             return {"ok": True, **history}
 
         project = registry.read(args.project_id)
@@ -2137,6 +2282,7 @@ def execute_attention(
                 marked = {"ok": True, **attention_mark_input_read(
                     home_ref=home_ref,
                     notice_id=str(args.notice_id),
+                    recipient_aliases=recipient_aliases,
                 )}
                 return marked
             if args.attention_command == "archive-input":
@@ -2147,6 +2293,7 @@ def execute_attention(
                         history_root=str(args.history_root),
                         message_id=str(args.message_id or ""),
                         notice_id=str(args.notice_id or ""),
+                        recipient_aliases=recipient_aliases,
                     ),
                 }
             if args.attention_command == "notice-update":
@@ -2193,6 +2340,7 @@ def execute_attention(
                         notice_id=str(args.notice_id),
                         updates=_parse_todo_update_sets(args.sets),
                         expected_fingerprint=getattr(args, "expected_fingerprint", None),
+                        recipient_aliases=recipient_aliases,
                     ),
                 }
             if args.attention_command == "todo-update":
@@ -2223,6 +2371,7 @@ def execute_attention(
                     home_ref=home_ref,
                     source_kind=str(args.source_kind),
                     source_ref=str(args.source_ref),
+                    installation_file=str(installation_path),
                 ),
             }
 
@@ -2301,6 +2450,9 @@ def execute_wake(
     installation_path = installation_path or resolve_installation_path(
         getattr(args, "installation_file", None)
     )
+    if getattr(args, "agent_id", None):
+        args.agent_id = _canonical_identity_and_aliases(
+            str(args.agent_id), installation_path)[0]
     if args.wake_command == "prepare-current":
         from codex_receiver_session_start import prepare_current
         from wakeup_native.codex_receiver import ReceiverError
@@ -2387,7 +2539,7 @@ def execute_wake(
             return {"ok": True, "schema": "paos-wake-action/v1", "action": "recover", "state": "retired", "note": "恢复重试退役；如需提醒请走独立注入工具。"}
         if args.wake_command == "stop":
             targets = load_native_targets(root) or {}
-            target = targets.get(args.agent_id) if isinstance(targets.get(args.agent_id), dict) else None
+            target = _native_target_for_home(targets, args.agent_id)
             if not target:
                 return {"ok": True, "schema": "paos-wake-action/v1", "action": "stop", "state": "not_configured", "agent_id": args.agent_id}
             stop_file = str(target.get("stop_file") or "").strip()
@@ -2422,7 +2574,9 @@ def execute_wake(
                 except ValueError:
                     parsed = raw_model
                 native_model = parsed  # opencode expects dict(providerID/modelID); others expect str
-            target = (load_native_targets(root) or {}).get(args.agent_id)
+            target = _native_target_for_home(
+                load_native_targets(root) or {}, args.agent_id,
+                str(installation_path))
             if not isinstance(target, dict):
                 return {
                     "ok": True,
@@ -2484,11 +2638,51 @@ def execute_wake(
     )
 
 
+def _canonical_identity_and_aliases(
+    identity: str, installation_path: Path | None = None,
+) -> tuple[str, set[str]]:
+    """Return the current Home and the explicit old-source aliases for reads."""
+    token = str(identity or "").strip()
+    aliases = {token}
+    try:
+        ref = resolve_home_by_registry(
+            token, installation_file=str(installation_path or "") or None)
+    except (AttentionServiceProblem, HomeProblem) as problem:
+        raise CliError(str(problem), error_code=problem.code,
+                       details=problem.details) from problem
+    canonical = str(ref["home_id"])
+    aliases.add(canonical)
+    # An exact old Home or Rooter input already carries its read alias. Only an
+    # S input needs the reverse old-Home aliases for historical Mail metadata;
+    # this keeps existing installations without an optional number config
+    # working, while a present-but-broken config still raises.
+    if token.upper().startswith("S") and token[1:].isdigit() and canonical == token:
+        try:
+            numbers = load_numbers(resolve_numbers_path(
+                None, installation_path or Path(__file__).parent))
+        except NumbersProblem as problem:
+            if problem.code not in {
+                "agent_numbers_not_configured", "agent_numbers_registry_missing",
+            }:
+                raise CliError(f"员工号登记不可用：{problem}",
+                               error_code=problem.code,
+                               details=problem.details) from problem
+        else:
+            aliases.update(key for key, value in numbers.items() if value == canonical)
+    return canonical, aliases
+
+
 def execute_mail(
     args: argparse.Namespace,
     registry: ProjectRegistry,
+    installation_path: Path | None = None,
 ) -> dict[str, Any]:
     """V1.3 Mail UX backed by immutable Mail + unified Notice handling."""
+    original_agent_id = str(getattr(args, "agent_id", "") or "").strip()
+    agent_aliases = {original_agent_id}
+    if original_agent_id:
+        args.agent_id, agent_aliases = _canonical_identity_and_aliases(
+            original_agent_id, installation_path)
     project = registry.read(args.project_id)
     root_raw = str(
         getattr(args, "root", None)
@@ -2503,6 +2697,14 @@ def execute_mail(
     root = Path(posix_windows_drive_locator(root_raw)).expanduser()
     try:
         if args.mail_command == "send":
+            if str(args.sender_kind or "human") == "agent" and args.sender_id:
+                args.sender_id = _canonical_identity_and_aliases(
+                    str(args.sender_id), installation_path)[0]
+            args.to = [
+                value if str(value).lower() == "human"
+                else _canonical_identity_and_aliases(str(value), installation_path)[0]
+                for value in (args.to or [])
+            ]
             frozen = resolve_recipients(
                 project,
                 recipients=list(args.to or []),
@@ -2546,7 +2748,7 @@ def execute_mail(
                 metadata = original.get("metadata")
                 if (
                     not isinstance(metadata, dict)
-                    or metadata.get("recipient_agent_id") != args.agent_id
+                    or metadata.get("recipient_agent_id") not in agent_aliases
                 ):
                     raise CliError(
                         "被回复的 Mail 不属于该 Agent 的收件箱。",
@@ -2559,6 +2761,8 @@ def execute_mail(
                         error_code="mail_reply_target_unavailable",
                         hint="对 Human 的正式请求请使用 paos session request-create。",
                     )
+                recipient_id = _canonical_identity_and_aliases(
+                    recipient_id, installation_path)[0]
                 original_subject = str(metadata.get("subject") or "").strip()
                 subject = text_arg(args.subject, "mail subject") or f"Re: {original_subject}"
                 body = (
@@ -2606,12 +2810,13 @@ def execute_mail(
                 project=project,
                 agent_id=args.agent_id,
                 message_id=args.in_reply_to,
+                recipient_aliases=agent_aliases,
             )
             original_mail = original.get("mail") or {}
             metadata = original_mail.get("metadata")
             if (
                 not isinstance(metadata, dict)
-                or metadata.get("recipient_agent_id") != args.agent_id
+                or metadata.get("recipient_agent_id") not in agent_aliases
             ):
                 raise CliError(
                     "被回复的 Mail 不属于该 Agent 的收件箱。",
@@ -2624,6 +2829,8 @@ def execute_mail(
                     error_code="mail_reply_target_unavailable",
                     hint="对 Human 的正式请求请使用 paos session request-create。",
                 )
+            recipient_id = _canonical_identity_and_aliases(
+                recipient_id, installation_path)[0]
             recipient_home = resolve_home_by_registry(
                 recipient_id, installation_file=getattr(args, "installation_file", None)
             )
@@ -2659,6 +2866,7 @@ def execute_mail(
                 message_id=args.in_reply_to,
                 resolution="replied",
                 action_ref=str((reply.get("mail") or {}).get("message_id") or ""),
+                recipient_aliases=agent_aliases,
             )
             return {"ok": True, **reply, "handling": handling}
 
@@ -2681,6 +2889,7 @@ def execute_mail(
                     project=project,
                     agent_id=args.agent_id,
                     message_id=args.message_id,
+                    recipient_aliases=agent_aliases,
                 )
                 return {
                     "ok": True,
@@ -2706,6 +2915,7 @@ def execute_mail(
                         message_id=args.message_id,
                         resolution=resolution,
                         action_ref="",
+                        recipient_aliases=agent_aliases,
                     ),
                 }
             return {
@@ -2837,8 +3047,12 @@ def execute(
     resolved_installation_path = installation_path or resolve_installation_path(
         getattr(args, "installation_file", None)
     )
-    _resolve_staff_number_recipients(args)
-    _validate_resolved_identity_subject(args, registry, resolved_installation_path)
+    creates_registration = args.command == "project" and args.project_command in {"register", "home-add"}
+    creates_workstation = args.command == "workstation" and args.workstation_command == "init"
+    reads_history = args.command == "attention" and args.attention_command == "history-read"
+    if not (creates_registration or creates_workstation or reads_history):
+        _resolve_staff_number_recipients(args)
+        _validate_resolved_identity_subject(args, registry, resolved_installation_path)
     if args.command == "cat":
         return execute_cat(args, RestClient(args.url, service="CAT"), text_arg)
 
@@ -2929,7 +3143,7 @@ def execute(
         return execute_attention(args, registry, resolved_installation_path)
 
     if args.command == "mail":
-        return execute_mail(args, registry)
+        return execute_mail(args, registry, resolved_installation_path)
 
     if args.command == "agent":
         return execute_agent(args, registry, resolved_installation_path)
@@ -2948,6 +3162,10 @@ def execute(
 
 
     if args.command == "project":
+        if creates_registration:
+            homes = ([args.home_id] if args.project_command == "home-add"
+                     else [args.coordinator, *(args.home or ())])
+            _validate_new_staff_homes(registry, args.project_id, homes, resolved_installation_path)
         if args.project_command == "register":
             result = registry.register(
                 args.project_id, root_path=args.root,
@@ -3401,6 +3619,13 @@ def build_parser() -> argparse.ArgumentParser:
     agents = agent.add_subparsers(dest="agent_command", required=True)
 
     x = agents.add_parser(
+        "resolve",
+        help=("Read-only identity resolution for an independent CAT backend: "
+              "old Home or Sxxx -> current home_id/project_id/home_kind"),
+    )
+    x.add_argument("identity", help="Historical Home id or current global staff number Sxxx")
+
+    x = agents.add_parser(
         "send",
         help=(
             "Persist Workstation Mail to stable Agent(s). Default: durable delivery + activation "
@@ -3794,7 +4019,7 @@ def main(argv: list[str] | None = None) -> int:
         print(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=2))
         return 1 if isinstance(result, dict) and result.get("ok") is False else 0
     except (CliError, RegistryProblem, InstallationProblem, LibraryProblem, NumbersProblem, WorkstationProblem,
-            HomeProblem, MailProblem, AttentionServiceProblem, OSError, ValueError) as exc:
+            HomeProblem, MailProblem, NoticeProblem, AttentionServiceProblem, OSError, ValueError) as exc:
         error = exc if isinstance(exc, CliError) else CliError(str(exc),
             error_code=getattr(exc, "code", "local_operation_failed"),
             details=getattr(exc, "details", {}))

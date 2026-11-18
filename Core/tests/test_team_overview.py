@@ -11,6 +11,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / 'code/personal-agent-os/scripts'
 sys.path.insert(0, str(SCRIPTS))
 from paos_agent_numbers import NumbersProblem
 from paos_contact import _team_heading_home
+from paos_registry import ProjectRegistry
 from paos_team_overview import MARKER, main, render_overview
 
 
@@ -85,6 +86,23 @@ class TeamOverviewTests(unittest.TestCase):
                 'S040', {'1001-s001', '1001-s002'},
                 {'1001-s001': 'S040', '1001-s002': 'S040'})
         self.assertEqual(raised.exception.code, 'staff_number_ambiguous')
+
+    def test_migrated_home_is_linked_from_the_original_staff_mapping(self):
+        record_path = self.root / 'data/project-registry/projects/3002.json'
+        record = ProjectRegistry(self.install).read_record('3002')
+        record['homes'] = ['S040']
+        record['coordinator_home_id'] = 'S040'
+        record_path.write_text(json.dumps(record), encoding='utf-8')
+        migrated = self.home.rename(self.home.with_name('S040'))
+        self.team.write_text(
+            '## 当前成员\n### S040\n- 职责/专长：原职责\n'
+            '- Harness：OpenCode2（TEAM）\n', encoding='utf-8')
+
+        text = render_overview(self.install, self.output)
+
+        self.assertIn(f'| S040 | 原职责 | OpenCode2（TEAM） | [ENTRY](<{(migrated / "ENTRY.md").resolve().as_uri()}>)', text)
+        self.assertIn(str(migrated / 'contact.py').replace("'", "''"), text)
+        self.assertNotIn('3002-s001', text)
 
     def test_missing_staff_registry_fails_instead_of_falling_back_to_home(self):
         self.numbers.unlink()

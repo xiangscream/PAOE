@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -171,26 +172,111 @@ def resolve_home_by_registry(agent_id: str, *, installation_file: str | None = N
                 {"recipient": agent_id},
             )
         return rooter_home(home_path=rooter_path, home_id="rooter-001")
-    if not agent_id or "-" not in agent_id:
+    if not agent_id:
         raise AttentionServiceProblem(
             "attention_recipient_home_not_registered",
-            f"接收者 {agent_id} 不是精确登记 Home，拒绝按目录后缀猜。",
+            "接收者为空，拒绝按目录后缀猜。",
             {"recipient": agent_id},
         )
     try:
-        project_id = agent_project_id(agent_id)
-        # CLI and cross-Project routing read the same registration contract.
         from paos_registry import ProjectRegistry
-        project = ProjectRegistry(resolve_installation_path(installation_file)).read(project_id)
+        installation_path = resolve_installation_path(installation_file)
+        registry = ProjectRegistry(installation_path)
     except AttentionServiceProblem:
         raise
     except Exception as problem:
         raise AttentionServiceProblem(
-            "attention_recipient_project_not_registered",
-            f"接收者 {agent_id} 所属 Project 无法在安装 registry 解析：{problem}",
+            "attention_registry_unavailable",
+            f"安装 registry 不可用，无法按登记路由 {agent_id}：{problem}",
+        ) from problem
+
+    # Scan the real current homes first. The same installation-wide number
+    # registry is only used to bridge the one historical Home to its S alias;
+    # the S registry itself is not a second Project membership table.
+    records = [
+        registry.read_record(path.stem)
+        for path in sorted(_registry_projects_root(descriptor).glob("*.json"))
+    ]
+    for record in records:
+        if agent_id in (record.get("homes") or []):
+            return project_agent_home(
+                project=registry.read(str(record["id"])), agent_id=agent_id)
+
+    numbers: dict[str, str] | None = None
+    try:
+        from paos_agent_numbers import NumbersProblem, resolve_numbers_path
+        numbers = load_numbers(resolve_numbers_path(None, installation_path, descriptor))
+    except NumbersProblem as problem:
+        if problem.code != "agent_numbers_not_configured":
+            raise AttentionServiceProblem(
+                "attention_agent_numbers_invalid",
+                f"员工号登记不可用，无法解析历史 Home {agent_id}：{problem}",
+                {"recipient": agent_id, "code": problem.code, **problem.details},
+            ) from problem
+        numbers = None
+    except Exception as problem:
+        raise AttentionServiceProblem(
+            "attention_agent_numbers_invalid",
+            f"员工号登记不可用，无法解析历史 Home {agent_id}：{problem}",
             {"recipient": agent_id},
         ) from problem
-    return project_agent_home(project=project, agent_id=agent_id)
+
+    if numbers is not None:
+        # Pre-migration: the old Home is still the only registered location;
+        # an S lookup through the one number registry must return that Home.
+        # Post-migration: the old source id resolves to the registered S Home.
+        mapped = str(numbers.get(agent_id) or "").strip()
+        if mapped:
+            for record in records:
+                if mapped in (record.get("homes") or []):
+                    return project_agent_home(
+                        project=registry.read(str(record["id"])), agent_id=mapped)
+        if str(agent_id).upper().startswith("S") and str(agent_id)[1:].isdigit():
+            if any(
+                str(value).upper() == str(agent_id).upper() and key == "rooter-001"
+                for key, value in numbers.items()
+            ):
+                rooter_path = str(descriptor.get("rooter_home") or "").strip()
+                if not rooter_path:
+                    raise AttentionServiceProblem(
+                        "attention_recipient_home_not_registered",
+                        "安装描述未登记 Rooter Home。",
+                        {"recipient": agent_id},
+                    )
+                return rooter_home(home_path=rooter_path, home_id="rooter-001")
+            candidates = [
+                key for key, value in numbers.items()
+                if str(value).upper() == str(agent_id).upper()
+                and any(key in (record.get("homes") or []) for record in records)
+            ]
+            if len(candidates) == 1:
+                old_home = candidates[0]
+                for record in records:
+                    if old_home in (record.get("homes") or []):
+                        return project_agent_home(
+                            project=registry.read(str(record["id"])),
+                            agent_id=old_home)
+            if len(candidates) > 1:
+                raise AttentionServiceProblem(
+                    "attention_recipient_home_ambiguous",
+                    f"员工号 {agent_id} 在迁移前登记中对应多个 Home，拒绝猜：{candidates}",
+                    {"recipient": agent_id, "matches": candidates},
+                )
+
+    # Last explicit compatibility path for an old project-style Home that is
+    # registered under its own Project but not present in the scan above.
+    if "-" in agent_id:
+        try:
+            from paos_registry import RegistryProblem
+            project = registry.read(agent_project_id(agent_id))
+            return project_agent_home(project=project, agent_id=agent_id)
+        except (HomeProblem, RegistryProblem):
+            pass
+    raise AttentionServiceProblem(
+        "attention_recipient_home_not_registered",
+        f"接收者 {agent_id} 不是本安装登记的当前 Home，拒绝按目录后缀猜。",
+        {"recipient": agent_id},
+    )
 
 
 def _deliver_external_mail_copy(
@@ -774,8 +860,15 @@ def read_source_status(
     home_ref: dict[str, Any],
     source_kind: str,
     source_ref: str,
+    installation_file: str | None = None,
 ) -> dict[str, Any]:
-    """Read one Notice by stable source identity; no transport/body duplication."""
+    """Read one Notice by stable source identity; no transport/body duplication.
+
+    Post-migration a current S Home first uses its current identity. If that
+    Notice does not exist, the one historical Home alias from the installation
+    number registry is read in place; no new Notice is created and the original
+    read/handled sidecars stay authoritative.
+    """
     try:
         ref = _assert_home_current(home_ref)
         identity = input_identity(
@@ -785,10 +878,44 @@ def read_source_status(
             source_kind=source_kind,
             source_ref=source_ref,
         )
-        item = read_notice(
-            Path(ref["home_path"]),
-            notice_id_for(identity),
-        )
+        path = Path(ref["home_path"])
+        try:
+            item = read_notice(path, notice_id_for(identity))
+        except NoticeProblem as problem:
+            if problem.code != "notice_missing":
+                raise
+            legacy_ids: list[str] = []
+            if str(ref["home_id"]).upper().startswith("S"):
+                try:
+                    from paos_agent_numbers import NumbersProblem, resolve_numbers_path
+                    numbers = load_numbers(resolve_numbers_path(
+                        None, resolve_installation_path(installation_file)))
+                except NumbersProblem as numbers_problem:
+                    raise AttentionServiceProblem(
+                        "attention_agent_numbers_invalid",
+                        f"员工号登记不可用，无法回查历史 Notice：{numbers_problem}",
+                        {"home_id": ref["home_id"], "code": numbers_problem.code},
+                    ) from numbers_problem
+                legacy_ids = sorted(
+                    key for key, value in numbers.items()
+                    if value.upper() == str(ref["home_id"]).upper()
+                    and key != ref["home_id"])
+            for legacy_id in legacy_ids:
+                legacy_identity = input_identity(
+                    home_kind=ref["home_kind"],
+                    home_id=legacy_id,
+                    project_id=ref["project_id"],
+                    source_kind=source_kind,
+                    source_ref=source_ref,
+                )
+                try:
+                    item = read_notice(path, notice_id_for(legacy_identity))
+                    break
+                except NoticeProblem as legacy_problem:
+                    if legacy_problem.code != "notice_missing":
+                        raise
+            else:
+                raise problem
     except (HomeProblem, TodoProblem, NoticeProblem) as problem:
         raise _map_problem(problem) from problem
     return {
@@ -850,6 +977,7 @@ def _resolve_target_project_agent_home(
     agent_id: str,
     root_override: str,
     target_project_lookup: Callable[[str], dict[str, Any]] | None,
+    installation_file: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], bool]:
     """Resolved Home: invoked-project member first (unchanged strict path);
     on `home_agent_unknown` with a lookup available, resolve the target's OWN
@@ -872,13 +1000,15 @@ def _resolve_target_project_agent_home(
     except HomeProblem as direct:
         if direct.code != "home_agent_unknown" or target_project_lookup is None:
             raise direct
-        target_project = target_project_lookup(agent_project_id(agent_id))
-        home_ref = _assert_home_current(
-            project_agent_home(
-                project=target_project,
-                agent_id=agent_id,
-            )
-        )
+        # Use the same resolver that already validated the S/old-Home alias;
+        # do not re-derive Project from the S number.
+        resolved = resolve_home_by_registry(
+            agent_id, installation_file=installation_file)
+        project_id = str(resolved.get("project_id") or "")
+        if not project_id:
+            raise direct
+        target_project = target_project_lookup(project_id)
+        home_ref = _assert_home_current(resolved)
         return target_project, home_ref, True
     return project, home_ref, False
 
@@ -896,6 +1026,7 @@ def send_cat_source(
     reply_to: str = "",
     request_activation: bool = True,
     target_project_lookup: Callable[[str], dict[str, Any]] | None = None,
+    installation_file: str | None = None,
 ) -> dict[str, Any]:
     """Persist verified CAT Exchange, then project it into one exact V1.3 Home."""
     root = _runtime_root(root)
@@ -905,6 +1036,7 @@ def send_cat_source(
             agent_id=target_agent_id,
             root_override=str(root),
             target_project_lookup=target_project_lookup,
+            installation_file=installation_file,
         )
     except HomeProblem as problem:
         # Preserve the stable error code across CLI and HTTP callers
@@ -1121,7 +1253,10 @@ def _find_mail_item(
     )
 
 
-def _read_mail_item_file(item: dict[str, Any], *, agent_id: str) -> dict[str, Any]:
+def _read_mail_item_file(
+    item: dict[str, Any], *, agent_id: str,
+    recipient_aliases: set[str] | None = None,
+) -> dict[str, Any]:
     path = Path(str(item.get("path") or ""))
     try:
         text = path.read_text(encoding="utf-8")
@@ -1133,7 +1268,9 @@ def _read_mail_item_file(item: dict[str, Any], *, agent_id: str) -> dict[str, An
         ) from exc
     meta = parse_mail_frontmatter(text)
     recipient = str(meta.get("recipient_agent_id") or "").strip()
-    if recipient and recipient != agent_id:
+    accepted = set(recipient_aliases or ())
+    accepted.add(agent_id)
+    if recipient and recipient not in accepted:
         raise AttentionServiceProblem(
             "attention_mail_recipient_mismatch",
             "Mail frontmatter recipient 与目标 Home 不一致。",
@@ -1169,6 +1306,32 @@ def _mail_notice_id(
     )
 
 
+def _read_mail_notice(
+    *, home_ref: dict[str, Any], source_ref: str,
+    aliases: set[str] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Read the current Notice, then the unique historical Home alias in place."""
+    ref = normalize_home_ref(home_ref)
+    candidates = [str(ref["home_id"])]
+    candidates.extend(sorted(alias for alias in (aliases or set())
+                             if alias and alias != ref["home_id"]))
+    last: NoticeProblem | None = None
+    for home_id in candidates:
+        notice_id = _mail_notice_id(
+            home_ref={**ref, "home_id": home_id}, source_ref=source_ref)
+        try:
+            return notice_id, read_notice(Path(ref["home_path"]), notice_id)
+        except NoticeProblem as problem:
+            if problem.code != "notice_missing":
+                raise
+            last = problem
+    if last is not None:
+        raise last
+    raise AttentionServiceProblem(
+        "notice_missing", "Mail 对应的 Notice 不存在。",
+        {"home_id": ref["home_id"], "source_ref": source_ref})
+
+
 def organize_input(
     *,
     home_ref: dict[str, Any],
@@ -1202,6 +1365,7 @@ def mark_input_read(
     *,
     home_ref: dict[str, Any],
     notice_id: str,
+    recipient_aliases: set[str] | None = None,
 ) -> dict[str, Any]:
     """Explicitly mark one Notice read using the exact owning Home identity."""
     try:
@@ -1212,6 +1376,7 @@ def mark_input_read(
             reader_home_kind=ref["home_kind"],
             reader_home_id=ref["home_id"],
             reader_project_id=ref["project_id"],
+            reader_home_aliases=recipient_aliases,
         )
     except (HomeProblem, NoticeProblem) as problem:
         raise _map_problem(problem) from problem
@@ -1254,6 +1419,7 @@ def handle_mail_input(
     message_id: str,
     resolution: str = "",
     action_ref: str = "",
+    recipient_aliases: set[str] | None = None,
 ) -> dict[str, Any]:
     """Handle one mapped Mail source through Notice only.
 
@@ -1272,9 +1438,10 @@ def handle_mail_input(
         )
         mail_item = _find_mail_item(root=root, agent_id=agent_id, lookup=message_id)
         source_ref = _mail_item_source_ref(mail_item)
-        notice_id = _mail_notice_id(home_ref=ref, source_ref=source_ref)
-        existing = read_notice(Path(ref["home_path"]), notice_id)
-        _read_mail_item_file(mail_item, agent_id=agent_id)
+        notice_id, existing = _read_mail_notice(
+            home_ref=ref, source_ref=source_ref, aliases=recipient_aliases)
+        _read_mail_item_file(
+            mail_item, agent_id=agent_id, recipient_aliases=recipient_aliases)
     except (HomeProblem, MailProblem, NoticeProblem) as problem:
         raise _map_problem(problem) from problem
     if existing.get("source_kind") != "mail" or existing.get("source_ref") != source_ref:
@@ -1300,6 +1467,7 @@ def read_project_mail_input(
     project: dict[str, Any],
     agent_id: str,
     message_id: str,
+    recipient_aliases: set[str] | None = None,
 ) -> dict[str, Any]:
     """Read immutable Mail body plus unified Notice handling projection."""
     root = _runtime_root(root)
@@ -1313,9 +1481,10 @@ def read_project_mail_input(
         )
         mail_item = _find_mail_item(root=root, agent_id=agent_id, lookup=message_id)
         source_ref = _mail_item_source_ref(mail_item)
-        mail = _read_mail_item_file(mail_item, agent_id=agent_id)
-        notice_id = _mail_notice_id(home_ref=ref, source_ref=source_ref)
-        item = read_notice(Path(ref["home_path"]), notice_id)
+        mail = _read_mail_item_file(
+            mail_item, agent_id=agent_id, recipient_aliases=recipient_aliases)
+        notice_id, item = _read_mail_notice(
+            home_ref=ref, source_ref=source_ref, aliases=recipient_aliases)
     except (HomeProblem, MailProblem, NoticeProblem) as problem:
         raise _map_problem(problem) from problem
     mail["handling"] = {
@@ -1685,6 +1854,7 @@ def archive_input(
     history_root: str | Path,
     message_id: str = "",
     notice_id: str = "",
+    recipient_aliases: set[str] | None = None,
 ) -> dict[str, Any]:
     """Move one already-read, handled input to an explicit external batch.
 
@@ -1707,7 +1877,8 @@ def archive_input(
 
     if message_id and not message_id.startswith("legacy-mail-file:"):
         existing_archive = read_mail_archive(
-            project_root, home_id, message_id, allow_legacy=True
+            project_root, home_id, message_id, allow_legacy=True,
+            recipient_aliases=recipient_aliases,
         )
         if existing_archive is not None:
             return {
@@ -1730,11 +1901,12 @@ def archive_input(
             agent_id=home_id,
             lookup=message_id,
         )
-        _read_mail_item_file(mail_item, agent_id=home_id)
+        _read_mail_item_file(mail_item, agent_id=home_id, recipient_aliases=recipient_aliases)
         source_ref = _mail_item_source_ref(mail_item)
         archive_id = _mail_archive_id(mail_item)
         existing_archive = read_mail_archive(
-            project_root, home_id, archive_id, allow_legacy=True
+            project_root, home_id, archive_id, allow_legacy=True,
+            recipient_aliases=recipient_aliases,
         )
         if existing_archive is not None:
             return {
@@ -1746,8 +1918,8 @@ def archive_input(
                 "state": "already_archived",
                 "files": [],
             }
-        notice_id = _mail_notice_id(home_ref=ref, source_ref=source_ref)
-        selected_notice = read_notice(home_path, notice_id)
+        notice_id, selected_notice = _read_mail_notice(
+            home_ref=ref, source_ref=source_ref, aliases=recipient_aliases)
         if (
             selected_notice.get("source_kind") != "mail"
             or selected_notice.get("source_ref") != source_ref
@@ -2011,6 +2183,8 @@ def read_history_input(
     notice_id: str = "",
 ) -> dict[str, Any]:
     """Read moved Mail/Notice by explicit batch root; never edits the batch."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", agent_id):
+        raise AttentionServiceProblem("attention_history_home_invalid", "历史工位 ID 无效。")
     message_id = str(message_id or "").strip()
     notice_id = str(notice_id or "").strip()
     if bool(message_id) == bool(notice_id):
@@ -2473,7 +2647,8 @@ def activation_work(home_ref: dict[str, Any]) -> dict[str, Any]:
 
 
 
-def _takeover_mail_source(home_ref: dict[str, Any], source_ref: str) -> dict[str, Any]:
+def _takeover_mail_source(home_ref: dict[str, Any], source_ref: str,
+                          recipient_aliases: set[str] | None) -> dict[str, Any]:
     home_path = Path(str(home_ref["home_path"]))
     try:
         if str(home_ref.get("home_kind") or "") == "project_agent":
@@ -2493,7 +2668,8 @@ def _takeover_mail_source(home_ref: dict[str, Any], source_ref: str) -> dict[str
                     {"agent_id": str(home_ref["home_id"]), "path": str(path)},
                 )
             item = {"filename": path.name, "path": str(path), "message_id": path.stem}
-        return _read_mail_item_file(item, agent_id=str(home_ref["home_id"]))
+        return _read_mail_item_file(item, agent_id=str(home_ref["home_id"]),
+                                    recipient_aliases=recipient_aliases)
     except (MailProblem, AttentionServiceProblem) as problem:
         code = "attention_takeover_source_missing"
         if isinstance(problem, AttentionServiceProblem) and problem.code.endswith("recipient_mismatch"):
@@ -2511,6 +2687,7 @@ def takeover_input(
     notice_id: str,
     updates: dict[str, Any],
     expected_fingerprint: str | None = None,
+    recipient_aliases: set[str] | None = None,
 ) -> dict[str, Any]:
     """Read one durable input, mark its Notice read, then switch this Home's Current."""
     try:
@@ -2557,10 +2734,11 @@ def takeover_input(
         )
     except AttentionServiceProblem:
         raise
-    source = _takeover_mail_source(ref, source_ref)
+    source = _takeover_mail_source(ref, source_ref, recipient_aliases)
     stages = {"source": "read", "notice_read": False, "current": False}
     try:
-        marked = mark_input_read(home_ref=ref, notice_id=notice_id)
+        marked = mark_input_read(home_ref=ref, notice_id=notice_id,
+                                 recipient_aliases=recipient_aliases)
         stages["notice_read"] = True
     except AttentionServiceProblem as problem:
         details = dict(getattr(problem, "details", {}) or {})

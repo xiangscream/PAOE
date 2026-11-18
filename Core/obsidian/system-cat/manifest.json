@@ -1,7 +1,7 @@
 {
   "id": "paos-system-cat",
   "name": "PAOE CAT",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minAppVersion": "1.5.0",
   "description": "在 System 库中原生打开 PAOE CAT，复用既有成熟聊天组件与后端。",
   "author": "PAOE S040",

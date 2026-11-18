@@ -4,6 +4,7 @@ import { api } from '../api'
 import type { AgentSummary, CollabMode, CollabResult, CollabState } from '../types'
 import type { CollaborationDraft, Reference } from '../state/collab'
 import { buildBody, canResubmit, createMessageId, outcomeOf, payloadFor, validateDraft } from '../state/collab'
+import { isLegacyHomeId } from '../state/team'
 
 const props = defineProps<{
   open: boolean
@@ -142,7 +143,7 @@ function restoreOrReset() {
 
 function label(agent: AgentSummary): string {
   const number = agent.number || '未编号'
-  const name = agent.name && agent.name !== agent.id ? agent.name : ''
+  const name = agent.name && agent.name !== agent.id && !isLegacyHomeId(agent.name) ? agent.name : ''
   return name ? `${number} · ${name}` : number
 }
 
