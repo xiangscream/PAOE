@@ -5,7 +5,7 @@ title: TEAM 模板
 description: 项目成员的职责与专长，联系和当前行动直达本人工位。
 tags: template, team, peers
 status: active
-version: 10
+version: 11
 ---
 
 # 项目 <project-id> · 成员
@@ -14,16 +14,15 @@ version: 10
 
 ### <全局员工号 Sxxx>
 
-- Home：<home-id>（本机内部定位，不对外当员工称呼）。
 - 成员状态：<实际在队/暂停状态，不表示在线>。
 - 职责/专长：<Coordinator 确认职责，本人补充专长>。
 - Harness：<实际使用的 Codex / OpenCode / 其他 Harness；变更时同步>。
-- 工位与联系：[ENTRY](Workstations/<home-id>/ENTRY.md)。
-- 当前行动：[TODO](Workstations/<home-id>/TODO.md)。
+- 工位与联系：[ENTRY](Workstations/<全局员工号 Sxxx>/ENTRY.md)。
+- 当前行动：[TODO](Workstations/<全局员工号 Sxxx>/TODO.md)。
 
 ## 维护
 
-Coordinator 维护成员归属与职责，本人维护专长与实际 Harness。这里只列实际成员；目录存在不等于已经登记。小节标题使用安装 `AGENT-NUMBERS.json` 中的完整全局员工号（Sxxx），`Home` 字段保留本机定位；不得按工位尾号推算员工号。`职责/专长` 供 CLI 按需读取。
+Coordinator 维护成员归属与职责，本人维护专长与实际 Harness。这里只列实际成员；目录存在不等于已经登记。小节标题和工位路径使用安装登记的同一全局员工号 Sxxx；正常成员不另列项目式 Home ID，不得按旧工位尾号推算员工号。`职责/专长` 供 CLI 按需读取。
 
 本页集中维护项目分工；安装级或跨项目支持列为协作入口，不冒充本项目成员。当前任务只读本人 TODO，恢复与联系入口读 ENTRY，原生绑定、STOP 与接收器状态读 Contact。不抄 Session ID、端口或在线状态，不把配置存在当作已接手。Rooter 是安装级支持，不列入项目成员。
 
