@@ -48,6 +48,16 @@ it('shows the global number when the person name is empty and the room label is 
   wrapper.unmount()
 })
 
+it('does not show a legacy Home label after the member id becomes S040', async () => {
+  const wrapper = await emptyChat()
+  const vm = wrapper.vm as any
+  vm.people = [{ id: 'S040', number: 'S040', name: '' }]
+  vm.roomId = 'room-one'
+  vm.roomStates['room-one'] = { members: [{ home_id: 'S040', label: '3002-s035' }] }
+  expect(vm.name('S040')).toBe('S040')
+  wrapper.unmount()
+})
+
 it('marks missing numbers explicitly instead of showing a Home id', async () => {
   const wrapper = await emptyChat()
   const vm = wrapper.vm as any

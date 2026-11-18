@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { defaultNodes, mergeLayout } from '../src/state/layout'
 import { buildBody, canResubmit, membersFor, outcomeOf, payloadFor, validateDraft } from '../src/state/collab'
-import { canStartCollaboration, displayName, displayNumber, isPaused, statusLabel } from '../src/state/team'
+import { canStartCollaboration, displayName, displayNumber, isLegacyHomeId, isPaused, statusLabel } from '../src/state/team'
 import type { AgentSummary, BoardLayout } from '../src/types'
 
 const agent = (id: string, extra: Partial<AgentSummary> = {}): AgentSummary => ({ id, ok: true, ...extra })
@@ -89,5 +89,12 @@ describe('team view', () => {
   it('never derives an employee number from a Home id suffix', () => {
     expect(displayNumber(agent('3002-s035'))).toBe('未编号')
     expect(displayName(agent('3002-s035'))).toBe('员工资料未补齐')
+  })
+
+  it('does not present a legacy Home id as the normal employee name', () => {
+    const member = agent('3002-s035', { number: 'S040', name: '3002-s035' })
+    expect(isLegacyHomeId('3002-s035')).toBe(true)
+    expect(isLegacyHomeId('3002-s035 · 前端')).toBe(true)
+    expect(displayName(member)).toBe('S040')
   })
 })

@@ -5,6 +5,7 @@ import {findMessages, messagePreview} from '../../../cat-content.mjs';
 import CatIcon from './ChatIcon.vue';
 import MessageContent from './ChatMessageContent.vue';
 import {readDraft, writeDraft} from '../state/chat-drafts.mjs';
+import {isLegacyHomeId} from '../state/team';
 import {requestTransport} from '../transport';
 
 const dayFormat = new Intl.DateTimeFormat('zh-CN', {month:'long',day:'numeric',weekday:'short'});
@@ -86,8 +87,8 @@ export default {
       if (id==='human') return 'Human';
       const member=this.state?.members.find(item=>item.home_id===id);
       const person=this.people.find(item=>item.id===id);
-      const label=member?.label && member.label!==id ? member.label : '';
-      const name=person?.name && person.name!==id ? person.name : '';
+      const label=member?.label && member.label!==id && !isLegacyHomeId(member.label) ? member.label : '';
+      const name=person?.name && person.name!==id && !isLegacyHomeId(person.name) ? person.name : '';
       const number=person?.number || '';
       const suffix=label || name;
       if (number) return suffix && !suffix.includes(number) ? number+' · '+suffix : (suffix || number);

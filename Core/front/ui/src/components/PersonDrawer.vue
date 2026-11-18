@@ -227,7 +227,7 @@ function artifactOf(task: unknown): string {
             <pre class="mono raw-todo">{{ detail.todo }}</pre>
           </section>
 
-          <p class="hint">原件：{{ detail.home_path || props.agent.id }} · 只读投影，修改仍在工位原件。</p>
+          <p class="hint">原件：工位只读投影，修改仍在工位原件。</p>
         </template>
       </template>
     </div>
