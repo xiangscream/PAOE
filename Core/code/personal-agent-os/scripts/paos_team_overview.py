@@ -14,7 +14,7 @@ import tempfile
 from urllib.parse import unquote
 
 from paos_agent_numbers import NumbersProblem, load_numbers, resolve_numbers_path
-from paos_contact import _team_heading_home, _team_role_summaries
+from paos_contact import _team_heading_home, _team_role_summaries, team_member_statuses
 from paos_installation import effective_data_root, load_installation_descriptor
 from paos_registry import ProjectRegistry
 from paos_workstation import posix_windows_drive_locator
@@ -136,6 +136,11 @@ def _powershell(*args: str) -> str:
     return '& ' + ' '.join("'" + str(arg).replace("'", "''") + "'" for arg in args)
 
 
+def _heading_anchor(title: str) -> str:
+    label = re.sub(r'\[([^]]+)\]\([^)]+\)', r'\1', title)
+    return re.sub(r'[^\w\- ]', '', label.lower()).replace(' ', '-')
+
+
 def _team_harness_summaries(team: Path, registered_ids: set[str],
                             numbers_map: dict[str, str] | None = None) -> dict[str, str]:
     """Read actual Harness values from the current TEAM member sections."""
@@ -189,9 +194,33 @@ def render_overview(installation_file: Path, output: Path) -> str:
     def cell(value: str) -> str:
         return ' '.join(value.split()).replace('|', r'\|')
 
+    def row(home_id: str, home: Path, role: str, harness: str, source: Path,
+            status: str = '') -> str:
+        entry = home / 'ENTRY.md'
+        entry_text = read(entry)
+        staff = home_id if home_id in staff_numbers else numbers_map.get(home_id)
+        if not staff:
+            raise ValueError(
+                f'员工号登记缺少 {home_id} 的映射；先补安装 AGENT-NUMBERS.json，不由 Home 尾号猜。')
+        if source == entry:
+            match = re.search(r'^- Harness\s*[：:]\s*([^\n；;]+)', entry_text, re.M)
+            harness = match.group(1).strip() if match else ''
+        role_text = cell(_relocate_source_links(role, source))
+        runtime = (cell(_relocate_source_links(harness.rstrip('。'), source))
+                   if harness else f'未注明，读 {source.stem}')
+        if status.startswith('暂停'):
+            runtime += ' · 暂停'
+        if ('人工联系' in re.split(r'\s*[，,；;。]\s*', status)
+                or re.search(r'^\s*-\s*(?:你的)?人工联系入口\s*[：:]', entry_text, re.M)):
+            runtime += ' · 人工联系'
+        return f'| {link(staff, entry)} | {role_text} | {runtime} | {link("待办", home / "TODO.md")} |'
+
     read(installation_file)
     read(numbers_path)
-    projects = []
+    navigation = ['[联系方法](#外部唤醒)']
+    project_table = ['| 员工 | 职责 | 运行端 | 当前工作 |', '| --- | --- | --- | --- |']
+    sections: list[str] = []
+    headings = {'项目与同事', '安装级支持', '外部唤醒', '更新与检查'}
     registry_dir = effective_data_root(installation) / 'project-registry/projects'
     for path in sorted(registry_dir.glob('*.json')):
         read(path)
@@ -199,96 +228,64 @@ def render_overview(installation_file: Path, output: Path) -> str:
         root = Path(posix_windows_drive_locator(record['root_path'])).expanduser()
         team = root / 'TEAM.md'
         read(team)
-        home_ids = set(record['homes'])
-        projects.append((record, root, team,
-                         _team_role_summaries(root, home_ids, numbers_map),
-                         _team_harness_summaries(team, home_ids, numbers_map)))
-
-    members: list[tuple[str, Path, str]] = []
-
-    def row(home_id: str, home: Path, role: str, harness: str, source: str,
-            source_path: Path) -> str:
-        entry = home / 'ENTRY.md'
-        read(entry)
-        staff = home_id if home_id in staff_numbers else numbers_map.get(home_id)
-        if not staff:
-            raise ValueError(
-                f'员工号登记缺少 {home_id} 的映射；先补安装 AGENT-NUMBERS.json，不由 Home 尾号猜。')
-        anchor = staff.lower()
-        contact = home / 'contact.py'
-        dsh = home / 'notices' / 'dsh.py'
-        # File presence only selects the generated command entry; it is not an
-        # online check. DSH Homes legitimately use notices/dsh.py without a
-        # contact.py, so do not label them unconfigured.
-        fingerprints.append(f'{contact}:exists={contact.is_file()}')
-        fingerprints.append(f'{dsh}:exists={dsh.is_file()}')
-        if contact.is_file():
-            members.append((staff, contact, 'contact'))
-            wake = f'[命令](#{anchor})'
-        elif dsh.is_file():
-            members.append((staff, dsh, 'dsh'))
-            wake = f'[命令](#{anchor})'
-        else:
-            wake = '联系入口未配置，状态和接续见ENTRY'
-        role_text = _relocate_source_links(role, source_path)
-        harness_cell = (cell(_relocate_source_links(harness, source_path))
-                        if harness else f'未注明，读 {source}')
-        return (f'| {staff} | {cell(role_text)} | {harness_cell} | '
-                f'{link("ENTRY", entry)} · {link("TODO", home / "TODO.md")} | {wake} |')
-
-    project_table = ['| Agent | 职责 / 专长 | Harness（TEAM） | 工位 | 唤醒 |',
-                     '| --- | --- | --- | --- | --- |']
-    lines = ['# 项目与 Agent · TEAM 聚合', '', MARKER, '',
-             '<!-- paoe:human-intro:start -->',
-             '> 按项目找成员与唤醒入口。职责维护在项目 TEAM；本页由原件生成。',
-             '<!-- paoe:human-intro:end -->', '', '<!-- paoe:agent-reference -->', '']
-    if not projects:
-        lines += ['当前登记范围内没有 Project。', '']
-    for record, root, team, roles, harnesses in projects:
-        project_id = record['id']
-        lines += [f'## 项目 {project_id} · {cell(root.name)}', '',
-                  f'原件：{link("TEAM", team)} · {link("INDEX", root / "INDEX.md")} · '
-                  f'{link("Registry", registry_dir / (project_id + ".json"))}', '']
+        index = root / 'INDEX.md'
+        heading = re.search(r'^# +(.+?) *#* *$', read(index), re.M)
+        title = heading.group(1).strip() if heading else root.name
+        anchor = _heading_anchor(title)
+        if not anchor or anchor in headings:
+            title = f'{title}（{record["id"]}）'
+            anchor = _heading_anchor(title)
+        headings.add(anchor)
+        navigation.append(f'[{title}](#{anchor})')
+        sections += [f'## {title}', '',
+                     f'项目 {record["id"]}　{link("项目首页", index)} · {link("团队分工", team)}', '']
         if not team.is_file():
-            lines += ['TEAM 原件缺失；仍列出登记成员，不猜职责或 Harness。', '']
-        lines += project_table
+            sections += ['TEAM 原件缺失。已登记员工的工位入口仍可使用。', '']
+        sections += project_table
+        home_ids = set(record['homes'])
+        roles = _team_role_summaries(root, home_ids, numbers_map)
+        harnesses = _team_harness_summaries(team, home_ids, numbers_map)
+        statuses = team_member_statuses(str(team), record['homes'], numbers_map)
         for home_id in record['homes']:
-            lines.append(row(home_id, root / 'Workstations' / home_id,
-                             roles.get(home_id) or '未识别，打开 TEAM 原文',
-                             harnesses.get(home_id) or '', 'TEAM', team))
-        lines.append('')
+            sections.append(row(home_id, root / 'Workstations' / home_id,
+                                roles.get(home_id) or '未识别，打开 TEAM 原文',
+                                harnesses.get(home_id, ''), team, statuses.get(home_id, '')))
+        sections.append('')
+    if not sections:
+        sections += ['当前登记范围内没有 Project。', '']
 
     raw_rooter = str(installation.get('rooter_home') or '')
+    rooter_help = ''
     if raw_rooter:
         home = Path(posix_windows_drive_locator(raw_rooter)).expanduser()
-        rooter_harness = re.search(r'^- Harness[：:]\s*(.+)$',
-                                   read(home / 'ENTRY.md'), re.M)
-        rooter_table = ['| Agent | 职责 / 专长 | Harness（ENTRY） | 工位 | 唤醒 |',
-                        '| --- | --- | --- | --- | --- |']
-        lines += ['## 安装级支持', '', *rooter_table,
-                  row('rooter-001', home, '职责见本人 ENTRY；不属于 Project',
-                      rooter_harness.group(1) if rooter_harness else '', 'ENTRY',
-                      home / 'ENTRY.md'), '']
+        navigation.append('[Rooter](#安装级支持)')
+        sections += ['## 安装级支持', '', *project_table,
+                     row('rooter-001', home, '安装、更新与恢复，详见本人 ENTRY。', '', home / 'ENTRY.md'), '']
+        rooter_help = f'联系安装级 Rooter 时，项目参数填 `rooter`，员工号填 `{numbers_map["rooter-001"]}`。'
 
+    lines = ['# 项目与同事', '', MARKER, '',
+             '<!-- paoe:human-intro:start -->',
+             '选项目找负责人。点员工号进入工位，点「待办」查看本人当前工作。完整分工由各项目的 TEAM 维护。',
+             '<!-- paoe:human-intro:end -->', '', ' · '.join(navigation), '',
+             '<!-- paoe:agent-reference -->', '', *sections]
     lines += ['## 外部唤醒', '',
-              '适用于获准在本机执行命令的 Agent。下列命令只提醒原会话；持久留信按 OPS 的正式 Mail 入口。',
-              '将消息替换为具体请求和原件绝对路径。`accepted=true` 只表示提醒受理；当前状态用同一脚本的 `status` 核对。', '']
-    for label, contact, mode in members:
-        lines += [f'### {label}', '', '```powershell']
-        if mode == 'dsh':
-            lines += [_powershell(sys.executable, '-X', 'utf8', '-B', str(contact),
-                                  'wake', '--prompt', '请处理：具体请求；相关原件：绝对路径。')]
-        else:
-            lines += [_powershell(sys.executable, '-X', 'utf8', '-B', str(contact),
-                                  'wake', '--message', '请处理：具体请求；相关原件：绝对路径。')]
-        lines += ['```', '']
+              '已有信件或文件要对方接着处理时，用接收方的项目号和员工号提醒一次。'
+              '在本机 CLI 中将尖括号里的内容换成实际值。' + rooter_help, '',
+              '```text',
+              'paos wake trigger <接收方项目号> <员工号> --prompt "请读取 <原消息编号或文件位置>，接续 <具体工作>。"',
+              '```', '',
+              '交新任务时用 `agent send --remind` 留信并提醒，发送上下文取本次工作的项目。'
+              '名册中标为「人工联系」的成员，在其原会话提示读信。标为「暂停」的成员沿原安排接续。', '',
+              '[成员留信](Guide/ops-entry.md#联系同事与-rooter) · '
+              '[外部协作者留信](Guide/ops-entry.md#外部-agent-临时协作) · '
+              '[本机 CLI 入口](Guide/ops-entry.md#操作与参考)', '']
 
     source = Path(posix_windows_drive_locator(installation['source_root']))
     command = _powershell(sys.executable, '-X', 'utf8', '-B',
                           str(source / 'scripts/paos_team_overview.py'),
                           '--installation-file', str(installation_file), '--output', str(output))
     lines += ['## 更新与检查', '',
-              '本页是可重建的汇总，不手改成员信息。修改登记、TEAM 或 ENTRY 后刷新；需要准确事实时直接读取上方原件。',
+              '成员信息由登记、TEAM 和 ENTRY 提供。原件更新后，用下方命令刷新或检查。',
               '本页不探测在线、不保存任务进度，也不证明已消费。', '',
               '```powershell', command + " '--write'", command + " '--check'", '```', '']
     stamp = hashlib.sha256('\n'.join(fingerprints).encode('utf-8')).hexdigest()
