@@ -791,6 +791,31 @@ def _remind_via_native(
     )
 
 
+def _native_target_for_home(
+    targets: dict[str, Any], agent_id: str,
+    installation_file: str | None = None,
+) -> dict[str, Any] | None:
+    """Exact current key first, then the one historical Home alias key."""
+    exact = targets.get(agent_id)
+    if isinstance(exact, dict):
+        return exact
+    try:
+        current = str(resolve_home_by_registry(
+            agent_id, installation_file=installation_file)["home_id"])
+    except (AttentionServiceProblem, HomeProblem, CliError):
+        return None
+    for key, target in targets.items():
+        if not isinstance(target, dict) or key == agent_id:
+            continue
+        try:
+            if str(resolve_home_by_registry(
+                    key, installation_file=installation_file)["home_id"]) == current:
+                return target
+        except (AttentionServiceProblem, HomeProblem, CliError):
+            continue
+    return None
+
+
 def _inject_from_contact_store(
     contact_home_root: Path,
     *,
@@ -806,7 +831,7 @@ def _inject_from_contact_store(
     STOP, uncertain/network/rejected outcomes stay honest; nothing is resent.
     """
     target_map = load_native_targets(contact_home_root) or {}
-    target = target_map.get(agent_id)
+    target = _native_target_for_home(target_map, agent_id)
     if not isinstance(target, dict):
         return {
             "agent_id": agent_id,
@@ -2475,7 +2500,7 @@ def execute_wake(
             return {"ok": True, "schema": "paos-wake-action/v1", "action": "recover", "state": "retired", "note": "恢复重试退役；如需提醒请走独立注入工具。"}
         if args.wake_command == "stop":
             targets = load_native_targets(root) or {}
-            target = targets.get(args.agent_id) if isinstance(targets.get(args.agent_id), dict) else None
+            target = _native_target_for_home(targets, args.agent_id)
             if not target:
                 return {"ok": True, "schema": "paos-wake-action/v1", "action": "stop", "state": "not_configured", "agent_id": args.agent_id}
             stop_file = str(target.get("stop_file") or "").strip()
@@ -2510,7 +2535,9 @@ def execute_wake(
                 except ValueError:
                     parsed = raw_model
                 native_model = parsed  # opencode expects dict(providerID/modelID); others expect str
-            target = (load_native_targets(root) or {}).get(args.agent_id)
+            target = _native_target_for_home(
+                load_native_targets(root) or {}, args.agent_id,
+                str(installation_path))
             if not isinstance(target, dict):
                 return {
                     "ok": True,
