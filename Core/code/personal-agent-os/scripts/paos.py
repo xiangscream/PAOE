@@ -1226,6 +1226,27 @@ def render_contact(payload: dict[str, Any], *, include_self: bool,
     return "\n".join(lines)
 
 
+def _validate_new_staff_homes(registry: ProjectRegistry, project_id: str, homes: list[str],
+                              installation_path: Path) -> None:
+    staff = {home for home in homes if re.fullmatch(r"S\d{3,}", home)}
+    if not staff:
+        return
+    numbers = load_numbers(resolve_numbers_path(None, installation_path))
+    directory = registry._path(project_id).parent
+    existing = set()
+    for path in directory.glob("*.json"):
+        registered = staff.intersection(registry.read_record(path.stem)["homes"])
+        if registered and path.stem == project_id:
+            existing.update(registered)
+        elif registered:
+            raise CliError(f"员工号已在项目 {path.stem}：{', '.join(sorted(registered))}",
+                           error_code="staff_home_already_registered")
+    reserved = (staff - existing).intersection(label for home, label in numbers.items() if home != label)
+    if reserved:
+        raise CliError(f"员工号已分配给原工位：{', '.join(sorted(reserved))}",
+                       error_code="staff_home_requires_migration")
+
+
 def _allocate_staff_number(args: argparse.Namespace, installation_path: Path) -> str:
     try:
         session_id = str(args.session_id or "").strip()
@@ -3008,8 +3029,11 @@ def execute(
     resolved_installation_path = installation_path or resolve_installation_path(
         getattr(args, "installation_file", None)
     )
-    _resolve_staff_number_recipients(args)
-    _validate_resolved_identity_subject(args, registry, resolved_installation_path)
+    creates_registration = args.command == "project" and args.project_command in {"register", "home-add"}
+    creates_workstation = args.command == "workstation" and args.workstation_command == "init"
+    if not (creates_registration or creates_workstation):
+        _resolve_staff_number_recipients(args)
+        _validate_resolved_identity_subject(args, registry, resolved_installation_path)
     if args.command == "cat":
         return execute_cat(args, RestClient(args.url, service="CAT"), text_arg)
 
@@ -3119,6 +3143,10 @@ def execute(
 
 
     if args.command == "project":
+        if creates_registration:
+            homes = ([args.home_id] if args.project_command == "home-add"
+                     else [args.coordinator, *(args.home or ())])
+            _validate_new_staff_homes(registry, args.project_id, homes, resolved_installation_path)
         if args.project_command == "register":
             result = registry.register(
                 args.project_id, root_path=args.root,

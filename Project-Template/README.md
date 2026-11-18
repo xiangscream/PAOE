@@ -59,7 +59,7 @@ Human 已编辑或确认的正文作为后续修改基线。更新只改当前�
 ## 新项目和工位的创建
 
 1. Human 明确授权建立独立目录及 Obsidian Vault、登记项目；使用母版建立 AGENTS、INDEX、TEAM、HISTORY；当前业务写 INDEX，分工写 TEAM，特殊运行约定写 AGENTS；ENTRY 由正常初始化入口读取母本展开，TODO 使用现行写者初始化。不得由示例虚构成员、任务、凭据或业务结论。
-2. 先从本机号码登记确认获准员工的唯一 Sxxx。新Project用 `project register` 登记；加入已有Project用 `project home-add` 增加该 Sxxx，再用 `workstation init` 创建同名工位。参数读各自同版 `--help`；已有ENTRY/TODO保留人工内容。身份登记、工位创建和原生绑定分别完成，详见[接口参考](../Guide/guide-paos-interface-reference.md#项目与当前口径)。
+2. 为新员工选定本机未使用的 Sxxx。新Project用 `project register` 登记；加入已有Project用 `project home-add` 增加该 Sxxx。随后用 `workstation init` 登记号码并创建同名工位。已有员工迁移沿原号码。参数读各自同版 `--help`；已有ENTRY/TODO保留人工内容。原生绑定在工位创建后完成，详见[接口参考](../Guide/guide-paos-interface-reference.md#项目与当前口径)。
 3. 使用[已安装机器入口](../README.md#已安装机器上的首次使用)取得真实CLI，不用包内示例配置覆盖本机登记。下面`paos`代表该完整前缀；Project根取当前登记：
 
 ```powershell

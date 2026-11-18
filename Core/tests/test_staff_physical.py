@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -59,6 +61,30 @@ class StaffPhysicalTests(unittest.TestCase):
         self.assertEqual(Path(legacy["home_path"]).parts[-2:], ("Workstations", "S040"))
         self.assertEqual(staff_number("S040", installation_path=self.install), "S040")
         self.assertEqual(staff_number("1001-s001", installation_path=self.install), "S040")
+
+    def test_new_staff_registration_and_init_use_the_same_number(self):
+        cli = [sys.executable, "-X", "utf8", "-B", str(SCRIPTS / "paos.py"),
+               "--installation-file", str(self.install), "--json"]
+        original = self.registry._path("1001").read_bytes()
+        revision = hashlib.sha256(original).hexdigest()
+        registered = subprocess.run(
+            cli + ["project", "home-add", "1001", "S099", "--expected-fingerprint", revision],
+            capture_output=True, text=True, encoding="utf-8", check=False)
+        self.assertEqual(registered.returncode, 0, registered.stderr)
+        created = subprocess.run(cli + ["workstation", "init", "1001", "S099"],
+                                 capture_output=True, text=True, encoding="utf-8", check=False)
+        self.assertEqual(created.returncode, 0, created.stderr)
+        self.assertTrue((self.project / "Workstations/S099/ENTRY.md").is_file())
+        self.assertEqual(load_numbers(self.numbers)["S099"], "S099")
+
+        other = self.base / "other-project"
+        other.mkdir()
+        duplicate = subprocess.run(cli + ["project", "register", "2002", "--root", str(other),
+                                         "--coordinator", "S099"],
+                                   capture_output=True, text=True, encoding="utf-8", check=False)
+        self.assertNotEqual(duplicate.returncode, 0)
+        self.assertEqual(json.loads(duplicate.stderr)["error_code"], "staff_home_already_registered")
+        self.assertFalse(self.registry._path("2002").exists())
 
     def test_board_exposes_canonical_id_and_read_only_legacy_alias(self):
         board = Board(self.install)
