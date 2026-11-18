@@ -23,7 +23,7 @@
 & "$env:USERPROFILE\.paos\bin\paos.cmd" library search '写作'
 ```
 
-这是标准Windows已安装入口，其他部署沿[当前安装入口](README.md#已安装机器上的首次使用)。它读取本机已登记的库配置，无需从同事工位借路径，也不需要手加包内的`--library-roots-config`。
+这是标准Windows已安装入口，其他部署沿[当前安装入口](UPGRADE.md#已安装机器上的首次使用)。它读取本机已登记的库配置，无需从同事工位借路径，也不需要手加包内的`--library-roots-config`。
 
 将“写作”换成本次任务关键词，打开命中的`source_path`后使用。检索为字面关键词匹配，多个词用空格分隔；零匹配时可换具体关键词或看Library用途表，不能据此认定没有方法。`library_roots_not_registered`则是安装或库配置问题，先用同一入口的`library roots show`核实，不重新安装一套库。
 

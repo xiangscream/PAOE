@@ -37,7 +37,7 @@ installation.json 的 source_root、data_root、library_roots_config、rooter_ho
 | 项目目标、业务口径或分工不清楚 | 对应项目 INDEX 与 Coordinator，见[项目与 Agent](PROJECTS.md)。 |
 | 文件或目录打不开 | 保留原路径和错误，先核磁盘、实际文件与登记，再交对应负责人处理。 |
 | Agent 没有响应，安装或原生连接异常 | [Rooter 入口](rooter/README.md)及[运行维护规则](Guide/guide-rooter-installation.md)。 |
-| 需要唤醒某位 Agent | [汇总页的完整唤醒命令](PROJECTS.md#外部唤醒)。 |
+| 需要唤醒某位 Agent | [项目与同事 · 通用唤醒入口](PROJECTS.md#外部唤醒)。 |
 
 Home 保存工作，Harness 执行模型，Contact 连接已绑定会话。配置存在、提醒受理、本人实读和任务完成分别核实；自动恢复须由本机实际验收。
 
