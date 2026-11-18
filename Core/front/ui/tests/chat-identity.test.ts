@@ -58,6 +58,20 @@ it('does not show a legacy Home label after the member id becomes S040', async (
   wrapper.unmount()
 })
 
+it('maps an old CAT seat through the read-only legacy_home_ids alias', async () => {
+  const wrapper = await emptyChat()
+  const vm = wrapper.vm as any
+  vm.people = [{
+    id: 'S040', home_id: 'S040', staff_number: 'S040',
+    legacy_home_ids: ['3002-s035'], number: 'S040', name: '',
+  }]
+  vm.roomId = 'room-one'
+  vm.roomStates['room-one'] = { members: [{ home_id: '3002-s035', label: '3002-s035' }] }
+  expect(vm.name('3002-s035')).toBe('S040')
+  expect(vm.avatar('3002-s035')).toBe('S040')
+  wrapper.unmount()
+})
+
 it('marks missing numbers explicitly instead of showing a Home id', async () => {
   const wrapper = await emptyChat()
   const vm = wrapper.vm as any

@@ -1,5 +1,8 @@
 export interface AgentSummary {
   id: string
+  home_id?: string
+  staff_number?: string
+  legacy_home_ids?: string[]
   ok?: boolean
   error?: string
   objective?: string

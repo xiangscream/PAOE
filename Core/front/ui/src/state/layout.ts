@@ -17,7 +17,8 @@ export function mergeLayout(agents: AgentSummary[], saved?: Partial<BoardLayout>
   const base = defaultNodes(agents)
   const nodes: Record<string, LayoutNode> = {}
   for (const agent of agents) {
-    const candidate = saved?.nodes?.[agent.id]
+    const keys = [agent.id, agent.home_id, agent.staff_number, ...(agent.legacy_home_ids || [])].filter(Boolean) as string[]
+    const candidate = keys.map(key => saved?.nodes?.[key]).find(Boolean)
     nodes[agent.id] = candidate ? { ...candidate } : base[agent.id]
   }
   const viewport = saved?.viewport

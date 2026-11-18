@@ -24,6 +24,17 @@ describe('layout', () => {
     expect(layout.nodes.b).toBeTruthy()
     expect(layout.viewport).toEqual(saved.viewport)
   })
+
+  it('finds a saved position through a read-only legacy Home alias', () => {
+    const saved: Partial<BoardLayout> = {
+      nodes: { '3002-s035': { x: 240, y: 120 } },
+      viewport: { x: 0, y: 0, zoom: 1 },
+    }
+    const layout = mergeLayout([
+      agent('S040', { home_id: 'S040', staff_number: 'S040', legacy_home_ids: ['3002-s035'] }),
+    ], saved)
+    expect(layout.nodes.S040).toEqual({ x: 240, y: 120 })
+  })
 })
 
 describe('collaboration', () => {

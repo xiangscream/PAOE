@@ -83,13 +83,19 @@ export default {
   methods: {
     day(value) { return dayFormat.format(new Date(value)); },
     time(value) { return timeFormat.format(new Date(value)); },
+    personFor(id) {
+      return this.people.find(person =>
+        person.id===id || person.home_id===id || person.staff_number===id ||
+        (Array.isArray(person.legacy_home_ids) && person.legacy_home_ids.includes(id))
+      );
+    },
     name(id) {
       if (id==='human') return 'Human';
       const member=this.state?.members.find(item=>item.home_id===id);
-      const person=this.people.find(item=>item.id===id);
+      const person=this.personFor(id);
       const label=member?.label && member.label!==id && !isLegacyHomeId(member.label) ? member.label : '';
       const name=person?.name && person.name!==id && !isLegacyHomeId(person.name) ? person.name : '';
-      const number=person?.number || '';
+      const number=person?.number || person?.staff_number || '';
       const suffix=label || name;
       if (number) return suffix && !suffix.includes(number) ? number+' · '+suffix : (suffix || number);
       if (suffix) return '未编号 · '+suffix;
@@ -97,8 +103,8 @@ export default {
     },
     avatar(id) {
       if (id==='human') return '你';
-      const number=this.people.find(person=>person.id===id)?.number;
-      return number || this.name(id).slice(0,2);
+      const person=this.personFor(id);
+      return person?.number || person?.staff_number || this.name(id).slice(0,2);
     },
     avatarTone(id) {
       return id==='human'?'tone-human':'tone-'+(this.state.members.findIndex(member=>member.home_id===id)%5);
