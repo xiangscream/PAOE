@@ -22,14 +22,11 @@ def context(installation_file: str):
         raise ValueError("安装描述中的 source_root 无法定位当前 PAOE 代码。")
     sys.path.insert(0, str(scripts))
     from paos_installation import load_installation_descriptor
-    from paos_registry import ProjectRegistry
-    from paos_home import agent_project_id, project_agent_home
+    from paos_attention_service import resolve_home_by_registry
 
     descriptor = load_installation_descriptor(installation)
     home = Path(__file__).resolve().parent.parent
-    project_id = agent_project_id(home.name)
-    project = ProjectRegistry(installation).read(project_id)
-    ref = project_agent_home(project=project, agent_id=home.name)
+    ref = resolve_home_by_registry(home.name, installation_file=str(installation))
     if home != Path(ref["home_path"]).resolve():
         raise ValueError("脚本目录与 Registry 中本人工位不一致；母版不可直接绑定。")
     return installation, descriptor, scripts, home, ref
