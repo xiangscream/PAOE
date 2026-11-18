@@ -170,6 +170,7 @@ def render_overview(installation_file: Path, output: Path) -> str:
         numbers_map = load_numbers(numbers_path)
     except NumbersProblem as exc:
         raise ValueError(f'员工号登记不可用，无法生成准确 PROJECTS：{exc}') from exc
+    staff_numbers = set(numbers_map.values())
     fingerprints: list[str] = []
 
     def read(path: Path) -> str:
@@ -209,7 +210,7 @@ def render_overview(installation_file: Path, output: Path) -> str:
             source_path: Path) -> str:
         entry = home / 'ENTRY.md'
         read(entry)
-        staff = numbers_map.get(home_id)
+        staff = home_id if home_id in staff_numbers else numbers_map.get(home_id)
         if not staff:
             raise ValueError(
                 f'员工号登记缺少 {home_id} 的映射；先补安装 AGENT-NUMBERS.json，不由 Home 尾号猜。')
