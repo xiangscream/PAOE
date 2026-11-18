@@ -220,10 +220,11 @@ class ProjectRegistry:
                     ),
                 }
                 self._check(updated, project_id, path)
+                encoded = (json.dumps(updated, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
                 stage = path.with_name(f".{path.name}.members-{uuid.uuid4().hex}")
                 try:
                     with stage.open("xb") as stream:
-                        stream.write((json.dumps(updated, ensure_ascii=False, indent=2) + "\n").encode("utf-8"))
+                        stream.write(encoded)
                         stream.flush()
                         os.fsync(stream.fileno())
                     if path.read_bytes() != original:
@@ -242,7 +243,7 @@ class ProjectRegistry:
                         "replaced": True, "old_home_id": old_home_id,
                         "new_home_id": new_home_id, "record": updated,
                         "backup": str(backup),
-                        "fingerprint": hashlib.sha256(path.read_bytes()).hexdigest(),
+                        "fingerprint": hashlib.sha256(encoded).hexdigest(),
                     }
                 finally:
                     stage.unlink(missing_ok=True)

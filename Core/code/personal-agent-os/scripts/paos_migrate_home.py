@@ -1,7 +1,8 @@
 """One-shot Rooter migration: move one old Home to its registered Sxxx path.
 
 Default is a read-only plan. `--execute` writes a before-state JSON, moves the
-directory, updates the one Project registry and the TODO v4 `home_id` line.
+directory, updates its TODO identity and Contact locator, then switches the
+Project registry. Rooter runs this while the affected Home is between writes.
 It never rewrites Mail, Notice, ENTRY, TEAM, CAT rooms, native sessions or the
 staff-number registry; those keep their original source identity.
 """
@@ -15,9 +16,10 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
+import tempfile
 from typing import Any
 
-from paos_agent_numbers import load_numbers, resolve_numbers_path
+from paos_agent_numbers import NumbersProblem, load_numbers, resolve_numbers_path
 from paos_installation import load_installation_descriptor, resolve_installation_path
 from paos_registry import ProjectRegistry, RegistryProblem
 from paos_workstation import posix_windows_drive_locator
@@ -34,22 +36,56 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _manifest(root: Path) -> list[dict[str, Any]]:
-    files: list[dict[str, Any]] = []
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or path.is_symlink():
+def _encoded(value: dict) -> bytes:
+    return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def _replace(path: Path, value: bytes) -> None:
+    stream = tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.", delete=False)
+    staged = Path(stream.name)
+    try:
+        with stream:
+            stream.write(value)
+        os.replace(staged, path)
+    finally:
+        staged.unlink(missing_ok=True)
+
+
+def _contact_change(path: Path, old_path: Path, new_path: Path) -> tuple[bytes | None, dict | None, list[str]]:
+    try:
+        original = path.read_bytes()
+    except FileNotFoundError:
+        return None, None, []
+    targets = json.loads(original)
+    if not isinstance(targets, dict):
+        raise MigrationProblem("migration_contact_invalid", "现行 Contact 登记不是有效对象。", path=str(path))
+    if new_path.name in targets:
+        raise MigrationProblem("migration_contact_conflict", "新员工号已有 Contact 登记。", path=str(path))
+    if old_path.name not in targets:
+        return original, None, []
+    target = targets.pop(old_path.name)
+    if not isinstance(target, dict):
+        raise MigrationProblem("migration_contact_invalid", "旧员工 Contact 登记不是有效对象。", path=str(path))
+    targets[new_path.name] = target
+    changed = []
+    for fields, key, field_name in (
+        (target, "stop_file", "stop_file"),
+        (target.get("extension"), "receiver_runtime_file", "extension.receiver_runtime_file"),
+    ):
+        value = fields.get(key) if isinstance(fields, dict) else None
+        if not isinstance(value, str) or not value:
             continue
-        files.append({
-            "path": path.relative_to(root).as_posix(),
-            "size": path.stat().st_size,
-            "sha256": _sha(path),
-        })
-    return files
+        locator = Path(posix_windows_drive_locator(value))
+        if locator.is_relative_to(old_path):
+            fields[key] = str(new_path / locator.relative_to(old_path))
+            changed.append(field_name)
+    return original, targets, changed
 
 
-def _todo_line(path: Path, expected: str) -> tuple[str, re.Match[str]]:
-    text = path.read_text(encoding="utf-8")
-    match = re.search(r"(?m)^(home_id:\s*)([\"']?)([^\"'\s]+)\2\s*$", text)
+def _todo_line(path: Path, expected: str) -> tuple[str, int, int]:
+    text = path.read_bytes().decode("utf-8")
+    header = text.split("---", 2)[1] if text.startswith("---") else ""
+    match = re.search(r"(?m)^(home_id:[ \t]*)([\"']?)([^\"'\s]+)\2[ \t]*\r?$", header)
     if not match or match.group(3) != expected:
         raise MigrationProblem(
             "migration_todo_identity_mismatch",
@@ -57,7 +93,8 @@ def _todo_line(path: Path, expected: str) -> tuple[str, re.Match[str]]:
             path=str(path), expected=expected,
             actual=(match.group(3) if match else None),
         )
-    return text, match
+    start, end = match.span(3)
+    return text, start + 3, end + 3
 
 
 def plan(project_id: str, old_home: str, new_home: str,
@@ -90,7 +127,9 @@ def plan(project_id: str, old_home: str, new_home: str,
     todo_path = old_path / "TODO.md"
     todo_text = None
     if todo_path.is_file():
-        todo_text, _ = _todo_line(todo_path, old_home)
+        todo_text, _, _ = _todo_line(todo_path, old_home)
+    contact_path = root / "private-data" / "contact" / "native-targets.json"
+    _, targets, changed = _contact_change(contact_path, old_path, new_path)
     return {
         "ok": True,
         "schema": "paos-home-migration-plan/v1",
@@ -103,11 +142,12 @@ def plan(project_id: str, old_home: str, new_home: str,
         "registry_fingerprint": _sha(registry_path),
         "todo_path": str(todo_path) if todo_text is not None else "",
         "todo_home_id": old_home if todo_text is not None else "",
-        "file_count": len(_manifest(old_path)),
+        "contact_path": str(contact_path) if targets is not None else "",
+        "contact_updated_locators": changed,
         "docs_pending": [
             str(root / "TEAM.md"),
-            str(old_path / "ENTRY.md"),
-            str(root / "CONTACT.md"),
+            str(new_path / "ENTRY.md"),
+            str(new_path / "CONTACT.md"),
         ],
         "execute_hint": f"rerun with --execute --before-state <new-json>",
     }
@@ -122,19 +162,25 @@ def _execute(plan_value: dict[str, Any], installation_file: str | None,
     new_home = str(plan_value["new_home_id"])
     old_path = Path(plan_value["old_path"])
     new_path = Path(plan_value["new_path"])
-    registry_path = Path(plan_value["registry_path"])
     todo_path = Path(plan_value["todo_path"]) if plan_value.get("todo_path") else None
     todo_text = None
     if todo_path is not None:
-        todo_text, todo_match = _todo_line(todo_path, old_home)
+        todo_text, todo_start, todo_end = _todo_line(todo_path, old_home)
+    contact_path = Path(plan_value["contact_path"]) if plan_value["contact_path"] else None
+    contact_original, targets, fields = (None, None, [])
+    if contact_path is not None:
+        contact_original, targets, fields = _contact_change(contact_path, old_path, new_path)
+        if targets is None or contact_original is None:
+            raise MigrationProblem("migration_contact_changed", "Contact 登记已变化，请重新预览。", path=str(contact_path))
+    contact_backup = before_state_path.with_name(before_state_path.name + ".contact-before.json") if contact_path else None
     before = {
         **plan_value,
         "schema": "paos-home-migration-before/v1",
         "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
-        "registry_sha256_before": _sha(registry_path),
+        "registry_sha256_before": plan_value["registry_fingerprint"],
         "todo_sha256_before": (_sha(todo_path) if todo_path else ""),
         "todo_original": todo_text,
-        "files": _manifest(old_path),
+        "contact_before_path": str(contact_backup) if contact_backup else "",
         "rollback": {
             "move": f"{new_path} -> {old_path}",
             "registry": f"{new_home} -> {old_home}",
@@ -142,23 +188,30 @@ def _execute(plan_value: dict[str, Any], installation_file: str | None,
         },
     }
     before_state_path.parent.mkdir(parents=True, exist_ok=True)
-    before_state_path.write_text(
-        json.dumps(before, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    with before_state_path.open("xb") as stream:
+        stream.write(_encoded(before))
+    if contact_backup is not None:
+        with contact_backup.open("xb") as stream:
+            stream.write(contact_original)
     moved = False
-    replaced = False
+    contact_updated = False
+    todo_updated = False
     try:
         old_path.rename(new_path)
         moved = True
+        if todo_text is not None:
+            new_todo = todo_text[:todo_start] + new_home + todo_text[todo_end:]
+            _replace(new_path / "TODO.md", new_todo.encode("utf-8"))
+            todo_updated = True
+        if contact_path is not None:
+            if contact_path.read_bytes() != contact_original:
+                raise MigrationProblem("migration_contact_changed", "Contact 登记已变化，没有覆盖。", path=str(contact_path))
+            _replace(contact_path, _encoded(targets))
+            contact_updated = True
         result = registry.replace_home(
             project_id, old_home, new_home,
             expected_fingerprint=before["registry_sha256_before"],
         )
-        replaced = True
-        todo_updated = False
-        if todo_path is not None and todo_text is not None:
-            new_todo = todo_text[:todo_match.start(3)] + new_home + todo_text[todo_match.end(3):]
-            (new_path / "TODO.md").write_text(new_todo, encoding="utf-8")
-            todo_updated = True
         return {
             "ok": True,
             "schema": "paos-home-migration-result/v1",
@@ -168,28 +221,29 @@ def _execute(plan_value: dict[str, Any], installation_file: str | None,
             "old_path": str(old_path),
             "new_path": str(new_path),
             "moved": moved,
-            "registry_replaced": replaced,
+            "registry_replaced": True,
             "todo_updated": todo_updated,
+            "contact_updated": contact_updated,
+            "contact_updated_locators": fields,
             "before_state": str(before_state_path),
             "backup": result.get("backup", ""),
             "docs_pending": plan_value.get("docs_pending", []),
         }
-    except Exception as problem:
-        if replaced:
-            try:
-                registry.replace_home(
-                    project_id, new_home, old_home,
-                    expected_fingerprint=_sha(registry_path),
-                )
-            except Exception:
-                pass
-        if moved:
-            try:
+    except (MigrationProblem, RegistryProblem, OSError) as problem:
+        try:
+            if contact_updated:
+                _replace(contact_path, contact_original)
+            if todo_updated:
+                _replace(new_path / "TODO.md", todo_text.encode("utf-8"))
+            if moved:
                 new_path.rename(old_path)
-            except Exception:
-                pass
+        except OSError as restore_error:
+            raise MigrationProblem(
+                "migration_restore_failed", f"迁移失败：{problem}；恢复失败：{restore_error}",
+                before_state=str(before_state_path),
+            ) from restore_error
         raise MigrationProblem(
-            "migration_execute_failed", f"迁移失败，已尝试回退：{problem}",
+            "migration_execute_failed", f"迁移失败，当前工位已恢复：{problem}",
             before_state=str(before_state_path),
         ) from problem
 
@@ -208,13 +262,15 @@ def main(argv: list[str] | None = None) -> int:
         if not args.execute:
             print(json.dumps(value, ensure_ascii=False, indent=2))
             return 0
-        before = Path(args.before_state).expanduser() if args.before_state else (
-            Path(value["new_path"]).parent.parent / f".paos-migration-{args.old_home}-{datetime.now().strftime('%Y%m%dT%H%M%S')}.json"
-        )
+        if not args.before_state:
+            parser.error("--execute requires --before-state outside the moving Home")
+        before = Path(args.before_state).expanduser().resolve()
+        if before.is_relative_to(Path(value["old_path"]).resolve()):
+            parser.error("--before-state must be outside the moving Home")
         result = _execute(value, args.installation_file or None, before.resolve())
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
-    except (MigrationProblem, RegistryProblem, OSError, ValueError) as problem:
+    except (MigrationProblem, RegistryProblem, NumbersProblem, OSError, ValueError) as problem:
         print(json.dumps({
             "ok": False,
             "error_code": getattr(problem, "code", "migration_failed"),
