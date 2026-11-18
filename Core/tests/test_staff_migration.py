@@ -52,8 +52,9 @@ class StaffMigrationTests(unittest.TestCase):
         self.assertEqual((self.new / 'TODO.md').read_bytes(), self.todo.replace(b'3002-s001', b'S040'))
         self.assertEqual((self.new / 'STOP').read_bytes(), b'pause stays')
         updated = json.loads(self.contact.read_bytes())
-        self.assertEqual(updated, {'S040': {**self.target, 'stop_file': str(self.new / 'STOP'),
-                         'extension': {'receiver_runtime_file': str(self.new / 'receiver.json')}}})
+        registered_home = Path(self.registry.read_record('3002')['root_path']) / 'Workstations/S040'
+        self.assertEqual(updated, {'S040': {**self.target, 'stop_file': str(registered_home / 'STOP'),
+                         'extension': {'receiver_runtime_file': str(registered_home / 'receiver.json')}}})
         snapshot = json.loads(self.before.read_bytes())
         self.assertEqual(Path(snapshot['contact_before_path']).read_bytes(), self.original_contact)
 

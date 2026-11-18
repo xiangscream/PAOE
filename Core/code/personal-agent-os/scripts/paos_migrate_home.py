@@ -68,6 +68,7 @@ def _contact_change(path: Path, old_path: Path, new_path: Path) -> tuple[bytes |
         raise MigrationProblem("migration_contact_invalid", "旧员工 Contact 登记不是有效对象。", path=str(path))
     targets[new_path.name] = target
     changed = []
+    resolved_old = old_path.resolve()
     for fields, key, field_name in (
         (target, "stop_file", "stop_file"),
         (target.get("extension"), "receiver_runtime_file", "extension.receiver_runtime_file"),
@@ -76,8 +77,11 @@ def _contact_change(path: Path, old_path: Path, new_path: Path) -> tuple[bytes |
         if not isinstance(value, str) or not value:
             continue
         locator = Path(posix_windows_drive_locator(value))
-        if locator.is_relative_to(old_path):
-            fields[key] = str(new_path / locator.relative_to(old_path))
+        if not locator.is_absolute():
+            continue
+        resolved_locator = locator.resolve()
+        if resolved_locator.is_relative_to(resolved_old):
+            fields[key] = str(new_path / resolved_locator.relative_to(resolved_old))
             changed.append(field_name)
     return original, targets, changed
 

@@ -100,7 +100,7 @@ class TeamOverviewTests(unittest.TestCase):
 
         text = render_overview(self.install, self.output)
 
-        self.assertIn(f'| S040 | 原职责 | OpenCode2（TEAM） | [ENTRY](<{(migrated / "ENTRY.md").as_uri()}>)', text)
+        self.assertIn(f'| S040 | 原职责 | OpenCode2（TEAM） | [ENTRY](<{(migrated / "ENTRY.md").resolve().as_uri()}>)', text)
         self.assertIn(str(migrated / 'contact.py').replace("'", "''"), text)
         self.assertNotIn('3002-s001', text)
 
