@@ -69,6 +69,10 @@ class StaffPhysicalTests(unittest.TestCase):
         agent = board.agent("S040")
         self.assertEqual(agent["id"], "S040")
         self.assertTrue(agent["ok"])
+        dashboard = board.dashboard("1001", include_cat=False)
+        summary = next(item for item in dashboard["agents"] if item["id"] == "S040")
+        self.assertEqual(summary["staff_number"], "S040")
+        self.assertEqual(summary["legacy_home_ids"], ["1001-s001"])
 
 
 if __name__ == "__main__":

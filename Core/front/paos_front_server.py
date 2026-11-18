@@ -376,13 +376,16 @@ class Board:
                 if not fields["can_contact"]:
                     raise BoardProblem("member_paused", f"{member} 在 TEAM 中明确暂停，不能发起协作或提醒。")
 
-    def _agent_summary(self, row: dict) -> dict:
+    def _agent_summary(self, row: dict, legacy_aliases: dict[str, list[str]] | None = None) -> dict:
         summary = {"ok": row.get("ok"), "id": row.get("id"), "project": row.get("project"),
                    "objective": row.get("objective", ""), "next_action": row.get("next_action", ""),
                    "tasks": row.get("tasks", {}), "pending_notices": row.get("pending_notices", 0),
                    "mail_total": row.get("mail_total", 0)}
         for key in ("number", "name", "role", "description", "member_status", "registered", "can_contact", "team_path"):
             summary[key] = row.get(key, "" if key not in {"registered", "can_contact"} else False)
+        aliases = legacy_aliases if legacy_aliases is not None else self._legacy_home_aliases()
+        summary["staff_number"] = row.get("number", "") or ""
+        summary["legacy_home_ids"] = aliases.get(str(summary["staff_number"]), [])
         if not row.get("ok"):
             summary.update({"error": row.get("error", ""), "error_code": row.get("error_code", "")})
         return summary
@@ -501,12 +504,16 @@ class Board:
         projects = self.projects()
         selected = self.registry.read_record(project_id) if project_id else (projects[0] if projects else None)
         agents = []
+        legacy_aliases = self._legacy_home_aliases()
         if selected:
             for home_id in selected["homes"]:
                 try:
-                    agents.append(self._agent_summary(self.agent(home_id)))
+                    agents.append(self._agent_summary(self.agent(home_id), legacy_aliases))
                 except READ_ERRORS as exc:
-                    agents.append({"id": home_id, "ok": False, **error_view(exc)})
+                    agents.append({"id": home_id, "ok": False,
+                                   "staff_number": home_id if str(home_id).startswith("S") else "",
+                                   "legacy_home_ids": legacy_aliases.get(home_id, []),
+                                   **error_view(exc)})
         if include_cat:
             rooms_result = self.cat(["list"]) if self.cat_url else self.cat([])
         else:
