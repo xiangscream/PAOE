@@ -2067,10 +2067,12 @@ def execute_attention(
     installation_path: Path,
 ) -> dict[str, Any]:
     """V1.3 Home service; public paths persist facts but never submit native turns."""
-    if getattr(args, "agent_id", None):
-        args.agent_id = _canonical_identity_and_aliases(
-            str(args.agent_id), installation_path)[0]
-    _resolve_staff_number_recipients(args)
+    recipient_aliases = None
+    if args.attention_command != "history-read":
+        if getattr(args, "agent_id", None):
+            args.agent_id, recipient_aliases = _canonical_identity_and_aliases(
+                str(args.agent_id), installation_path)
+        _resolve_staff_number_recipients(args)
     try:
         if args.attention_command == "rooter-history-read":
             try:
@@ -2204,19 +2206,32 @@ def execute_attention(
                 }
 
         if args.attention_command == "history-read":
+            identity = str(args.agent_id)
+            request = {"history_root": str(args.history_root),
+                       "message_id": str(args.message_id or ""),
+                       "notice_id": str(args.notice_id or "")}
             try:
-                history = attention_read_history_input(
-                    history_root=str(args.history_root),
-                    agent_id=str(args.agent_id),
-                    message_id=str(args.message_id or ""),
-                    notice_id=str(args.notice_id or ""),
-                )
-            except (MailProblem, NoticeProblem) as problem:
-                raise AttentionServiceProblem(
-                    str(getattr(problem, "code", "attention_history_read_failed")),
-                    str(problem),
-                    dict(getattr(problem, "details", {}) or {}),
-                ) from problem
+                history = attention_read_history_input(agent_id=identity, **request)
+            except (AttentionServiceProblem, MailProblem, NoticeProblem) as problem:
+                if problem.code not in {"attention_history_home_missing", "mail_message_missing", "notice_missing"}:
+                    raise
+                try:
+                    numbers = load_numbers(resolve_numbers_path(None, installation_path))
+                except NumbersProblem as numbers_problem:
+                    if numbers_problem.code == "agent_numbers_not_configured":
+                        raise problem from numbers_problem
+                    raise
+                label = numbers.get(identity, identity)
+                aliases = [home for home, number in numbers.items() if number == label]
+                if len(aliases) > 1:
+                    raise CliError(f"员工号 {label} 对应多个历史工位。",
+                                   error_code="staff_number_ambiguous",
+                                   details={"staff_number": label, "matches": aliases})
+                alternate = label if identity != label else next(
+                    (home for home in aliases if home != identity), None)
+                if not alternate:
+                    raise
+                history = attention_read_history_input(agent_id=alternate, **request)
             return {"ok": True, **history}
 
         project = registry.read(args.project_id)
@@ -2267,6 +2282,7 @@ def execute_attention(
                 marked = {"ok": True, **attention_mark_input_read(
                     home_ref=home_ref,
                     notice_id=str(args.notice_id),
+                    recipient_aliases=recipient_aliases,
                 )}
                 return marked
             if args.attention_command == "archive-input":
@@ -2277,6 +2293,7 @@ def execute_attention(
                         history_root=str(args.history_root),
                         message_id=str(args.message_id or ""),
                         notice_id=str(args.notice_id or ""),
+                        recipient_aliases=recipient_aliases,
                     ),
                 }
             if args.attention_command == "notice-update":
@@ -2323,6 +2340,7 @@ def execute_attention(
                         notice_id=str(args.notice_id),
                         updates=_parse_todo_update_sets(args.sets),
                         expected_fingerprint=getattr(args, "expected_fingerprint", None),
+                        recipient_aliases=recipient_aliases,
                     ),
                 }
             if args.attention_command == "todo-update":
@@ -3031,7 +3049,8 @@ def execute(
     )
     creates_registration = args.command == "project" and args.project_command in {"register", "home-add"}
     creates_workstation = args.command == "workstation" and args.workstation_command == "init"
-    if not (creates_registration or creates_workstation):
+    reads_history = args.command == "attention" and args.attention_command == "history-read"
+    if not (creates_registration or creates_workstation or reads_history):
         _resolve_staff_number_recipients(args)
         _validate_resolved_identity_subject(args, registry, resolved_installation_path)
     if args.command == "cat":
@@ -4000,7 +4019,7 @@ def main(argv: list[str] | None = None) -> int:
         print(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=2))
         return 1 if isinstance(result, dict) and result.get("ok") is False else 0
     except (CliError, RegistryProblem, InstallationProblem, LibraryProblem, NumbersProblem, WorkstationProblem,
-            HomeProblem, MailProblem, AttentionServiceProblem, OSError, ValueError) as exc:
+            HomeProblem, MailProblem, NoticeProblem, AttentionServiceProblem, OSError, ValueError) as exc:
         error = exc if isinstance(exc, CliError) else CliError(str(exc),
             error_code=getattr(exc, "code", "local_operation_failed"),
             details=getattr(exc, "details", {}))

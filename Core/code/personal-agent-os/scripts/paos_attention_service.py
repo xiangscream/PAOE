@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 from concurrent.futures import ThreadPoolExecutor
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1364,6 +1365,7 @@ def mark_input_read(
     *,
     home_ref: dict[str, Any],
     notice_id: str,
+    recipient_aliases: set[str] | None = None,
 ) -> dict[str, Any]:
     """Explicitly mark one Notice read using the exact owning Home identity."""
     try:
@@ -1374,6 +1376,7 @@ def mark_input_read(
             reader_home_kind=ref["home_kind"],
             reader_home_id=ref["home_id"],
             reader_project_id=ref["project_id"],
+            reader_home_aliases=recipient_aliases,
         )
     except (HomeProblem, NoticeProblem) as problem:
         raise _map_problem(problem) from problem
@@ -1851,6 +1854,7 @@ def archive_input(
     history_root: str | Path,
     message_id: str = "",
     notice_id: str = "",
+    recipient_aliases: set[str] | None = None,
 ) -> dict[str, Any]:
     """Move one already-read, handled input to an explicit external batch.
 
@@ -1873,7 +1877,8 @@ def archive_input(
 
     if message_id and not message_id.startswith("legacy-mail-file:"):
         existing_archive = read_mail_archive(
-            project_root, home_id, message_id, allow_legacy=True
+            project_root, home_id, message_id, allow_legacy=True,
+            recipient_aliases=recipient_aliases,
         )
         if existing_archive is not None:
             return {
@@ -1896,11 +1901,12 @@ def archive_input(
             agent_id=home_id,
             lookup=message_id,
         )
-        _read_mail_item_file(mail_item, agent_id=home_id)
+        _read_mail_item_file(mail_item, agent_id=home_id, recipient_aliases=recipient_aliases)
         source_ref = _mail_item_source_ref(mail_item)
         archive_id = _mail_archive_id(mail_item)
         existing_archive = read_mail_archive(
-            project_root, home_id, archive_id, allow_legacy=True
+            project_root, home_id, archive_id, allow_legacy=True,
+            recipient_aliases=recipient_aliases,
         )
         if existing_archive is not None:
             return {
@@ -1912,8 +1918,8 @@ def archive_input(
                 "state": "already_archived",
                 "files": [],
             }
-        notice_id = _mail_notice_id(home_ref=ref, source_ref=source_ref)
-        selected_notice = read_notice(home_path, notice_id)
+        notice_id, selected_notice = _read_mail_notice(
+            home_ref=ref, source_ref=source_ref, aliases=recipient_aliases)
         if (
             selected_notice.get("source_kind") != "mail"
             or selected_notice.get("source_ref") != source_ref
@@ -2177,6 +2183,8 @@ def read_history_input(
     notice_id: str = "",
 ) -> dict[str, Any]:
     """Read moved Mail/Notice by explicit batch root; never edits the batch."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", agent_id):
+        raise AttentionServiceProblem("attention_history_home_invalid", "历史工位 ID 无效。")
     message_id = str(message_id or "").strip()
     notice_id = str(notice_id or "").strip()
     if bool(message_id) == bool(notice_id):
@@ -2639,7 +2647,8 @@ def activation_work(home_ref: dict[str, Any]) -> dict[str, Any]:
 
 
 
-def _takeover_mail_source(home_ref: dict[str, Any], source_ref: str) -> dict[str, Any]:
+def _takeover_mail_source(home_ref: dict[str, Any], source_ref: str,
+                          recipient_aliases: set[str] | None) -> dict[str, Any]:
     home_path = Path(str(home_ref["home_path"]))
     try:
         if str(home_ref.get("home_kind") or "") == "project_agent":
@@ -2659,7 +2668,8 @@ def _takeover_mail_source(home_ref: dict[str, Any], source_ref: str) -> dict[str
                     {"agent_id": str(home_ref["home_id"]), "path": str(path)},
                 )
             item = {"filename": path.name, "path": str(path), "message_id": path.stem}
-        return _read_mail_item_file(item, agent_id=str(home_ref["home_id"]))
+        return _read_mail_item_file(item, agent_id=str(home_ref["home_id"]),
+                                    recipient_aliases=recipient_aliases)
     except (MailProblem, AttentionServiceProblem) as problem:
         code = "attention_takeover_source_missing"
         if isinstance(problem, AttentionServiceProblem) and problem.code.endswith("recipient_mismatch"):
@@ -2677,6 +2687,7 @@ def takeover_input(
     notice_id: str,
     updates: dict[str, Any],
     expected_fingerprint: str | None = None,
+    recipient_aliases: set[str] | None = None,
 ) -> dict[str, Any]:
     """Read one durable input, mark its Notice read, then switch this Home's Current."""
     try:
@@ -2723,10 +2734,11 @@ def takeover_input(
         )
     except AttentionServiceProblem:
         raise
-    source = _takeover_mail_source(ref, source_ref)
+    source = _takeover_mail_source(ref, source_ref, recipient_aliases)
     stages = {"source": "read", "notice_read": False, "current": False}
     try:
-        marked = mark_input_read(home_ref=ref, notice_id=notice_id)
+        marked = mark_input_read(home_ref=ref, notice_id=notice_id,
+                                 recipient_aliases=recipient_aliases)
         stages["notice_read"] = True
     except AttentionServiceProblem as problem:
         details = dict(getattr(problem, "details", {}) or {})

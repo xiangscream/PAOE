@@ -17,6 +17,7 @@ SCRIPTS = ROOT / 'code' / 'personal-agent-os' / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 import paos
 from paos_installation import write_installation_descriptor
+from paos_migrate_home import _execute, plan
 from paos_mail import list_mail
 from paos_notice import (
     create_notice,
@@ -161,6 +162,40 @@ class HistoryArchiveTests(unittest.TestCase):
         self.assertEqual(read['mail']['handling']['reason'], '已处理')
         self.assertEqual(read['mail']['handling']['action_ref'], 'Works/test.md')
         self.assertEqual(list_mail(self.vault, '3002-s002')['count'], 0)
+
+    def test_migrated_home_can_take_over_archive_and_find_original_batch(self):
+        pending = 'pending-from-old-home'
+        previous = 'archived-from-old-home'
+        pending_notice = self.send(pending)['notices']['items'][0]['notice_id']
+        previous_notice = self.send(previous)['notices']['items'][0]['notice_id']
+        self.mark_done(previous_notice)
+        old_history = self.root / 'old-history'
+        self.call('attention', 'archive-input', '3002', '3002-s002',
+                  '--message-id', previous, '--history-root', str(old_history))
+        (self.root / 'numbers.json').write_text('{"3002-s002":"S040"}', encoding='utf-8')
+        move = plan('3002', '3002-s002', 'S040', str(self.install))
+        _execute(move, str(self.install), self.root / 'before.json')
+
+        self.call('attention', 'takeover', '3002', 'S040', pending_notice,
+                  '--set', 'objective=接续原输入')
+        self.call('attention', 'handle', '3002', 'S040', pending_notice,
+                  '--resolution', '已完成')
+        new_history = self.root / 'new-history'
+        archived = self.call('attention', 'archive-input', '3002', 'S040',
+                             '--message-id', pending, '--history-root', str(new_history))[1]
+        self.assertEqual(archived['notice_id'], pending_notice)
+        repeated = self.call('attention', 'archive-input', '3002', 'S040',
+                             '--message-id', previous, '--history-root', str(old_history))[1]
+        self.assertEqual(repeated['state'], 'already_archived')
+        before = self.call('attention', 'history-read', '--history-root', str(old_history),
+                           '--agent-id', 'S040', '--message-id', previous)[1]
+        after = self.call('attention', 'history-read', '--history-root', str(new_history),
+                          '--agent-id', '3002-s002', '--message-id', pending)[1]
+        self.assertEqual(before['agent_id'], '3002-s002')
+        self.assertEqual(before['notice']['notice_id'], previous_notice)
+        self.assertEqual(after['agent_id'], 'S040')
+        self.assertEqual(after['notice']['read_by_home_id'], 'S040')
+        self.assertEqual(after['mail']['metadata']['recipient_agent_id'], '3002-s002')
 
     def test_same_message_id_reentry_does_not_recreate_archived_mail_or_notice(self):
         sent = self.send()

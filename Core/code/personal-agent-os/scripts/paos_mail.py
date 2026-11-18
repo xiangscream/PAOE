@@ -281,6 +281,7 @@ def read_mail_archive_home(
     message_id: str,
     *,
     allow_legacy: bool = False,
+    recipient_aliases: set[str] | None = None,
 ) -> dict[str, Any] | None:
     """Read the explicit archive marker from one exact Home."""
     message_id = _validate_message_id(message_id, allow_legacy=allow_legacy)
@@ -299,7 +300,7 @@ def read_mail_archive_home(
         not isinstance(record, dict)
         or record.get("schema") != ARCHIVE_SCHEMA
         or record.get("message_id") != message_id
-        or record.get("recipient_agent_id") != agent_id
+        or record.get("recipient_agent_id") not in {agent_id, *(recipient_aliases or ())}
         or not str(record.get("history_root") or "").strip()
     ):
         raise MailProblem(
@@ -367,6 +368,7 @@ def read_mail_archive(
     message_id: str,
     *,
     allow_legacy: bool = False,
+    recipient_aliases: set[str] | None = None,
 ) -> dict[str, Any] | None:
     """Project-root convenience wrapper; Home-specific reads use *_home."""
     return read_mail_archive_home(
@@ -374,6 +376,7 @@ def read_mail_archive(
         agent_id,
         message_id,
         allow_legacy=allow_legacy,
+        recipient_aliases=recipient_aliases,
     )
 
 
