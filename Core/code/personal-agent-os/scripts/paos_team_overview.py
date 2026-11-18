@@ -278,7 +278,7 @@ def render_overview(installation_file: Path, output: Path) -> str:
               '名册中标为「人工联系」的成员，在其原会话提示读信。标为「暂停」的成员沿原安排接续。', '',
               '[成员留信](Guide/ops-entry.md#联系同事与-rooter) · '
               '[外部协作者留信](Guide/ops-entry.md#外部-agent-临时协作) · '
-              '[本机 CLI 入口](README.md#已安装机器上的首次使用)', '']
+              '[本机 CLI 入口](Guide/ops-entry.md#操作与参考)', '']
 
     source = Path(posix_windows_drive_locator(installation['source_root']))
     command = _powershell(sys.executable, '-X', 'utf8', '-B',

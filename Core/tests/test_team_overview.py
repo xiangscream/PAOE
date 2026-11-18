@@ -142,7 +142,7 @@ class TeamOverviewTests(unittest.TestCase):
         self.assertIn('paos wake trigger <接收方项目号> <员工号> --prompt', text)
         self.assertIn('[成员留信](Guide/ops-entry.md#联系同事与-rooter)', text)
         self.assertIn('[外部协作者留信](Guide/ops-entry.md#外部-agent-临时协作)', text)
-        self.assertIn('[本机 CLI 入口](README.md#已安装机器上的首次使用)', text)
+        self.assertIn('[本机 CLI 入口](Guide/ops-entry.md#操作与参考)', text)
         self.assertIn('OpenCode2（TEAM）', text)
         self.assertNotIn('ENTRY-ONLY', text)
         self.assertNotIn('contact.py', text)

@@ -36,8 +36,8 @@ class TemplateSyncTests(unittest.TestCase):
         guide = self.system/'Guide';guide.mkdir()
         for name in ('README.md','guide-work-method.md'):
             (guide/name).write_text('# Guide\n','utf-8')
-        (guide/'ops-entry.md').write_text('## 联系同事与 Rooter\n\n## 外部 Agent 临时协作\n','utf-8')
-        (self.system/'README.md').write_text('## 已安装机器上的首次使用\n','utf-8')
+        (guide/'ops-entry.md').write_text(
+            '## 操作与参考\n\n## 联系同事与 Rooter\n\n## 外部 Agent 临时协作\n','utf-8')
         for name in ('HOME.md','SYSTEM.md','RESOURCES.md','MAINTENANCE.md'):
             (self.system/name).write_text('# fixture\n','utf-8')
         source=common.source_block(self.mother/'AGENTS.md')
