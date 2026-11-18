@@ -23,6 +23,7 @@ class TeamOverviewTests(unittest.TestCase):
         self.project = self.root / "项目 with space's"
         self.home = self.project / 'Workstations/3002-s001'
         self.home.mkdir(parents=True)
+        (self.project / 'INDEX.md').write_text('# 示例 Project\n', encoding='utf-8')
         self.team = self.project / 'TEAM.md'
         self.team.write_text('## 当前成员\n### 3002-s001\n- 职责/专长：原职责\n'
                              '- Harness：OpenCode2（TEAM）\n'
@@ -38,6 +39,9 @@ class TeamOverviewTests(unittest.TestCase):
         self.numbers = self.root / 'numbers.json'
         self.numbers.write_text('{"3002-s001": "S040", "rooter-001": "S035"}', encoding='utf-8')
         self.install = self.root / 'installation.json'
+        self.rooter = self.root / 'Rooter'
+        self.rooter.mkdir()
+        (self.rooter / 'ENTRY.md').write_text('- Harness：Codex；状态见联系入口。\n', encoding='utf-8')
         self.install.write_text(json.dumps({'schema': 'paos-installation/v1',
             'source_root': str(SCRIPTS.parent), 'data_root': str(self.root / 'data'),
             'library_roots_config': str(self.root / 'roots.json'),
@@ -64,7 +68,7 @@ class TeamOverviewTests(unittest.TestCase):
         self.assertIn('新职责', self.output.read_text(encoding='utf-8'))
         self.assertEqual(self.call('--check'), 0)
 
-    def test_staff_headings_and_anchors_use_the_installation_mapping(self):
+    def test_staff_links_use_the_installation_mapping(self):
         numbers = self.root / 'numbers.json'
         numbers.write_text('{"3002-s001": "S040", "rooter-001": "S035"}', encoding='utf-8')
         install = json.loads(self.install.read_text(encoding='utf-8'))
@@ -74,9 +78,10 @@ class TeamOverviewTests(unittest.TestCase):
             '## 当前成员\n### S040\n- 职责/专长：原职责\n'
             '- Harness：OpenCode2（TEAM）\n', encoding='utf-8')
         text = render_overview(self.install, self.output)
-        self.assertIn('| S040 |', text)
-        self.assertIn('[命令](#s040)', text)
-        self.assertIn('### S040', text)
+        self.assertIn(f'| [S040](<{(self.home / "ENTRY.md").as_uri()}>)', text)
+        self.assertIn(f'[待办](<{(self.home / "TODO.md").as_uri()}>)', text)
+        self.assertNotIn('[命令]', text)
+        self.assertNotIn('### S040', text)
         self.assertIn('原职责', text)
         self.assertNotIn('| 3002-s001 |', text)
 
@@ -100,8 +105,8 @@ class TeamOverviewTests(unittest.TestCase):
 
         text = render_overview(self.install, self.output)
 
-        self.assertIn(f'| S040 | 原职责 | OpenCode2（TEAM） | [ENTRY](<{(migrated / "ENTRY.md").resolve().as_uri()}>)', text)
-        self.assertIn(str(migrated / 'contact.py').replace("'", "''"), text)
+        self.assertIn(f'| [S040](<{(migrated / "ENTRY.md").as_uri()}>) | 原职责 | OpenCode2（TEAM） |', text)
+        self.assertIn(f'[待办](<{(migrated / "TODO.md").as_uri()}>)', text)
         self.assertNotIn('3002-s001', text)
 
     def test_missing_staff_registry_fails_instead_of_falling_back_to_home(self):
@@ -109,33 +114,39 @@ class TeamOverviewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '员工号登记不可用'):
             render_overview(self.install, self.output)
 
-    def test_dsh_notice_entry_counts_as_configured_without_fake_contact(self):
-        numbers = self.root / 'numbers.json'
-        numbers.write_text('{"3002-s001": "S040", "rooter-001": "S035"}', encoding='utf-8')
-        install = json.loads(self.install.read_text(encoding='utf-8'))
-        install['agent_numbers_config'] = str(numbers)
-        self.install.write_text(json.dumps(install), encoding='utf-8')
-        self.team.write_text('## 当前成员\n### S040\n- 职责/专长：原职责\n', encoding='utf-8')
+    def test_manual_contact_and_pause_follow_explicit_source_facts(self):
+        self.team.write_text('## 当前成员\n### S040\n- 职责：原职责\n- Harness：DSH web\n', encoding='utf-8')
         (self.home / 'contact.py').unlink()
-        (self.home / 'notices').mkdir()
-        (self.home / 'notices/dsh.py').write_text('# dsh entry\n', encoding='utf-8')
         text = render_overview(self.install, self.output)
-        self.assertEqual(text.count('联系入口未配置'), 1)  # installation Rooter has no fixture contact
-        self.assertIn('dsh.py', text)
-        self.assertIn("'wake' '--prompt'", text)
-        self.assertIn('[命令](#s040)', text)
+        self.assertIn('| DSH web |', text)
+        self.assertNotIn('DSH web · 人工联系', text)
+        with self.team.open('a', encoding='utf-8') as stream:
+            stream.write('- 成员状态：暂停保留；人工联系。\n')
+        self.assertIn('| DSH web · 暂停 · 人工联系 |', render_overview(self.install, self.output))
+        self.team.write_text(self.team.read_text(encoding='utf-8').replace('暂停保留；人工联系。', '在队。'),
+                             encoding='utf-8')
+        (self.home / 'ENTRY.md').write_text('- 你的人工联系入口：在原会话提示读信。\n', encoding='utf-8')
+        self.assertIn('| DSH web · 人工联系 |', render_overview(self.install, self.output))
 
-    def test_registry_isolation_rooter_and_literal_wake_path(self):
+    def test_registry_navigation_and_one_shared_wake_example(self):
         text = render_overview(self.install, self.output)
         self.assertIn(MARKER, text)
         self.assertNotIn('3002-s999', text)
-        self.assertIn('安装级支持', text)
-        self.assertIn("space''s", text)
-        self.assertIn('Harness（TEAM）', text)
+        self.assertIn('[联系方法](#外部唤醒) · [示例 Project](#示例-project) · [Rooter](#安装级支持)', text)
+        self.assertIn('## 示例 Project\n', text)
+        self.assertIn('| 员工 | 职责 | 运行端 | 当前工作 |', text)
+        self.assertIn(f'| [S035](<{(self.rooter / "ENTRY.md").as_uri()}>)', text)
+        self.assertIn('| Codex |', text)
+        self.assertIn('项目参数填 `rooter`，员工号填 `S035`', text)
+        self.assertEqual(text.count('paos wake trigger '), 1)
+        self.assertIn('paos wake trigger <接收方项目号> <员工号> --prompt', text)
+        self.assertIn('[成员留信](Guide/ops-entry.md#联系同事与-rooter)', text)
+        self.assertIn('[外部协作者留信](Guide/ops-entry.md#外部-agent-临时协作)', text)
+        self.assertIn('[本机 CLI 入口](README.md#已安装机器上的首次使用)', text)
         self.assertIn('OpenCode2（TEAM）', text)
         self.assertNotIn('ENTRY-ONLY', text)
-        self.assertIn('[命令](#s040)', text)
-        self.assertIn('### S040', text)
+        self.assertNotIn('contact.py', text)
+        self.assertNotIn('notices/dsh.py', text)
         self.assertNotIn('在线；', text)
         self.team.write_text('## 当前成员\n### 3002-s001\n- 职责：新职责\n', encoding='utf-8')
         missing_harness = render_overview(self.install, self.output)
@@ -144,7 +155,7 @@ class TeamOverviewTests(unittest.TestCase):
         self.team.unlink()
         missing = render_overview(self.install, self.output)
         self.assertIn('TEAM 原件缺失', missing)
-        self.assertIn('3002-s001', missing)
+        self.assertIn(f'| [S040](<{(self.home / "ENTRY.md").as_uri()}>)', missing)
 
     def test_relative_team_links_are_relocated_from_team_source(self):
         works = self.project / 'Works/source'
