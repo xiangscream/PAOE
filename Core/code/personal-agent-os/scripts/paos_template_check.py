@@ -98,7 +98,7 @@ def check_templates(system: Path, installation_file: Path, retired=()):
             raise ValueError(f'母版缺失：{mother / relative}')
     source_block(mother / 'AGENTS.md')
     with tempfile.TemporaryDirectory(prefix='paoe-template-') as directory:
-        root = Path(directory) / 'Project'; home_id, project_id = '3002-s099', '3002'
+        root = Path(directory) / 'Project'; home_id, project_id = 'S099', '3002'
         staff_number = 'S099'
         home = root / 'Workstations' / home_id
         home.mkdir(parents=True)
