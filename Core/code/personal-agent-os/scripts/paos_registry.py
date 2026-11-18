@@ -98,7 +98,7 @@ class ProjectRegistry:
         seen: set[str] = set()
         for home in homes:
             if (not isinstance(home, str) or
-                not re.fullmatch(rf"{project_id}-s(?:\d{{3}}|[1-9]\d{{3,}})", home) or home in seen):
+                not re.fullmatch(rf"(?:{project_id}-s(?:\d{{3}}|[1-9]\d{{3,}})|S\d{{3,}})", home) or home in seen):
                 raise RegistryProblem("project_members_invalid", "Home ID 无效或重复。", path=label)
             seen.add(home)
         coordinator = record.get("coordinator_home_id")

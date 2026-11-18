@@ -1202,13 +1202,16 @@ def render_contact(payload: dict[str, Any], *, include_self: bool,
 
 def _allocate_staff_number(args: argparse.Namespace, installation_path: Path) -> str:
     try:
-        return allocate_number(
-            resolve_numbers_path(
-                getattr(args, "agent_numbers_file", None),
-                installation_path,
-            ),
-            args.session_id,
+        session_id = str(args.session_id or "").strip()
+        numbers_path = resolve_numbers_path(
+            getattr(args, "agent_numbers_file", None),
+            installation_path,
         )
+        if re.fullmatch(r"S\d{3,}", session_id):
+            # New physical workstations are born with their global S number;
+            # do not allocate a second, project-style identity.
+            return allocate_number(numbers_path, session_id, explicit_label=session_id)
+        return allocate_number(numbers_path, session_id)
     except NumbersProblem as exc:
         if getattr(exc, "code", None) == "agent_numbers_not_configured":
             return ""
@@ -1372,7 +1375,16 @@ def _resolve_staff_number_recipients(args: argparse.Namespace) -> list[str]:
     def _swap(token: str) -> str:
         token = str(token).strip()
         if token.upper().startswith("S") and token[1:].isdigit():
-            return agent_id_for_staff_number(token, explicit_path=registry_path, installation_path=installation_path)
+            # After physical migration Sxxx is itself the registered Home.
+            # Before migration the same registry maps it to the legacy Home.
+            try:
+                ref = resolve_home_by_registry(
+                    token, installation_file=str(installation_path))
+                return str(ref["home_id"])
+            except Exception:
+                return agent_id_for_staff_number(
+                    token, explicit_path=registry_path,
+                    installation_path=installation_path)
         return token
 
     to_value = getattr(args, "to", None)
@@ -1477,10 +1489,12 @@ def _cross_project_target_lookup(
     membership + house existence only.  Returns a lookup callable or None
     (None => keep the invoked-project path unchanged)."""
     try:
-        project_id = agent_project_id(target_agent_id)
+        home_ref = resolve_home_by_registry(
+            target_agent_id, installation_file=str(registry.installation_path))
+        project_id = str(home_ref.get("project_id") or "")
         project = registry.read(project_id)
-    except (CliError, AgentActivationProblem, HomeProblem):
-        # Non-convention ids (rooter-001 etc.) never enter the cross-project
+    except (CliError, AgentActivationProblem, AttentionServiceProblem, HomeProblem):
+        # Non-project ids (rooter-001 etc.) never enter the cross-project
         # branch: keep the invoked-project path unchanged instead of leaking.
         return None
     if not isinstance(project, dict):

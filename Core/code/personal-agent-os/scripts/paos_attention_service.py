@@ -171,23 +171,38 @@ def resolve_home_by_registry(agent_id: str, *, installation_file: str | None = N
                 {"recipient": agent_id},
             )
         return rooter_home(home_path=rooter_path, home_id="rooter-001")
-    if not agent_id or "-" not in agent_id:
+    if not agent_id:
         raise AttentionServiceProblem(
             "attention_recipient_home_not_registered",
-            f"接收者 {agent_id} 不是精确登记 Home，拒绝按目录后缀猜。",
+            "接收者为空，拒绝按目录后缀猜。",
             {"recipient": agent_id},
         )
     try:
-        project_id = agent_project_id(agent_id)
-        # CLI and cross-Project routing read the same registration contract.
         from paos_registry import ProjectRegistry
-        project = ProjectRegistry(resolve_installation_path(installation_file)).read(project_id)
+        installation_path = resolve_installation_path(installation_file)
+        registry = ProjectRegistry(installation_path)
+        # Current identity is Sxxx. Keep the old Home id only as an explicit
+        # historical alias through the single installation staff registry.
+        try:
+            from paos_agent_numbers import load_numbers, resolve_numbers_path
+            numbers = load_numbers(resolve_numbers_path(None, installation_path, descriptor))
+            canonical = str(numbers.get(agent_id) or agent_id)
+        except Exception:
+            canonical = agent_id
+        for path in sorted(_registry_projects_root(descriptor).glob("*.json")):
+            record = registry.read_record(path.stem)
+            if canonical in (record.get("homes") or []):
+                return project_agent_home(project=registry.read(path.stem), agent_id=canonical)
+        if canonical != agent_id:
+            agent_id = canonical
+        project_id = agent_project_id(agent_id)
+        project = registry.read(project_id)
     except AttentionServiceProblem:
         raise
     except Exception as problem:
         raise AttentionServiceProblem(
-            "attention_recipient_project_not_registered",
-            f"接收者 {agent_id} 所属 Project 无法在安装 registry 解析：{problem}",
+            "attention_recipient_home_not_registered",
+            f"接收者 {agent_id} 不是本安装登记的当前 Home，拒绝按目录后缀猜：{problem}",
             {"recipient": agent_id},
         ) from problem
     return project_agent_home(project=project, agent_id=agent_id)

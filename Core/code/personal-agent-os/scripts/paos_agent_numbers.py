@@ -278,6 +278,14 @@ def staff_number(
             registry_path = resolve_numbers_path(
                 explicit_path, installation_path or Path(__file__).parent, installation
             )
-        return load_numbers(registry_path).get(agent_id.strip())
+        value = agent_id.strip()
+        numbers = load_numbers(registry_path)
+        if value in numbers:
+            return numbers[value]
+        # A migrated canonical Home is the S value itself; it is not a second
+        # registry key and must not make the old key disappear from history.
+        if NUM_RE.fullmatch(value) and value in numbers.values():
+            return value
+        return None
     except NumbersProblem:
         return None

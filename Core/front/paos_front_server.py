@@ -32,7 +32,8 @@ from paos_installation import InstallationProblem, effective_data_root, load_ins
 from paos_library import LibraryProblem, load_library_roots, scan_skills, scan_workflows
 from paos_registry import ProjectRegistry, RegistryProblem
 from paos_workstation import posix_windows_drive_locator
-from paos_agent_numbers import NumbersProblem, agent_id_for_staff_number, staff_number
+from paos_agent_numbers import (NumbersProblem, agent_id_for_staff_number,
+                                load_numbers, resolve_numbers_path, staff_number)
 
 
 # Workbench assets must not depend on the host MIME database. Windows registries
@@ -90,6 +91,18 @@ class Board:
             raise BoardProblem("installation_missing", "先运行 portable.py init，或显式指定已有安装描述。")
         self.registry = ProjectRegistry(self.installation_file)
         self.cat_url = cat_url
+
+    def _legacy_home_aliases(self) -> dict[str, list[str]]:
+        """Read-only old-Home aliases from the one staff registry, never guessed."""
+        try:
+            numbers = load_numbers(resolve_numbers_path(
+                None, self.installation_file, self.installation))
+        except NumbersProblem:
+            return {}
+        aliases: dict[str, list[str]] = {}
+        for home_id, label in numbers.items():
+            aliases.setdefault(str(label), []).append(str(home_id))
+        return aliases
 
     def run_paos(self, args: list[str], *, input_text: str | None = None) -> dict:
         """One existing CLI invocation. Never infer success from missing output."""
@@ -193,9 +206,13 @@ class Board:
             if line.startswith("### "):
                 candidate = line[4:].strip()
                 if re.fullmatch(r"[Ss]\d+", candidate):
-                    candidate = agent_id_for_staff_number(
-                        candidate, installation_path=self.installation_file,
-                        installation=self.installation)
+                    canonical = candidate.upper()
+                    if canonical not in set(record.get("homes") or []):
+                        candidate = agent_id_for_staff_number(
+                            candidate, installation_path=self.installation_file,
+                            installation=self.installation)
+                    else:
+                        candidate = canonical
                 current = candidate
                 members[candidate] = {}
                 continue
@@ -549,18 +566,30 @@ class Board:
         return {"ok": True, "room_id": room_id}
 
     def people(self) -> list[dict]:
-        """Names come from the registered Homes, staff numbers and TEAM originals."""
+        """Names come from registered Homes, staff numbers and TEAM originals.
+
+        `id` is the canonical current Home. `legacy_home_ids` is a read-only
+        alias list from the single AGENT-NUMBERS registry so old CAT room seats
+        can resolve to the same S-numbered employee without a second map.
+        """
+        aliases = self._legacy_home_aliases()
         people = []
         for project in self.projects():
             for home_id in project["homes"]:
                 fields = self._team_fields(project["id"], home_id)
                 number, role = fields["number"], fields["role"]
-                people.append({"id": home_id, "number": number or "", "role": role,
+                people.append({"id": home_id, "home_id": home_id,
+                               "staff_number": number or "", "number": number or "",
+                               "legacy_home_ids": aliases.get(number or "", []),
+                               "role": role,
                                "name": (number or "未编号") + (" · " + role if role else ""),
                                "project": project["id"]})
         if self.installation.get("rooter_home"):
             number = staff_number("rooter-001", installation_path=self.installation_file, installation=self.installation)
-            people.append({"id": "rooter-001", "number": number or "", "role": "System 运行支持",
+            people.append({"id": "rooter-001", "home_id": "rooter-001",
+                           "staff_number": number or "", "number": number or "",
+                           "legacy_home_ids": aliases.get(number or "", []),
+                           "role": "System 运行支持",
                            "name": "Rooter", "project": "System"})
         return people
 
