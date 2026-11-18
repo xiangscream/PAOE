@@ -78,8 +78,8 @@ class TeamOverviewTests(unittest.TestCase):
             '## 当前成员\n### S040\n- 职责/专长：原职责\n'
             '- Harness：OpenCode2（TEAM）\n', encoding='utf-8')
         text = render_overview(self.install, self.output)
-        self.assertIn(f'| [S040](<{(self.home / "ENTRY.md").as_uri()}>)', text)
-        self.assertIn(f'[待办](<{(self.home / "TODO.md").as_uri()}>)', text)
+        self.assertIn(f'| [S040](<{(self.home / "ENTRY.md").resolve().as_uri()}>)', text)
+        self.assertIn(f'[待办](<{(self.home / "TODO.md").resolve().as_uri()}>)', text)
         self.assertNotIn('[命令]', text)
         self.assertNotIn('### S040', text)
         self.assertIn('原职责', text)
@@ -105,8 +105,8 @@ class TeamOverviewTests(unittest.TestCase):
 
         text = render_overview(self.install, self.output)
 
-        self.assertIn(f'| [S040](<{(migrated / "ENTRY.md").as_uri()}>) | 原职责 | OpenCode2（TEAM） |', text)
-        self.assertIn(f'[待办](<{(migrated / "TODO.md").as_uri()}>)', text)
+        self.assertIn(f'| [S040](<{(migrated / "ENTRY.md").resolve().as_uri()}>) | 原职责 | OpenCode2（TEAM） |', text)
+        self.assertIn(f'[待办](<{(migrated / "TODO.md").resolve().as_uri()}>)', text)
         self.assertNotIn('3002-s001', text)
 
     def test_missing_staff_registry_fails_instead_of_falling_back_to_home(self):
@@ -135,7 +135,7 @@ class TeamOverviewTests(unittest.TestCase):
         self.assertIn('[联系方法](#外部唤醒) · [示例 Project](#示例-project) · [Rooter](#安装级支持)', text)
         self.assertIn('## 示例 Project\n', text)
         self.assertIn('| 员工 | 职责 | 运行端 | 当前工作 |', text)
-        self.assertIn(f'| [S035](<{(self.rooter / "ENTRY.md").as_uri()}>)', text)
+        self.assertIn(f'| [S035](<{(self.rooter / "ENTRY.md").resolve().as_uri()}>)', text)
         self.assertIn('| Codex |', text)
         self.assertIn('项目参数填 `rooter`，员工号填 `S035`', text)
         self.assertEqual(text.count('paos wake trigger '), 1)
@@ -155,7 +155,7 @@ class TeamOverviewTests(unittest.TestCase):
         self.team.unlink()
         missing = render_overview(self.install, self.output)
         self.assertIn('TEAM 原件缺失', missing)
-        self.assertIn(f'| [S040](<{(self.home / "ENTRY.md").as_uri()}>)', missing)
+        self.assertIn(f'| [S040](<{(self.home / "ENTRY.md").resolve().as_uri()}>)', missing)
 
     def test_relative_team_links_are_relocated_from_team_source(self):
         works = self.project / 'Works/source'
