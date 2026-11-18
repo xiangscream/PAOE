@@ -97,8 +97,10 @@ class Board:
         try:
             numbers = load_numbers(resolve_numbers_path(
                 None, self.installation_file, self.installation))
-        except NumbersProblem:
-            return {}
+        except NumbersProblem as problem:
+            if problem.code == "agent_numbers_not_configured":
+                return {}
+            raise
         aliases: dict[str, list[str]] = {}
         for home_id, label in numbers.items():
             aliases.setdefault(str(label), []).append(str(home_id))
@@ -545,7 +547,16 @@ class Board:
                         else {"ok": True}) if rooms_result.get("ok") else rooms_result}
 
     def rooms(self, project_id: str = "") -> dict:
-        homes = set(self.registry.read_record(project_id)["homes"]) if project_id else None
+        homes = None
+        if project_id:
+            record = self.registry.read_record(project_id)
+            homes = set(record["homes"])
+            aliases = self._legacy_home_aliases()
+            for home_id in record["homes"]:
+                number = staff_number(
+                    home_id, installation_path=self.installation_file,
+                    installation=self.installation) or ""
+                homes.update(aliases.get(number, []))
         result = self.cat(["list"])
         if not result.get("ok") or homes is None:
             return result

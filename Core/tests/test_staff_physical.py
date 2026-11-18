@@ -1,6 +1,7 @@
 """Physical S-number Home: registry, legacy alias, Board people/agent."""
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import tempfile
@@ -12,8 +13,9 @@ SCRIPTS = PACKAGE / "code/personal-agent-os/scripts"
 sys.path.insert(0, str(PACKAGE))
 sys.path.insert(0, str(SCRIPTS))
 from front.paos_front_server import Board
-from paos_agent_numbers import staff_number
-from paos_attention_service import resolve_home_by_registry
+from paos import _allocate_staff_number
+from paos_agent_numbers import load_numbers, staff_number
+from paos_attention_service import AttentionServiceProblem, resolve_home_by_registry
 from paos_installation import write_installation_descriptor
 from paos_registry import ProjectRegistry
 from paos_todo import render_todo, write_todo
@@ -73,6 +75,128 @@ class StaffPhysicalTests(unittest.TestCase):
         summary = next(item for item in dashboard["agents"] if item["id"] == "S040")
         self.assertEqual(summary["staff_number"], "S040")
         self.assertEqual(summary["legacy_home_ids"], ["1001-s001"])
+
+    def test_pre_migration_s_and_old_id_both_resolve_the_registered_old_home(self):
+        old_project = self.base / "old-project"
+        (old_project / "Workstations/2002-s001").mkdir(parents=True)
+        self.registry.register("2002", root_path=str(old_project),
+                               coordinator_home_id="2002-s001", homes=["2002-s001"])
+        numbers = json.loads(self.numbers.read_text(encoding="utf-8"))
+        numbers["2002-s001"] = "S099"
+        self.numbers.write_text(json.dumps(numbers), encoding="utf-8")
+        old = resolve_home_by_registry("2002-s001", installation_file=str(self.install))
+        self.assertEqual(old["home_id"], "2002-s001")
+        by_s = resolve_home_by_registry("S099", installation_file=str(self.install))
+        self.assertEqual(by_s["home_id"], "2002-s001")
+        still_s = resolve_home_by_registry("S040", installation_file=str(self.install))
+        self.assertEqual(still_s["home_id"], "S040")
+
+    def test_bad_number_registry_is_not_silently_swallowed(self):
+        self.numbers.write_text("{bad json", encoding="utf-8")
+        with self.assertRaises(AttentionServiceProblem) as raised:
+            resolve_home_by_registry("S099", installation_file=str(self.install))
+        self.assertEqual(raised.exception.code, "attention_agent_numbers_invalid")
+
+    def test_agent_resolve_entry_is_read_only_and_returns_canonical_identity(self):
+        import subprocess
+        cli = [sys.executable, "-X", "utf8", str(SCRIPTS / "paos.py"),
+               "--installation-file", str(self.install), "--json",
+               "agent", "resolve", "1001-s001"]
+        result = subprocess.run(cli, text=True, encoding="utf-8", capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["home_id"], "S040")
+        self.assertEqual(payload["staff_number"], "S040")
+        self.assertEqual(payload["legacy_home_id"], "1001-s001")
+        self.assertEqual(payload["project_id"], "1001")
+        self.assertEqual(payload["home_kind"], "project_agent")
+        self.assertEqual(Path(payload["home_path"]).parts[-2:], ("Workstations", "S040"))
+
+    def test_rooter_resolve_keeps_install_path_and_separates_staff_number(self):
+        import subprocess
+        rooter_dir = self.base / "Rooter S197"
+        rooter_dir.mkdir()
+        numbers = json.loads(self.numbers.read_text(encoding="utf-8"))
+        numbers["rooter-001"] = "S197"
+        self.numbers.write_text(json.dumps(numbers), encoding="utf-8")
+        write_installation_descriptor(
+            self.install, source_root=str(SCRIPTS.parent), data_root=str(self.data),
+            library_roots_config=str(self.base / "library-roots.json"),
+            agent_numbers_config=str(self.numbers), rooter_home=str(rooter_dir))
+        result = subprocess.run(
+            [sys.executable, "-X", "utf8", str(SCRIPTS / "paos.py"),
+             "--installation-file", str(self.install), "--json",
+             "agent", "resolve", "rooter-001"],
+            text=True, encoding="utf-8", capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["home_id"], "rooter-001")
+        self.assertEqual(payload["staff_number"], "S197")
+        self.assertEqual(payload["legacy_home_id"], "rooter-001")
+        self.assertEqual(Path(payload["home_path"]).resolve(), rooter_dir.resolve())
+
+    def test_rooms_keep_old_cat_seat_after_physical_s_move(self):
+        from unittest.mock import patch
+        board = Board(self.install)
+        replies = [
+            {"ok": True, "rooms": [{"id": "old-room"}]},
+            {"ok": True, "members": [{"home_id": "1001-s001"}]},
+        ]
+        with patch.object(board, "cat", side_effect=replies):
+            result = board.rooms("1001")
+        self.assertTrue(result["ok"])
+        self.assertEqual([room["id"] for room in result["rooms"]], ["old-room"])
+
+    def test_rooter_migration_plan_and_execute_preserve_mail_and_before_state(self):
+        import subprocess
+        old_project = self.base / "migration-project"
+        home = old_project / "Workstations/2002-s001"
+        (home / "mailbox").mkdir(parents=True)
+        (home / "mailbox/old-message.md").write_text("old mail\n", encoding="utf-8")
+        write_todo(home / "TODO.md", render_todo(
+            home_kind="project_agent", home_id="2002-s001", project_id="2002",
+            objective="旧工位", next_action="迁移"))
+        (home / "ENTRY.md").write_text("# 2002-s001\n", encoding="utf-8")
+        self.registry.register("2002", root_path=str(old_project),
+                               coordinator_home_id="2002-s001", homes=["2002-s001"])
+        numbers = json.loads(self.numbers.read_text(encoding="utf-8"))
+        numbers["2002-s001"] = "S099"
+        self.numbers.write_text(json.dumps(numbers), encoding="utf-8")
+        command = [sys.executable, "-X", "utf8", str(SCRIPTS / "paos_migrate_home.py"),
+                   "--installation-file", str(self.install), "--project", "2002",
+                   "--old-home", "2002-s001", "--new-home", "S099"]
+        planned = subprocess.run(command, text=True, encoding="utf-8", capture_output=True)
+        self.assertEqual(planned.returncode, 0, planned.stderr)
+        plan = json.loads(planned.stdout)
+        self.assertEqual(plan["old_home_id"], "2002-s001")
+        self.assertTrue(home.is_dir())
+        before = self.base / "before.json"
+        executed = subprocess.run(command + ["--execute", "--before-state", str(before)],
+                                  text=True, encoding="utf-8", capture_output=True)
+        self.assertEqual(executed.returncode, 0, executed.stderr)
+        self.assertFalse(home.exists())
+        new_home = old_project / "Workstations/S099"
+        self.assertTrue((new_home / "mailbox/old-message.md").is_file())
+        self.assertEqual(self.registry.read("2002")["homes"], ["S099"])
+        todo = (new_home / "TODO.md").read_text(encoding="utf-8")
+        self.assertIn('home_id: "S099"', todo)
+        self.assertTrue(before.is_file())
+        mail = subprocess.run(
+            [sys.executable, "-X", "utf8", str(SCRIPTS / "paos.py"),
+             "--installation-file", str(self.install), "--json",
+             "mail", "list", "2002", "2002-s001"],
+            text=True, encoding="utf-8", capture_output=True)
+        self.assertEqual(mail.returncode, 0, mail.stderr)
+        self.assertGreaterEqual(json.loads(mail.stdout)["count"], 1)
+
+    def test_workstation_allocation_does_not_duplicate_migrated_s_value(self):
+        before = load_numbers(self.numbers)
+        args = argparse.Namespace(session_id="S040", agent_numbers_file=str(self.numbers))
+        self.assertEqual(_allocate_staff_number(args, self.install), "S040")
+        self.assertEqual(load_numbers(self.numbers), before)
+        fresh = argparse.Namespace(session_id="S100", agent_numbers_file=str(self.numbers))
+        self.assertEqual(_allocate_staff_number(fresh, self.install), "S100")
+        self.assertEqual(load_numbers(self.numbers)["S100"], "S100")
 
 
 if __name__ == "__main__":

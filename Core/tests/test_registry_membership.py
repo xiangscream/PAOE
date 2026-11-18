@@ -64,6 +64,16 @@ class MembershipTests(unittest.TestCase):
         self.assertEqual(record['coordinator_home_id'], 'S001')
         self.assertIn({'id': 'S001', 'status': 'active'}, self.registry.read('3003')['sessions'])
 
+    def test_add_home_accepts_global_staff_number(self):
+        self.registry.register('3003', root_path=str(self.vault),
+                               coordinator_home_id='S001', homes=['S001'])
+        path = self.root/'data'/'project-registry'/'projects'/'3003.json'
+        fingerprint = hashlib.sha256(path.read_bytes()).hexdigest()
+        result = self.registry.add_home('3003', 'S002',
+                                        expected_fingerprint=fingerprint)
+        self.assertTrue(result['added'])
+        self.assertEqual(self.registry.read('3003')['homes'], ['S001', 'S002'])
+
     def test_legacy_record_is_not_migrated_or_overwritten(self):
         legacy=json.dumps({'schema':'paos-project/v3','id':'3002','human':{'keep':'原件'}}).encode()
         self.path.write_bytes(legacy)
