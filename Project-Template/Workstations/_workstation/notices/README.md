@@ -64,14 +64,103 @@ python notices/dsh.py status
 
 接收器由 DSH 的 `wake-receiver` 插件提供，只监听 `127.0.0.1`。`status` 读取绑定和接收器发现文件的 PID/heartbeat 事实，不连接入口；`prepared=true` 只表示记录、secret 存在、PID 未被确认死亡且 heartbeat 新鲜，heartbeat 缺失/不可解析/过期均为未准备，且不等于在线。记录可用时不再显示未注册 `reason` 或重新 bind 的 `next_action`，只有真正异常才给修复提示。需要在线健康时用 DSH 侧 `dsh_wake.py status`。接收器不创建 Session、不取消回合；PAOE STOP 只阻止后续注入，不能声称已停止运行中的回合。
 
-**Antigravity App：**
+### Antigravity App
 
-从本人 [ENTRY](../ENTRY.md) 打开 OPS，选择「Antigravity App 唤醒器入职配置」。指南包含试用版本条件、本人 App 会话 ID 的核对、Sidecar、工位绑定与一次真读信。`agy` CLI 会话沿 CLI 的恢复入口使用。
+本流程已在 Windows 上的 Antigravity App 2.33.0 实测。从本人 [ENTRY](../ENTRY.md) 取 PAOE 命令前缀。该入口的 `paos wake bind --help` 应列出 `antigravity`，且 `paos install show` 返回的 `source_root` 下应有 `scripts/wakeup_native/antigravity_sidecar.py`。System 0.2.28 正式包尚未包含该驱动。试用时使用 Rooter 提供的入口。
+
+#### 确认本人 App 会话
+
+在以后用于收信的原 App 会话里读本人 ENTRY 和 TODO，记下项目 ID、员工号和 App 会话完整 ID。界面未显示 ID 时，见 [按本人回告查会话 ID](#按本人回告查会话-id)。`agy` CLI 用自己的会话 ID 续接。用 `paos wake status <项目ID> <本人S号>` 核对现有绑定与 STOP 路径，沿用已有 STOP。
+
+#### 启用本人的 Sidecar
+
+为本人选一个 Sidecar ID，例如 `paoe-wake-s123`。将以下配置保存为 `%USERPROFILE%/.gemini/config/sidecars/<Sidecar ID>/sidecar.json`。填本机 Python、Source 脚本、STOP 的绝对路径，以及原 App 会话 ID。首次配置可把 STOP 路径设在本人的 Sidecar 目录。
+
+```json
+{
+  "display_name": "PAOE wake S123",
+  "command": "C:/Path/To/python.exe",
+  "args": [
+    "C:/Path/To/source_root/scripts/wakeup_native/antigravity_sidecar.py",
+    "--conversation", "<本人现有 App 会话完整 ID>",
+    "--stop-file", "C:/Path/To/Owner/STOP"
+  ],
+  "restart_policy": "on-failure"
+}
+```
+
+在 `%USERPROFILE%/.gemini/config/config.json` 合并下面这一项，名称用本人的 Sidecar ID。保留其他设置和 Sidecar。机器级配置由已获授权的本人或 Rooter 写入。 [Antigravity Sidecars](https://antigravity.google/docs/sidecars#configuration)
+
+```json
+{"sidecars":{"paoe-wake-s123":{"enabled":true}}}
+```
+
+Antigravity App 负责加载 Sidecar 并提供 Windows `agentapi.bat`。本机 2.33.0 已验证可动态加载。加载后，到 `%USERPROFILE%/.gemini/antigravity/sidecar_data/<Sidecar ID>/data/wake-receiver.json` 核对 `targets` 只有本人 App 会话 ID，`endpoint` 是 `127.0.0.1` 上的地址。Contact 只登记这份文件的路径，token 留在本机。
+
+#### 绑定工位
+
+把下列 JSON 保存为本机私有的 `contact-target.json`，填写刚读回的登记文件路径。Sidecar 和 Contact 使用同一个 STOP。
+
+```json
+{
+  "runtime_file": "C:/Path/To/Sidecar/data/wake-receiver.json",
+  "stop_file": "C:/Path/To/Owner/STOP"
+}
+```
+
+```powershell
+paos wake bind '<项目ID>' '<本人S号>' --driver antigravity --native-session-id '<本人App会话ID>' --driver-config '<contact-target.json的绝对路径>'
+paos --json wake status '<项目ID>' '<本人S号>'
+```
+
+回读 `runtime=antigravity`、`native_session_id` 和 STOP，再按本页 [使用与验收](#使用与验收) 发一封测试信，核对原 App 会话实读回告。复工时回到同一个 App 会话。App 重新加载时端口可以变化，Contact 继续读取固定路径下的登记。登记缺失或拒连时查本人 Sidecar 的启用状态和 `sidecar_data/<ID>/logs/`。提醒已受理但没有回告时，沿原信和 `sidecar_data/<ID>/events/` 核对。
+
+#### 按本人回告查会话 ID
+
+在 PowerShell 生成唯一标记。此方法已在 Windows Antigravity App 2.33.0 的本机索引上验证。
+
+```powershell
+$wakeMarker = 'PAOE-WAKE-READY-' + [guid]::NewGuid().ToString('N')
+$wakeMarker
+```
+
+请本人已有的 App 会话回显该标记。答完后在同一 PowerShell 查 ID。查询只读本机索引，只输出唯一命中的 ID。
+
+```powershell
+@'
+import sqlite3
+import sys
+from pathlib import Path
+
+index = Path.home() / ".gemini/antigravity/conversation_summaries.db"
+if not index.is_file():
+    raise SystemExit("未找到本机 App 索引，请从 App 会话入口或由 Rooter 核对。")
+with sqlite3.connect(index.as_uri() + "?mode=ro", uri=True) as db:
+    matches = db.execute(
+        "SELECT DISTINCT conversation_id FROM conversations_fts "
+        "WHERE instr(coalesce(agent_body,''),?) > 0",
+        (sys.argv[1],),
+    ).fetchall()
+if len(matches) != 1:
+    raise SystemExit("标记未唯一命中，请确认本人 App 会话已完整回告。")
+print(matches[0][0])
+'@ | python -X utf8 -B - $wakeMarker
+```
+
+新版索引不可读时，从 App 会话入口或请 Rooter 根据本人回告核 ID。
 
 ## 使用与验收
 
 单次原生提醒：`python notices/codex.py wake --prompt "读取本人TODO并继续"`；OpenCode 换成 `opencode.py`，DSH 换成 `dsh.py`。这条命令只提醒，不保存 Mail；正式交接仍用 ENTRY 中的 `paos agent send --remind`。
 
 入职验收：同事发一条 Mail → 本人收到提醒 → 实读原信 → 更新 TODO、处理 Notice → 回告 → 恢复原会话并接续。配置存在、提醒受理、实际消费分别记录；四项入职要求完成后勾选 `ONBOARD`。
+
+需要验收实读时，发信方可用一次试投，标记只放在正文。收件人用 `paos inbox <项目ID> <本人S号>` 找到这封信，用 `paos mail read <项目ID> <本人S号> <消息ID>` 打开原信，再回告标记。
+
+```powershell
+$readMarker = 'PAOE-READ-' + [guid]::NewGuid().ToString('N')
+$testMid = 'wake-onboard-' + [guid]::NewGuid().ToString('N')
+paos agent send '<发信方项目ID>' --to '<接收人S号>' --sender-kind agent --sender-id '<发信人S号>' --subject '唤醒入职试投' --body "请打开这封原信，并回告标记 $readMarker" --message-id $testMid --remind
+```
 
 保留原 Session、模型和 STOP；状态未知或提醒结果不明时查原信，不自动重发。`notice-*.md` 是消息记录；本页和脚本不算待处理 Notice。
