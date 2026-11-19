@@ -21,11 +21,12 @@ receipt = inject(target, message)  # scripts 已在 Python 模块路径中
 | opencode v1 | `session_id`、`base_url`；原服务应已运行；`api_version`省略或为1 |
 | opencode v2 | `session_id`、`base_url`、`api_version:2`、`auth_file`；使用已启动服务的正常Basic授权 |
 | workbuddy | `session_id`、`runtime_file`；正常加载的本地扩展须已授权该目标 |
+| antigravity | `session_id`、`runtime_file`；Antigravity App 内启用 Sidecar，并授权同一个已有会话 |
 | dsh | `session_id`、`receiver_file`、可选 `mode`（`queue`/`steer`）；DSH `wake-receiver` 已加载且固定 Session 的工作目录为项目根 |
 
-四者均可提供显式 `stop_file`。文件存在即停止发送；不从 Project 或 Work 推导停止路径。OpenCode/WorkBuddy/DSH HTTP 可用 `timeout_seconds` 设置原生调用超时，默认 30 秒。Windows locator 在 WSL 按已有路径解析合同处理。
+各目标均可提供显式 `stop_file`。文件存在即停止发送；不从 Project 或 Work 推导停止路径。OpenCode/WorkBuddy/Antigravity/DSH HTTP 可用 `timeout_seconds` 设置原生调用超时，默认 30 秒。Windows locator 在 WSL 按已有路径解析合同处理。
 
-默认省略模型参数，继承目标当前选择。只有 Human 明确指定时才给 `inject(..., model=...)` 或输入 JSON 的 `model`：Codex/WorkBuddy 为原生模型名字符串，OpenCode v1为含 `providerID` 与 `modelID` 的对象。OpenCode v2 与 DSH 的单条prompt不接受模型参数；本工具遇到显式模型参数会拒绝，不额外调用持久化模型切换接口。
+默认省略模型参数，继承目标当前选择。只有 Human 明确指定时才给 `inject(..., model=...)` 或输入 JSON 的 `model`：Codex/WorkBuddy 为原生模型名字符串，OpenCode v1为含 `providerID` 与 `modelID` 的对象。OpenCode v2、Antigravity 与 DSH 的单条prompt不接受模型参数；本工具遇到显式模型参数会拒绝，不额外调用持久化模型切换接口。
 
 `paos wake trigger <project> <home> --model MODEL` 使用同一合同。OpenCode 必须传一个完整 JSON 参数，不能传 `provider/model` 字符串。Bash/WSL 示例（替换 Project、Home 和现存消息路径，仅在 Human 已指定该模型时执行）：
 
@@ -45,6 +46,14 @@ WorkBuddy回环建立连接前明确被拒绝时，返回 `receiver_offline` / `
 DSH 只从 receiver 发现文件读取 `url` 与 `secretFile`，secret 内容不写入 Contact、命令行、结果或 Git。目标必须是 `127.0.0.1` 回环；400/401/403/404/409/413/422 与 503 是明确拒绝（503 为 Session controller 未挂载），其余 5xx（含 500）和连接超时/复位、回执丢失或身份不符均保持 unknown，不自动重发。409 `session/agent-busy` 表示另一写入者占用目标，不重试；接收器不创建 Session、不取消回合，STOP 只阻止后续发送，不能声称已停止运行中的回合。
 
 工具不自动重试、启动Runtime、保存attempt或观察模型完成，也不加载Project Store、Work或Notice。旧消息是否已处理由调用方在工位当前读面判断；既有拒绝和不确定回执保持原样，不因实现更新重放。
+
+## Antigravity App 固定会话接入
+
+Antigravity 启动已启用的 Sidecar，为它提供 `agentapi` 和独立数据目录。配置步骤见 System 工位母版的《入职与唤醒器》。Sidecar 使用已获准的 App 会话完整 ID，与 PAOE Contact 共用 STOP 文件。[Google Sidecar 文档](https://antigravity.google/docs/sidecars#agentapi)
+
+安装负责人将 Contact 的 `runtime_file` 指向本机 Sidecar 数据目录里的 `wake-receiver.json`。登记只保存定位，Sidecar 启动时生成回环 endpoint 和本次 token。正常发送沿用 `paos agent send --remind`。接收器用官方 `agentapi send-message` 提交一次，回执核对会话 ID 和单次请求 ID。退出码非零或提交超时回为结果未知。读信和完成由目标会话另行回告。
+
+此入口针对 App 会话。独立 `agy --conversation` 接续 CLI 会话，两种会话的互通需用实际同 ID 证明。
 
 ## DSH 固定 Session 接入
 

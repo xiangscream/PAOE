@@ -3773,7 +3773,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     x.add_argument("project_id")
     x.add_argument("agent_id")
-    x.add_argument("--driver", required=True, help="原生 runtime 名（codex / opencode / workbuddy / dsh）")
+    x.add_argument("--driver", required=True, help="原生 runtime 名（codex / opencode / workbuddy / antigravity / dsh）")
     x.add_argument("--runtime-id")
     x.add_argument("--native-session-id")
     x.add_argument(

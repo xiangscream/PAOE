@@ -41,7 +41,7 @@
 | [HISTORY](HISTORY.md) | 有价值的阶段成果、判断与经验 | 归并已完成 TODO，联动 INDEX 与库外清理 |
 | [ENTRY](Workstations/_workstation/ENTRY.md) | 分开说明流程约束与本人业务入口，CLI直接读取 | 生成器只填数据；已有入口按受影响部分合并，重复初始化不覆盖 |
 | [TODO](Workstations/_workstation/TODO.md) | TODO v4 的合法样例 | 只校验格式与身份；当前行动由本人维护，不复制样例任务 |
-| [入职与唤醒说明](Workstations/_workstation/notices/README.md) | 入职四项要求及 Codex / OpenCode / DSH 使用入口 | 创建者按下方第 4 步补齐 notices 文件与 ONBOARD；当前 CLI 不自动带入，已有人工内容不覆盖 |
+| [入职与唤醒说明](Workstations/_workstation/notices/README.md) | 入职四项要求及 Codex / OpenCode / DSH / Antigravity App 使用入口 | 创建者按下方第 4 步补齐 notices 文件与 ONBOARD；当前 CLI 不自动带入，已有人工内容不覆盖 |
 | [采用公告](../Guide/Templates/project-announcement.md) | 一次真实采用事项的消息样板 | 需要时使用；不作为持续规则或任务状态 |
 
 页面可以互相导航；运行规则归 AGENTS，当前业务口径归 INDEX，成员与分工归 TEAM，阶段成果归 HISTORY。正文只在其归属处维护，导航引用原件，派生区通过现有工具更新。完成项汇总和归位随日常交付一起进行，不另抄一份任务流水账。
