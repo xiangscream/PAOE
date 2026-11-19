@@ -49,20 +49,7 @@ DSH 只从 receiver 发现文件读取 `url` 与 `secretFile`，secret 内容不
 
 ## Antigravity App 固定会话接入
 
-Antigravity 启动已启用的 Sidecar，为它提供 `agentapi` 和独立数据目录。按 [Google Sidecar 文档](https://antigravity.google/docs/sidecars#agentapi) 为本机已有且获准的 App 会话启用一个 Sidecar。使用该会话的完整 ID，并让 Sidecar 与 PAOE Contact 使用同一 STOP 文件。
-
-```json
-{
-  "display_name": "PAOE Antigravity wake",
-  "command": "C:/path/to/python.exe",
-  "args": [
-    "C:/path/to/antigravity_sidecar.py",
-    "--conversation", "<existing App conversation ID>",
-    "--stop-file", "C:/path/to/STOP"
-  ],
-  "restart_policy": "on-failure"
-}
-```
+Antigravity 启动已启用的 Sidecar，为它提供 `agentapi` 和独立数据目录。配置步骤见 System 工位母版的《入职与唤醒器》。Sidecar 使用已获准的 App 会话完整 ID，与 PAOE Contact 共用 STOP 文件。[Google Sidecar 文档](https://antigravity.google/docs/sidecars#agentapi)
 
 安装负责人将 Contact 的 `runtime_file` 指向本机 Sidecar 数据目录里的 `wake-receiver.json`。登记只保存定位，Sidecar 启动时生成回环 endpoint 和本次 token。正常发送沿用 `paos agent send --remind`。接收器用官方 `agentapi send-message` 提交一次，回执核对会话 ID 和单次请求 ID。退出码非零或提交超时回为结果未知。读信和完成由目标会话另行回告。
 

@@ -79,11 +79,11 @@ python notices/dsh.py status
 ```json
 {
   "display_name": "PAOE wake S123",
-  "command": "C:/Path/To/python.exe",
+  "command": "<本机 python.exe 的绝对路径>",
   "args": [
-    "C:/Path/To/source_root/scripts/wakeup_native/antigravity_sidecar.py",
+    "<当前 Source 中 antigravity_sidecar.py 的绝对路径>",
     "--conversation", "<本人现有 App 会话完整 ID>",
-    "--stop-file", "C:/Path/To/Owner/STOP"
+    "--stop-file", "<本人 STOP 的绝对路径>"
   ],
   "restart_policy": "on-failure"
 }
@@ -103,8 +103,8 @@ Antigravity App 负责加载 Sidecar 并提供 Windows `agentapi.bat`。本机 2
 
 ```json
 {
-  "runtime_file": "C:/Path/To/Sidecar/data/wake-receiver.json",
-  "stop_file": "C:/Path/To/Owner/STOP"
+  "runtime_file": "<本人的 wake-receiver.json 的绝对路径>",
+  "stop_file": "<本人 STOP 的绝对路径>"
 }
 ```
 
