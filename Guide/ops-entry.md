@@ -42,7 +42,8 @@ $targetProject = '3004'  # 接手人所在项目，查对方唤醒状态时用
 | 恢复当前工作 | `& $paos orient $project $me --read` | 实读 AGENTS、INDEX、ENTRY、TODO 及本轮原输入。已登记的 Codex 本人在原 Desktop 用 `--resume`。 |
 | 找协作者 | `& $paos peers $project $me --summary` | 按员工号和职责选择接手人。 |
 | 收信并读原文 | `& $paos inbox $project $me`，再执行 `& $paos mail read $project $me $mailId` | 从收件结果取真实的 `$mailId` 和对应的 `$noticeId`。 |
-| 标读、回信 | `& $paos attention read $project $me $noticeId`，再执行 `& $paos mail reply $project $me $mailId --body '已接手，下一步核对原稿。'` | 反馈写实际下一步或阻碍。需要对方立即行动时用下一节的带提醒交接。 |
+| 静默接手并入 Task | `& $paos mail claim $project $me $mailId --task $taskId`（Rooter 用 `mail rooter-claim $mailId --task $taskId`） | 接手静默且幂等；省略 `--task` 时用 `--title` 新建 Task。个人 Current 由本人按优先级管理。细则见 [邮件接手与提醒边界](guide-paos-cat-operations.md#邮件接手todo-联动与提醒边界)。 |
+| 写回交付结果 | `& $paos mail result $project $me $mailId --result '已改稿并回读' --artifact-ref $artifact`（Rooter 用 `mail rooter-result $mailId ...`） | 写回关联 Task 与 Notice；需下游接续、提问或明确接不了时按下一节定向提醒。 |
 | 更新本人 Current | `& $paos attention todo-update $project $me --set 'next_action=核对原稿后交付链接'` | 写当前可执行的一步。Tasks/Pinned 的修改用 `attention todo-write --help` 查看正文与指纹参数。 |
 | 处理完成的通知 | `& $paos attention handle $project $me $noticeId --resolution '已交付' --action-ref $artifact` | `$artifact` 填实际成果路径，业务结果写回项目。 |
 
@@ -53,6 +54,10 @@ $targetProject = '3004'  # 接手人所在项目，查对方唤醒状态时用
 ~~~powershell
 $mailId = 'handoff-' + [guid]::NewGuid().ToString('N')
 & $paos --json agent send $project --to $peer --sender-kind agent --sender-id $me --subject '请接续本轮任务' --body ('@' + $bodyFile) --message-id $mailId --remind
+# 挂入发件人已有 Task，并从原信收件回执查看接手、结果与等待解除（不改本人 Current）
+& $paos mail track $project $me $mailId --task $taskId
+& $paos mail task-status $project $me $taskId
+& $paos mail status $project $mailId
 ~~~
 
 回执中 `native_accepted` 表示原生端受理。被唤醒者读原文后及时回发起人。已有原信，且需在明确失败修复后补一次提醒时，用下列命令；结果不明时先看原交付状态。
@@ -65,24 +70,29 @@ $mailId = 'handoff-' + [guid]::NewGuid().ToString('N')
 
 ### 开 CAT 房间并组织讨论
 
-先查同题房间。有房间就复用；新议题需要单独讨论时再创建。CAT 是系统级房间，入席使用员工号。
+先查同题房间，有房间就复用；新议题需要多方对焦或开放共写时再创建。CAT 是系统级房间，入席与点名使用员工号。规则与案例见 [CAT 圆桌](guide-paos-cat-operations.md#cat-圆桌)。
 
 ~~~powershell
 & $paos cat list
 & $paos --json cat create --title '本轮协作议题'
 $room = '<上一步返回的实际房间 ID>'
 & $paos cat join $room --home $me
-& $paos cat join $room --home $peer
-& $paos cat members $room
-$msg = 'topic-' + [guid]::NewGuid().ToString('N')
-& $paos cat send $room --from $me --body '请在本房间补充各自掌握的条件。' --message-id $msg
+# 邀请一位新同事入席并提醒一次
+$inviteMsg = 'invite-' + [guid]::NewGuid().ToString('N')
+& $paos cat invite $room --from $me --to $peer --body '请加入本房，针对 X 边界给实操判断。' --message-id $inviteMsg
+# 普通发言默认静默（--no-notify 为默认），不打断同桌
+$noteMsg = 'note-' + [guid]::NewGuid().ToString('N')
+& $paos cat send $room --from $me --body '初稿已落盘，欢迎随时看。' --message-id $noteMsg
+# 点名一位在席同事回应（只提醒该人；接话可加 --reply-to）
+$askMsg = 'ask-' + [guid]::NewGuid().ToString('N')
+& $paos cat send $room --from $me --mention $peer --reply-to $inviteMsg --body '这里二选一你更倾向哪边？' --message-id $askMsg
 ~~~
 
-从回执或 `cat read` 取得发言 ID 和序号。接话时加 `--reply-to $msg`；只留公开记录时加 `--no-notify`。以下操作分别在需要读新增、转旁听或正式结束讨论时执行。
+显式群提醒桌内参与者用 `--notify`（与 `--mention`、`--no-notify` 互斥，画板显式群邀由 Human 主动选择）。以下操作分别在需要读新增、看成员、转旁听或正式结束讨论时执行：
 
-- 读发言：`& $paos cat read $room --after 0`，之后用上次读到的 seq 取增量。
+- 读发言 / 看成员：`& $paos cat read $room --after 0`（之后用上次 seq 取增量）；`& $paos cat members $room`。
 - 转旁听：`& $paos cat seat $room --home $me --state observer`。
-- 结局后关房：`& $paos cat close $room`，历史仍可读。
+- 结束后关房：`& $paos cat close $room`，历史仍可读。
 
 ### 从 Libraries 找方法，从 EXM 找经历
 

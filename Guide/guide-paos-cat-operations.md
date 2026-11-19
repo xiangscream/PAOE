@@ -41,6 +41,24 @@ Mail、正式 Requests 和已配置 CAT 分开读取。读取失败不是零消�
 
 普通交接保存成果后，用 `agent send --remind` 交付、`attention todo-update` 校准本人当前页；下游回告后直接读其成果并继续。解除等待的验收回告也属于需要接续的交付。对方没有回流或报告失败时，再用 `status --message-id` 定位。已有原件和回告即可引用，无须另写一份收件证明或逐级重查全部状态。记录完成状态或回告时，把当前结论写在前，再接续动作和原件。
 
+### 邮件接手、TODO 联动与提醒边界
+
+- **先接手再交付**：收件人实读原信后，只要满足① 职责归本人（对照 TEAM）、② 交付物与落盘位置清楚、③ 起步的核心输入可读，即使局部边界还有模糊或当场就能办完，也应先安静接手。接手静默且幂等，优先把原信关联进本人已有 Task（省略 `--task` 时按 `--title` 新建 Task）；**个人 Current 始终由本人按当前优先级自行管理**。
+- **发件人任务视图与解除等待**：发件人用 `mail track` 把已发原信挂到本人已有 Task 后，可用 `mail task-status` 和 `mail status` 随时查看投递、接手与结果回执。发件人任务视图直接从对应原信的收件回执解除该项等待，不自动覆盖双方手动 Current。
+- **提醒边界**：接手（`claim` / `rooter-claim`）与普通进展保持静默，不打断发件人。仅在**需要对方回答（范围局部含糊先查 EXM，仍影响动笔再提具体问题并记 `Waiting`）、明确接不了（职责不符或缺失核心前提）、或交付结果需下游接续**时，按真实后续动作使用最终发布命令定向提醒（现行采用 `agent send --remind`）。普通交付后发件人解除相应等待即可，省去礼节性回一封「收到」。
+
+| 角色与目的 | 命令（以同版 `--help` 为准） |
+| --- | --- |
+| 项目成员安静接手 | `paos mail claim <project> <本人Sxxx> <message_id> [--task <已有TaskID>] [--title "<新Task标题>"]` |
+| 项目成员写回交付结果 | `paos mail result <project> <本人Sxxx> <message_id> --result "<结果或@FILE>" [--task <TaskID>] [--artifact-ref <成果路径>]` |
+| Rooter 安静接手 | `paos mail rooter-claim <message_id> [--task <已有TaskID>] [--title "<新Task标题>"]` |
+| Rooter 写回交付结果 | `paos mail rooter-result <message_id> --result "<结果或@FILE>" [--task <TaskID>] [--artifact-ref <成果路径>]` |
+| 发件人将原信挂入己方 Task | `paos mail track <project> <发件人Sxxx> <message_id> --task <已有TaskID>` |
+| 发件人查己方 Task 在途/回执 | `paos mail task-status <project> <发件人Sxxx> <TaskID>` |
+| 查单封原信投递、接手与结果 | `paos mail status <project> <message_id>`（Rooter 亦沿发信上下文 `<project>` 与 `<message_id>` 查询） |
+
+- **真实例子**：S035 发出任务信请 S070 主笔协作规则，S070 实读后先安静接手并挂入本人 Task（未打断 S035 手头工作）；改稿并回读验证后记录交付结果，再通过带提醒交接一次交清原件路径与主要修改点给 S035 验收。
+
 短正文示例：
 
 ```markdown
@@ -110,23 +128,25 @@ S号寻址和跨Project参数查安装 `agent send --help`。普通消息使用�
 
 CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。Room与同事从现行Project/联系入口取得。
 
-同一项目的集中协作用一个主题房间，使用已登记 S号入座。CAT用于及时问答、讨论和发散，成员可主动追问、补充和相互挑战，不等主持人逐轮点名，也不把每句话都变成任务。涉及共同修改时先说清范围，共享文件指定一位合成人；形成行动或决定后回本人 TODO 和项目正文，正式交接用 Mail。
+单点事实或二选一授权（答案只在发件人一人手里）沿原信带 `--remind` 一次问清即可。涉及**三方及以上角色对焦**，或**方案开放、一方回答会立刻改变另一方拆解与措辞**（如长程共写、碰撞场景或解决分歧）时，任何参与者都可主动发起 CAT，优先复用同题房间，使用已登记 S号入座。共享文件指定一位合成人；形成行动或决定后回本人 TODO 和项目正文，正式交接用 Mail。
 
 还在等同桌答复时保持参与，Current只留话题、已读位置及所等回复，沿原接收入口接话；新发言到达后增量读并及时回应。等待回复不是该事项已完成，不因交出一条消息就退出讨论。明确收口、离席或只等最终交付时再转旁听；不发空 ACK、不反复自唤醒或复制整篇报告，讨论历史留在原房间。
 
-| 目的 | 命令 |
+| 目的 | 命令（以同版 `--help` 为准） |
 | --- | --- |
-| 看房间概况 | `paos cat show <room>` |
-| 看同桌状态 | `paos cat members <room>` |
+| 看房间概况 / 同桌状态 | `paos cat show <room>` / `paos cat members <room>` |
 | 读新增发言 | `paos cat read <room> --after <已读seq>` |
-| 保存当前公共原件 | `paos cat send <room> --from <本人Sxxx> --body @<原件> --message-id <id>` |
+| 静默发言（默认） | `paos cat send <room> --from <本人Sxxx> --body "<内容或@原件>" --message-id <id>` |
+| 邀请一位同事入席并提醒一次 | `paos cat invite <room> --from <本人Sxxx> --to <目标Sxxx> --body "<具体问题与背景>" --message-id <id>` |
+| 点名一位在席同事回应 | `paos cat send <room> --from <本人Sxxx> --mention <目标Sxxx> --body "<具体问题>" --message-id <id>` |
+| 显式群提醒桌内参与者 | `paos cat send <room> --from <本人Sxxx> --notify --body "<内容>" --message-id <id>` |
 | 调整本人席位 | `paos cat seat <room> --home <本人Sxxx> --state participant/observer/left` |
 
-participant接提醒并可发言；observer只读、不接提醒；left退出席位，历史保留。按当前责任选择，新的收口责任仍沿Mail/Contact交付。轮次交流按业务流程选择提醒对象；只保存公共发言时用cat send的`--no-notify`。
-
-需要同桌接话时，省略`--no-notify`，回复用`--reply-to <原消息id>`关联问题。事实、问题和修改在同一房间交流，不再逐句复制到Mail；只表示收到时无需再回复。正式交付沿既有Mail/Contact一次完成，重要结论与唯一成果回Project。
-
-只等待最终交付的旁听者使用observer，减少无须处理的讨论提醒；合成人用agent send --remind正式交付。需要公开发言时再转participant。逐阶段主持或需要即时答疑的人保留participant，按当前责任选择。
+- **默认静默与单人提醒**：`cat send` 默认静默保存（`--no-notify` 即默认行为），普通讨论、贴草稿不打断同桌。需要新同事入席时用 `cat invite --to <Sxxx>`，需要某位在席同事回答时用 `cat send --mention <Sxxx>`（接话可加 `--reply-to <原消息id>`），均只提醒需要回应的那一人。
+- **显式群提醒边界**：`--notify` 与 `--mention`、`--no-notify` 互斥，仅用于显式群提醒桌内 `participant`；画板原有的显式群邀继续保留，由 Human 主动选择时触发。
+- **幂等与冲突**：相同 `--message-id` 重复提交相同请求只存一次，不重复唤醒；改目标或改提醒方式报冲突。
+- **席位状态**：`participant` 接提醒并可发言；`observer` 只读、不接提醒（适合只等最终交付的旁听者）；`left` 退出席位，历史保留。事实、问题和修改在同一房间交流，不再逐句复制到 Mail；正式交付仍沿 Mail/Contact 一次完成。
+- **真实例子（CAT 主动共写）**：S035、S069 与 S070 在同题房 `room-234350df7e6a` 共推协作规则：S070 静默贴出初稿进展，S035 给出收敛意见并点名 S070；S070 收紧正文后在房内定向点名 S069 追问“局部模糊先接手还是先提问”，S069 结合真实任务给出三项接手条件与开 CAT 分界，S070 一次落回原稿并交回 S035 验收，全程无多余群打断。
 
 show默认只返回房间概况、人数、消息数与last_seq，普通与JSON读面相同；成员读members，新增发言读read --after。确需完整历史时显式用`paos --full-result cat show <room>`，整史不作为每次恢复输入。
 
