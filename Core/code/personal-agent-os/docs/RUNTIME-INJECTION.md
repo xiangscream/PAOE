@@ -21,7 +21,7 @@ receipt = inject(target, message)  # scripts 已在 Python 模块路径中
 | opencode v1 | `session_id`、`base_url`；原服务应已运行；`api_version`省略或为1 |
 | opencode v2 | `session_id`、`base_url`、`api_version:2`、`auth_file`；使用已启动服务的正常Basic授权 |
 | workbuddy | `session_id`、`runtime_file`；正常加载的本地扩展须已授权该目标 |
-| antigravity（试用） | `session_id`、`runtime_file`；Antigravity App 内启用 Sidecar，并授权同一个已有会话 |
+| antigravity | `session_id`、`runtime_file`；Antigravity App 内启用 Sidecar，并授权同一个已有会话 |
 | dsh | `session_id`、`receiver_file`、可选 `mode`（`queue`/`steer`）；DSH `wake-receiver` 已加载且固定 Session 的工作目录为项目根 |
 
 各目标均可提供显式 `stop_file`。文件存在即停止发送；不从 Project 或 Work 推导停止路径。OpenCode/WorkBuddy/Antigravity/DSH HTTP 可用 `timeout_seconds` 设置原生调用超时，默认 30 秒。Windows locator 在 WSL 按已有路径解析合同处理。
@@ -47,13 +47,13 @@ DSH 只从 receiver 发现文件读取 `url` 与 `secretFile`，secret 内容不
 
 工具不自动重试、启动Runtime、保存attempt或观察模型完成，也不加载Project Store、Work或Notice。旧消息是否已处理由调用方在工位当前读面判断；既有拒绝和不确定回执保持原样，不因实现更新重放。
 
-## Antigravity App 固定会话试用
+## Antigravity App 固定会话接入
 
-Antigravity 启动已启用的 Sidecar，为它提供 `agentapi` 和独立数据目录。由本机安装负责人按 [Google Sidecar 文档](https://antigravity.google/docs/sidecars#agentapi) 启用一个试件。用已存在且获准的 App 会话 ID，并让 Sidecar 与 PAOE Contact 使用同一 STOP 文件。
+Antigravity 启动已启用的 Sidecar，为它提供 `agentapi` 和独立数据目录。按 [Google Sidecar 文档](https://antigravity.google/docs/sidecars#agentapi) 为本机已有且获准的 App 会话启用一个 Sidecar。使用该会话的完整 ID，并让 Sidecar 与 PAOE Contact 使用同一 STOP 文件。
 
 ```json
 {
-  "display_name": "PAOE Antigravity wake trial",
+  "display_name": "PAOE Antigravity wake",
   "command": "C:/path/to/python.exe",
   "args": [
     "C:/path/to/antigravity_sidecar.py",

@@ -24,7 +24,7 @@
 
 从本人工位目录执行。`PAOS_INSTALLATION_FILE` 指向 ENTRY 中的安装描述；也可在 `bind` / `status` 等子命令前加 `--installation-file "绝对路径"`。脚本从 Registry 确认本人身份，母版目录不可直接绑定。
 
-**Codex：**
+### Codex
 
 ```text
 python notices/codex.py bind --session-id <本人真实ThreadID>
@@ -34,7 +34,7 @@ python notices/codex.py status
 
 已登记 Codex 接收器的本人从原 Desktop 用 `paos orient <project> <本人Sxxx> --resume` 复工，入口同时准备接收器。宿主可用时，SessionStart 和 UserPromptSubmit 也调用准备逻辑。新建或修改的 Hook 在官方入口审阅，实际执行看接收器日志。 [Hooks](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)
 
-**OpenCode / OpenCode2：**
+### OpenCode / OpenCode2
 
 OpenCode2 的私有目标配置 JSON 填：
 
@@ -49,7 +49,7 @@ python notices/opencode.py status
 
 `auth_file` 指向现有服务授权文件；沿用本机已登记的服务与模型。旧版 OpenCode 使用对应驱动配置，不套用 `api_version: 2`。
 
-**DSH：**
+### DSH
 
 DSH 的固定 Session 使用正常接口返回的完整 ID（形如 `session-<uuid>`），不要剥前缀或用裸 UUID 猜补。Session 的 cwd 可以是 Human 的实际工作区，不必等于项目根；Project 工作材料按 ENTRY 定位，不强迫搬工作区。私有目标配置只登记接收器发现文件，不复制 secret。`receiver_file` 填本机绝对路径：
 
@@ -66,7 +66,7 @@ python notices/dsh.py status
 
 ### Antigravity App
 
-本流程已在 Windows 上的 Antigravity App 2.33.0 实测。从本人 [ENTRY](../ENTRY.md) 取 PAOE 命令前缀。该入口的 `paos wake bind --help` 应列出 `antigravity`，且 `paos install show` 返回的 `source_root` 下应有 `scripts/wakeup_native/antigravity_sidecar.py`。System 0.2.28 正式包尚未包含该驱动。试用时使用 Rooter 提供的入口。
+本流程已在 Windows 上的 Antigravity App 2.33.0 实测。System 0.2.29 起支持该驱动。从本人 [ENTRY](../ENTRY.md) 取 PAOE 命令前缀。用 `paos wake bind --help` 核对 `antigravity`，用 `paos install show` 核对该安装的 `source_root`。下文的 `antigravity_sidecar.py` 位于此 Source 的 `scripts/wakeup_native/`。
 
 #### 确认本人 App 会话
 

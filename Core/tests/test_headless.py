@@ -25,6 +25,7 @@ from paos_installation import write_installation_descriptor
 from paos_library import ensure_workflow_library, ensure_skill_library, register_library_roots
 from paos_todo import render_todo, parse_todo
 from paos_registry import ProjectRegistry, RegistryProblem
+import runtime_injection
 
 
 class HeadlessTests(unittest.TestCase):
@@ -388,6 +389,46 @@ class HeadlessTests(unittest.TestCase):
         target=Path(p2['root_path'])/'Workstations/3003-s001';self.make_home(target,'3003-s001','3003')
         self.call('agent','send','3002','--to','3003-s001','--subject','跨项目','--body','原件入口','--message-id','cross-test-001')
         self.assertTrue((target/'mailbox/cross-test-001.md').exists())
+
+    def test_cross_project_mail_reminds_registered_antigravity_conversation_once(self):
+        project_root = self.root / "另一个项目"
+        staff = "S068"
+        receiver_home = project_root / "Workstations" / staff
+        self.make_home(receiver_home, staff, "3003")
+        project = dict(self.project, id="3003", root_path=str(project_root), homes=[staff],
+                       coordinator_home_id=staff)
+        (self.records / "3003.json").write_text(json.dumps(project), encoding="utf-8")
+
+        conversation = "existing-app-conversation"
+        receiver_file = self.root / "wake-receiver.json"
+        receiver_file.write_text(json.dumps({
+            "endpoint": "http://127.0.0.1:7249", "targets": [conversation], "token": "fixture-only",
+        }), encoding="utf-8")
+        config_file = self.root / "antigravity-contact.json"
+        config_file.write_text(json.dumps({"runtime_file": str(receiver_file)}), encoding="utf-8")
+        self.call("wake", "bind", "3003", staff, "--driver", "antigravity",
+                  "--native-session-id", conversation, "--driver-config", str(config_file))
+
+        message_id = "antigravity-cross-project-001"
+        mail = receiver_home / "mailbox" / (message_id + ".md")
+
+        def sidecar(target, origin, method, path, payload, token):
+            self.assertTrue(mail.is_file())
+            self.assertEqual(target["runtime"], "antigravity")
+            self.assertEqual(origin, "http://127.0.0.1:7249")
+            self.assertEqual((method, path, payload["session_id"]), ("POST", "/send", conversation))
+            self.assertIn(message_id, payload["message"])
+            self.assertNotIn("邮件正文标记", payload["message"])
+            return {"session_id": conversation, "clientRequestId": payload["clientRequestId"]}, 200
+
+        args = ("agent", "send", "3002", "--to", staff, "--subject", "跨项目提醒",
+                "--body", "邮件正文标记", "--message-id", message_id, "--remind")
+        with patch.object(runtime_injection, "_request", side_effect=sidecar) as request:
+            result = self.call(*args)[1]
+            self.call(*args)
+        self.assertEqual(request.call_count, 1)
+        self.assertEqual(result["reminders"][0]["state"], "native_accepted")
+        self.assertEqual(result["reminders"][0]["session_id"], conversation)
 
     def test_rooter_receives_durable_input_without_project_identity(self):
         self.call('agent','send','3002','--to','rooter-001','--subject','安装接续','--body','原件入口','--message-id','rooter-test-001')
