@@ -23,6 +23,91 @@ version: 45
 
 `paos`代表当前安装入口：已有Home读本人ENTRY，尚无Home读[已安装机器首次使用](../UPGRADE.md#已安装机器上的首次使用)。先按目的选入口，只读必要章节；不从命令名称猜协议或手工拼消息文件。
 
+## 常用 CLI 速查
+
+以下 PowerShell 命令已在 System 0.2.29 核对，0.2.30 沿用同一接口。先从本人 ENTRY 确认项目号、员工号与 CLI 前缀。下列变量以 REMO 为例，调用前换成本次实际值，各小节按需使用。
+
+~~~powershell
+$paos = Join-Path $env:USERPROFILE '.paos/bin/paos.cmd'
+$project = '3004'    # 发起方所在项目
+$me = 'S042'         # 本人员工号
+$peer = 'S043'       # 本次接手人
+$targetProject = '3004'  # 接手人所在项目，查对方唤醒状态时用
+~~~
+
+### 恢复、收件与记录
+
+| 要做的事 | PowerShell 命令 | 读回或下一步 |
+| --- | --- | --- |
+| 恢复当前工作 | `& $paos orient $project $me --read` | 实读 AGENTS、INDEX、ENTRY、TODO 及本轮原输入。已登记的 Codex 本人在原 Desktop 用 `--resume`。 |
+| 找协作者 | `& $paos peers $project $me --summary` | 按员工号和职责选择接手人。 |
+| 收信并读原文 | `& $paos inbox $project $me`，再执行 `& $paos mail read $project $me $mailId` | 从收件结果取真实的 `$mailId` 和对应的 `$noticeId`。 |
+| 标读、回信 | `& $paos attention read $project $me $noticeId`，再执行 `& $paos mail reply $project $me $mailId --body '已接手，下一步核对原稿。'` | 反馈写实际下一步或阻碍。需要对方立即行动时用下一节的带提醒交接。 |
+| 更新本人 Current | `& $paos attention todo-update $project $me --set 'next_action=核对原稿后交付链接'` | 写当前可执行的一步。Tasks/Pinned 的修改用 `attention todo-write --help` 查看正文与指纹参数。 |
+| 处理完成的通知 | `& $paos attention handle $project $me $noticeId --resolution '已交付' --action-ref $artifact` | `$artifact` 填实际成果路径，业务结果写回项目。 |
+
+### 派工与唤醒
+
+新交付一次完成存信和提醒。准备好 UTF-8 原文，将文件路径赋给 `$bodyFile`。本次消息 ID 在重查同一交付时沿用。
+
+~~~powershell
+$mailId = 'handoff-' + [guid]::NewGuid().ToString('N')
+& $paos --json agent send $project --to $peer --sender-kind agent --sender-id $me --subject '请接续本轮任务' --body ('@' + $bodyFile) --message-id $mailId --remind
+~~~
+
+回执中 `native_accepted` 表示原生端受理。被唤醒者读原文后及时回发起人。已有原信，且需在明确失败修复后补一次提醒时，用下列命令；结果不明时先看原交付状态。
+
+~~~powershell
+& $paos --json status $project $me --message-id $mailId
+& $paos --json wake status $targetProject $peer
+& $paos wake trigger $targetProject $peer --source-id $mailId --prompt "请读取原邮箱中的 $mailId，接续原任务并回告。"
+~~~
+
+### 开 CAT 房间并组织讨论
+
+先查同题房间。有房间就复用；新议题需要单独讨论时再创建。CAT 是系统级房间，入席使用员工号。
+
+~~~powershell
+& $paos cat list
+& $paos --json cat create --title '本轮协作议题'
+$room = '<上一步返回的实际房间 ID>'
+& $paos cat join $room --home $me
+& $paos cat join $room --home $peer
+& $paos cat members $room
+$msg = 'topic-' + [guid]::NewGuid().ToString('N')
+& $paos cat send $room --from $me --body '请在本房间补充各自掌握的条件。' --message-id $msg
+~~~
+
+从回执或 `cat read` 取得发言 ID 和序号。接话时加 `--reply-to $msg`；只留公开记录时加 `--no-notify`。以下操作分别在需要读新增、转旁听或正式结束讨论时执行。
+
+- 读发言：`& $paos cat read $room --after 0`，之后用上次读到的 seq 取增量。
+- 转旁听：`& $paos cat seat $room --home $me --state observer`。
+- 结局后关房：`& $paos cat close $room`，历史仍可读。
+
+### 从 Libraries 找方法，从 EXM 找经历
+
+~~~powershell
+& $paos --json library search '录音' --kind workflow --limit 3
+& $paos --json library search 'feishu-cli' --kind skill --limit 3
+$tools = & $paos --json library tools | ConvertFrom-Json
+$tools.raw_markdown -split '\r?\n' | Select-String -SimpleMatch 'lark-cli'
+~~~
+
+读命中项的 `source_path`，用原件里的步骤。工具目录支持整页读取，可在输出中筛选工具名。要找本项目已确认的 Tips，用 `& $paos project experience $project`。
+
+从项目 AGENTS 的「共同经历」进入本机 EXM 方法，取得检索脚本路径。REMO 的脚本在本机 PAOE 根目录下的 `Data/exm/exm.ps1`，其余机器按各自的登记填写。
+
+~~~powershell
+$exm = '<从本机 EXM 方法取得的完整脚本路径>'
+& $exm search '充电站' -n 5 --format json                 # 名称或术语已知
+& $exm query '少量抽样导致遗漏长录音中的产品讨论' --no-rerank -n 8 --format json
+& $exm get 'qmd://exm/Daily/2026-10-19.md' --full-path  # 换成所选结果的 file
+~~~
+
+先读事件原文和后续纠偏，再决定其适用范围。例中，10 月 19 日的记录解释了为什么要覆盖完整时段再判断是否有业务讨论。
+
+## 其他操作与专项说明
+
 | 目的 | 入口 |
 | --- | --- |
 | 命令环境：PowerShell中文输出 | [UTF-8文本环境](guide-tool-pitfalls.md#powershell-utf-8)，与CLI放在同一段调用 |
