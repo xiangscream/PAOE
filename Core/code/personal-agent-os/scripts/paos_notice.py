@@ -30,6 +30,7 @@ from typing import Any, Iterable
 NOTICE_SCHEMA = "paos-notice/v1"
 NOTICE_LIST_SCHEMA = "paos-notice-list/v1"
 NOTICE_READ_SCHEMA = "paos-notice-read/v1"
+NOTICE_CLAIM_SCHEMA = "paos-notice-claim/v1"
 NOTICE_STATES = {"pending", "handled"}
 HOME_KINDS = {"project_agent", "rooter"}
 
@@ -179,6 +180,11 @@ def _read_record_path(home_path: Path, notice_id: str) -> Path:
     return notice_dir(home_path) / ".read" / f"{canonical_id}.json"
 
 
+def _claim_record_path(home_path: Path, notice_id: str) -> Path:
+    canonical_id = notice_path(home_path, notice_id).stem
+    return notice_dir(home_path) / ".claimed" / f"{canonical_id}.json"
+
+
 def _activation_request_dir(home_path: Path, notice_id: str) -> Path:
     return notice_dir(home_path) / ".activation" / notice_id
 
@@ -205,6 +211,7 @@ def notice_archive_files(home_path: Path, notice_id: str) -> list[Path]:
         notice_path(home_path, notice_id),
         _handled_record_path(home_path, notice_id),
         _read_record_path(home_path, notice_id),
+        _claim_record_path(home_path, notice_id),
     ]
     for sidecar in (".organization", ".activation"):
         directory = notice_dir(home_path) / sidecar / notice_id
@@ -345,6 +352,28 @@ def _read_notice_read_record(
         "read_at": read_at,
         "path": str(path),
     }
+
+
+def _read_claim_record(
+    home_path: Path,
+    notice_id: str,
+) -> dict[str, Any] | None:
+    path = _claim_record_path(home_path, notice_id)
+    if not path.is_file():
+        return None
+    record = _read_json_record(path, code="notice_claim_record_invalid")
+    if (
+        record.get("schema") != NOTICE_CLAIM_SCHEMA
+        or record.get("notice_id") != notice_id
+        or not str(record.get("claimed_by_home_id") or "").strip()
+        or not str(record.get("claimed_at") or "").strip()
+    ):
+        raise NoticeProblem(
+            "notice_claim_record_invalid",
+            f"Notice claim sidecar schema/identity 无效：{path}",
+            {"path": str(path), "notice_id": notice_id},
+        )
+    return {**record, "path": str(path)}
 
 
 def _read_activation_requests(
@@ -572,9 +601,10 @@ def read_notice(home_path: Path, notice_id: str) -> dict[str, Any]:
     base = _parse_notice_text(text, path=path)
     handled = _read_handled_record(home_path, notice_id)
     read_record = _read_notice_read_record(home_path, notice_id)
+    claim = _read_claim_record(home_path, notice_id)
     requests = _read_activation_requests(home_path, notice_id)
     updates = _read_organization_updates(home_path, notice_id)
-    return _project_notice(base, handled, read_record, requests, updates)
+    return _project_notice(base, handled, read_record, requests, updates, claim)
 
 
 def _project_notice(
@@ -583,6 +613,7 @@ def _project_notice(
     read_record: dict[str, Any] | None,
     requests: list[dict[str, Any]],
     updates: list[dict[str, Any]],
+    claim: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     projected = dict(base)
     if read_record is not None:
@@ -609,6 +640,26 @@ def _project_notice(
                 "read_by_project_id": "",
             }
         )
+    if claim is not None:
+        projected.update({
+            "claimed": True,
+            "claimed_at": str(claim.get("claimed_at") or ""),
+            "claimed_by_home_kind": str(claim.get("claimed_by_home_kind") or ""),
+            "claimed_by_home_id": str(claim.get("claimed_by_home_id") or ""),
+            "claimed_by_project_id": str(claim.get("claimed_by_project_id") or ""),
+            "claim_task_ref": str(claim.get("task_ref") or ""),
+            "claim_task_auto_created": bool(claim.get("task_auto_created")),
+            "claim_action_ref": str(claim.get("action_ref") or ""),
+            "claim_path": str(claim.get("path") or ""),
+        })
+    else:
+        projected.update({
+            "claimed": False, "claimed_at": "", "claimed_by_home_kind": "",
+            "claimed_by_home_id": "", "claimed_by_project_id": "",
+            "claim_task_ref": "", "claim_task_auto_created": False,
+            "claim_action_ref": "", "claim_path": "",
+        })
+
     if handled is not None:
         projected.update(
             {
@@ -941,13 +992,99 @@ def mark_notice_read(
     return {**updated, "read_changed": bool(created)}
 
 
+def claim_notice(
+    *,
+    home_path: Path,
+    notice_id: str,
+    claimant_home_kind: str,
+    claimant_home_id: str,
+    claimant_project_id: str = "",
+    task_ref: str = "",
+    action_ref: str = "",
+    task_auto_created: bool = False,
+    claimant_aliases: Iterable[str] = (),
+) -> dict[str, Any]:
+    """Claim one Notice once; repeated identical claim is idempotent.
+
+    The immutable Notice and its read/handled sidecars are untouched. A
+    separate `.claimed` sidecar records who took the work and the linked Task.
+    """
+    home_path = Path(home_path)
+    current = read_notice(home_path, notice_id)
+    owner_kind = str(current.get("home_kind") or "")
+    owner_id = str(current.get("home_id") or "")
+    owner_project = str(current.get("project_id") or "")
+    aliases = {owner_id, *[str(value) for value in claimant_aliases if value]}
+    if claimant_home_kind not in HOME_KINDS:
+        raise NoticeProblem("notice_claim_home_kind_invalid", "claimant_home_kind 无效。")
+    if claimant_home_kind != owner_kind or claimant_home_id not in aliases:
+        raise NoticeProblem(
+            "notice_claim_identity_mismatch",
+            "只能由拥有该 Notice 的当前 Home 或已登记历史别名接手。",
+            {"notice_id": notice_id, "owner_home_id": owner_id,
+             "claimant_home_id": claimant_home_id},
+        )
+    claimant_home_id = _required_single_line(
+        claimant_home_id, label="claimant_home_id", max_chars=160)
+    claimant_project_id = _single_line(
+        claimant_project_id, label="claimant_project_id", max_chars=160)
+    task_ref = _single_line(task_ref, label="task_ref", max_chars=1000)
+    action_ref = _single_line(action_ref, label="action_ref", max_chars=1000)
+    existing = _read_claim_record(home_path, notice_id)
+    if existing is not None:
+        if (str(existing.get("claimed_by_home_id") or "") == claimant_home_id
+                and str(existing.get("task_ref") or "") == task_ref
+                and str(existing.get("action_ref") or "") == action_ref
+                and bool(existing.get("task_auto_created")) == bool(task_auto_created)):
+            return {**current, "claim_changed": False}
+        raise NoticeProblem(
+            "notice_claim_conflict",
+            "Notice 已被另一接手结果占用；不能静默改写。",
+            {"notice_id": notice_id,
+             "existing": {key: existing.get(key) for key in
+                          ("claimed_by_home_id", "task_ref", "action_ref")}},
+        )
+    record = {
+        "schema": NOTICE_CLAIM_SCHEMA,
+        "notice_id": notice_id,
+        "claimed_at": _utc_now_iso_precise(),
+        "claimed_by_home_kind": claimant_home_kind,
+        "claimed_by_home_id": claimant_home_id,
+        "claimed_by_project_id": (
+            claimant_project_id if claimant_home_kind == "project_agent" else ""),
+        "task_ref": task_ref,
+        "task_auto_created": bool(task_auto_created),
+        "action_ref": action_ref,
+        "source_kind": str(current.get("source_kind") or ""),
+        "source_ref": str(current.get("source_ref") or ""),
+    }
+    path = _claim_record_path(home_path, notice_id)
+    created = _atomic_create(
+        path, json.dumps(record, ensure_ascii=False, indent=2) + "\n")
+    if not created:
+        existing = _read_claim_record(home_path, notice_id)
+        if existing is not None and all(
+                str(existing.get(key) or "") == str(record[key])
+                for key in ("claimed_by_home_id", "task_ref", "action_ref")):
+            return {**current, "claim_changed": False}
+        raise NoticeProblem(
+            "notice_claim_conflict", "Notice claim 写入竞争且内容不同。",
+            {"notice_id": notice_id})
+    return {**read_notice(home_path, notice_id), "claim_changed": True}
+
+
+def normalize_notice_resolution(value: str) -> str:
+    """Apply the handled receipt's resolution contract before related writes."""
+    return _single_line(value, label="resolution")
+
+
 def handle_notice(
     *, home_path: Path, notice_id: str, resolution: str = "", action_ref: str = "",
 ) -> dict[str, Any]:
     """Atomically establish handled fact without read-modify-replace."""
     home_path = Path(home_path)
     current = read_notice(home_path, notice_id)
-    resolution = _single_line(resolution, label="resolution", max_chars=500)
+    resolution = normalize_notice_resolution(resolution)
     action_ref = _single_line(action_ref, label="action_ref", max_chars=1000)
     if current.get("state") == "handled":
         if (str(current.get("resolution") or "") == resolution

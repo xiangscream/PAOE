@@ -616,7 +616,7 @@ class Board:
         return {"ok": True, **result["room"]} if result.get("ok") else result
 
     def send_message(self, room_id: str, sender: str, body: str, message_id: str,
-                     reply_to: str = "", notify: bool = True) -> dict:
+                     reply_to: str = "", notify: bool = False) -> dict:
         joined = self.cat(["join", room_id, "--home", sender, "--label", "Human" if sender == "human" else sender])
         if not joined.get("ok"):
             return {**joined, "message_submitted": False}
@@ -624,8 +624,7 @@ class Board:
         args = ["send", room_id, "--from", sender, "--body", "-", "--message-id", message_id]
         if reply_to:
             args += ["--reply-to", reply_to]
-        if not notify:
-            args.append("--no-notify")
+        args.append("--notify" if notify else "--no-notify")
         return self.cat(args, input_text=body)
 
     def hint(self, home_id: str, example: dict) -> dict:
@@ -716,7 +715,7 @@ def dispatch_request(board: Board, method: str, path: str,
                                            "human", text,
                                            str(payload.get("message_id") or f"board-{uuid.uuid4().hex}"),
                                            str(payload.get("reply_to") or ""),
-                                           bool(payload.get("notify", True)))
+                                           bool(payload.get("notify", False)))
             elif url.path == "/api/collaboration":
                 value = board.collaboration(payload)
             else:
