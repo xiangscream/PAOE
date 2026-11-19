@@ -7,13 +7,29 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import subprocess
 from tempfile import NamedTemporaryFile
 
 
-def make_server(conversation_id, stop_file, agentapi, token):
+def agentapi_command(locator):
+    """Use the native executable behind the App's Windows batch launcher."""
+    path = Path(locator)
+    if path.suffix.lower() == ".bat":
+        launcher = path.read_text(encoding="utf-8-sig").strip()
+        match = re.fullmatch(r'@echo off\n"([^"\r\n]+)" agentapi %\*', launcher, flags=re.IGNORECASE)
+        executable = Path(match[1]) if match else None
+        if executable and executable.is_absolute() and executable.name.lower() == "language_server.exe" and executable.is_file():
+            return [str(executable), "agentapi"]
+        raise ValueError("Unrecognized Antigravity Windows agentapi launcher.")
+    if os.name == "nt" and path.suffix.lower() != ".exe":
+        raise ValueError("Use the App's native agentapi executable or Windows batch launcher.")
+    return [str(path)]
+
+
+def make_server(conversation_id, stop_file, command, token):
     """Bind only loopback; the App-provided agentapi owns the native session."""
     authorization = f"Bearer {token}".encode("ascii")
 
@@ -49,7 +65,7 @@ def make_server(conversation_id, stop_file, agentapi, token):
                 return self.reply(400, {"error": "native_stopped"})
             try:
                 result = subprocess.run(
-                    [agentapi, "send-message", "--", conversation_id, message],
+                    [*command, "send-message", conversation_id, message],
                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     timeout=20, check=False,
                 )
@@ -69,11 +85,13 @@ def serve(conversation_id, stop_file):
     agentapi = shutil.which("agentapi")
     if not data_locator or not agentapi:
         raise SystemExit("Antigravity must launch this Sidecar with its own agentapi.")
-    if os.name == "nt" and Path(agentapi).suffix.lower() != ".exe":
-        raise SystemExit("The Antigravity Sidecar requires the native Windows agentapi executable.")
+    try:
+        command = agentapi_command(agentapi)
+    except (OSError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
     data_dir = Path(data_locator)
     token = secrets.token_urlsafe(32)
-    with make_server(conversation_id, stop_file, agentapi, token) as server:
+    with make_server(conversation_id, stop_file, command, token) as server:
         runtime_file = data_dir / "wake-receiver.json"
         with NamedTemporaryFile(mode="w", encoding="utf-8", dir=data_dir, delete=False) as stream:
             staged = Path(stream.name)

@@ -52,7 +52,7 @@ class NativeInjectionTests(unittest.TestCase):
     def antigravity(self):
         runtime = self.root / "antigravity.runtime.json"
         stop = self.root / "STOP"
-        server = antigravity_sidecar.make_server("original-native-id", stop, "agentapi", "fixture-only")
+        server = antigravity_sidecar.make_server("original-native-id", stop, ["agentapi"], "fixture-only")
         worker = Thread(target=server.serve_forever)
         worker.start()
         self.addCleanup(server.server_close)
@@ -66,6 +66,13 @@ class NativeInjectionTests(unittest.TestCase):
         self.target = {"runtime": "antigravity", "session_id": "original-native-id", "runtime_file": str(runtime)}
         return stop
 
+    def test_antigravity_windows_launcher_passes_a_native_argv(self):
+        executable = self.root / "language_server.exe"
+        executable.touch()
+        launcher = self.root / "agentapi.bat"
+        launcher.write_text(f'@echo off\n"{executable}" agentapi %*\n', encoding="utf-8")
+        self.assertEqual(antigravity_sidecar.agentapi_command(launcher), [str(executable), "agentapi"])
+
     def test_antigravity_sends_once_to_the_granted_sidecar_conversation(self):
         self.antigravity()
         with patch.object(antigravity_sidecar.subprocess, "run", return_value=Mock(returncode=0)) as native:
@@ -73,7 +80,7 @@ class NativeInjectionTests(unittest.TestCase):
             self.assertTrue(result["accepted"])
             self.assertEqual(result["session_id"], "original-native-id")
             self.assertEqual(native.call_args.args[0], [
-                "agentapi", "send-message", "--", "original-native-id", "实读一封原件\n另起一行",
+                "agentapi", "send-message", "original-native-id", "实读一封原件\n另起一行",
             ])
             with self.assertRaisesRegex(ValueError, "registered conversation"):
                 injection.inject(self.target, "提醒", model="other-model")
