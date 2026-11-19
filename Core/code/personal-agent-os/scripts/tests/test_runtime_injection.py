@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from threading import Thread
 import unittest
 import uuid
 from pathlib import Path
@@ -11,6 +12,7 @@ from unittest.mock import Mock, patch
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 import runtime_injection as injection
+from wakeup_native import antigravity_sidecar
 
 
 class NativeInjectionTests(unittest.TestCase):
@@ -46,6 +48,49 @@ class NativeInjectionTests(unittest.TestCase):
         runtime.write_text(json.dumps({"targets": ["original-native-id"], "endpoint": "http://127.0.0.1:4567", "token": "fixture-only"}), encoding="utf-8")
         self.target = {"runtime": "workbuddy", "session_id": "original-native-id", "runtime_file": str(runtime)}
         return patch.object(injection.uuid, "uuid4", return_value=uuid.UUID(hex=self.request_id))
+
+    def antigravity(self):
+        runtime = self.root / "antigravity.runtime.json"
+        stop = self.root / "STOP"
+        server = antigravity_sidecar.make_server("original-native-id", stop, "agentapi", "fixture-only")
+        worker = Thread(target=server.serve_forever)
+        worker.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(worker.join)
+        self.addCleanup(server.shutdown)
+        runtime.write_text(json.dumps({
+            "targets": ["original-native-id"],
+            "endpoint": f"http://127.0.0.1:{server.server_port}",
+            "token": "fixture-only",
+        }), encoding="utf-8")
+        self.target = {"runtime": "antigravity", "session_id": "original-native-id", "runtime_file": str(runtime)}
+        return stop
+
+    def test_antigravity_sends_once_to_the_granted_sidecar_conversation(self):
+        self.antigravity()
+        with patch.object(antigravity_sidecar.subprocess, "run", return_value=Mock(returncode=0)) as native:
+            result = injection.inject(self.target, "实读一封原件\n另起一行")
+            self.assertTrue(result["accepted"])
+            self.assertEqual(result["session_id"], "original-native-id")
+            self.assertEqual(native.call_args.args[0], [
+                "agentapi", "send-message", "--", "original-native-id", "实读一封原件\n另起一行",
+            ])
+            with self.assertRaisesRegex(ValueError, "registered conversation"):
+                injection.inject(self.target, "提醒", model="other-model")
+            with self.assertRaisesRegex(injection.InjectionError, "outside the extension grant"):
+                injection.inject({**self.target, "session_id": "another-conversation"}, "提醒")
+            self.assertEqual(native.call_count, 1)
+
+    def test_antigravity_uncertain_result_is_not_retried_and_stop_prevents_submit(self):
+        stop = self.antigravity()
+        with patch.object(antigravity_sidecar.subprocess, "run", return_value=Mock(returncode=1)) as native:
+            with self.assertRaises(injection.InjectionUncertain) as failed:
+                injection.inject(self.target, "仅提交一次")
+            self.assertFalse(failed.exception.details()["retry"])
+            stop.touch()
+            with self.assertRaisesRegex(injection.InjectionError, "receiver rejected"):
+                injection.inject(self.target, "停止后不提交")
+            self.assertEqual(native.call_count, 1)
 
     def test_codex_accepted_once_no_model_or_business_state(self):
         client = self.codex("idle")

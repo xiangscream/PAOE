@@ -538,13 +538,32 @@ def _opencode_v2(target, message, model):
 def _workbuddy(target, message, model):
     if model is not None and (not isinstance(model, str) or not model.strip()):
         raise ValueError("WorkBuddy model must be a nonempty native model name")
+    return _extension_reminder(target, message, model, "WorkBuddy")
+
+
+def _antigravity(target, message, model):
+    if model is not None:
+        raise ValueError("Antigravity reminders use the registered conversation's model")
+    try:
+        return _extension_reminder(target, message, None, "Antigravity")
+    except FileNotFoundError as exc:
+        raise InjectionError(
+            "Antigravity Sidecar has no receiver registration",
+            code="antigravity_receiver_missing",
+            state="receiver_offline",
+            next_action="Open Antigravity with the Owner's Sidecar enabled; the durable Mail can also be read directly.",
+        ) from exc
+
+
+def _extension_reminder(target, message, model, product):
+    """Send once to a host extension with an explicit local conversation grant."""
     runtime = json.loads(Path(posix_windows_drive_locator(target["runtime_file"])).read_text(encoding="utf-8"))
     if target["session_id"] not in runtime["targets"]:
-        raise InjectionError("WorkBuddy target is outside the extension grant")
+        raise InjectionError(f"{product} target is outside the extension grant")
     origin = _origin(runtime["endpoint"])
     parsed = urlsplit(origin)
     if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or not parsed.port or not runtime["token"]:
-        raise InjectionError("WorkBuddy requires its authorized loopback extension")
+        raise InjectionError(f"{product} requires its authorized loopback extension")
     request_id = uuid.uuid4().hex
     payload = {"session_id": target["session_id"], "message": message, "clientRequestId": request_id}
     if model is not None:
@@ -556,23 +575,23 @@ def _workbuddy(target, message, model):
     except HTTPError as exc:
         diagnostic.update(exception_fields(exc), http_status=exc.code)
         exc.close()
-        if exc.code in {400, 401, 404}:  # The extension rejects these before sendPrompt.
-            raise InjectionError(f"WorkBuddy receiver rejected (HTTP {exc.code})",
+        if exc.code in {400, 401, 404}:  # The extension rejects these before native submission.
+            raise InjectionError(f"{product} receiver rejected (HTTP {exc.code})",
                                  code="receiver_rejected", diagnostic=diagnostic) from exc
-        raise InjectionUncertain(f"WorkBuddy receiver HTTP {exc.code} delivery not confirmed; do not resend",
+        raise InjectionUncertain(f"{product} receiver HTTP {exc.code} delivery not confirmed; do not resend",
                                  diagnostic=diagnostic) from exc
     except (URLError, OSError) as exc:
         reason = exc.reason if isinstance(exc, URLError) else exc
         diagnostic.update(exception_fields(exc))
         if isinstance(reason, ConnectionRefusedError) or (isinstance(reason, OSError) and reason.errno == errno.ECONNREFUSED):
-            raise InjectionError("WorkBuddy receiver connection refused; no reminder delivered",
+            raise InjectionError(f"{product} receiver connection refused; no reminder delivered",
                                  code="receiver_connection_refused", state="receiver_offline", diagnostic=diagnostic) from exc
-        raise InjectionUncertain("WorkBuddy receiver response not confirmed; do not resend", diagnostic=diagnostic) from exc
+        raise InjectionUncertain(f"{product} receiver response not confirmed; do not resend", diagnostic=diagnostic) from exc
     except (HTTPException, json.JSONDecodeError, UnicodeError) as exc:
-        raise InjectionUncertain("WorkBuddy receiver response unreadable; do not resend",
+        raise InjectionUncertain(f"{product} receiver response unreadable; do not resend",
                                  diagnostic={**diagnostic, **exception_fields(exc)}) from exc
     if status != 200 or not isinstance(result, dict) or result.get("session_id") != target["session_id"] or result.get("clientRequestId") != request_id:
-        raise InjectionUncertain("WorkBuddy native send receipt identity not confirmed; do not resend", diagnostic=diagnostic)
+        raise InjectionUncertain(f"{product} native send receipt identity not confirmed; do not resend", diagnostic=diagnostic)
     bridge = result.get("bridge_result")
     return {"request_id": request_id, "native_disposition": bridge.get("disposition") if isinstance(bridge, dict) else None}
 
@@ -795,7 +814,8 @@ def inject(target, message, *, model=None):
     if not isinstance(target.get("session_id"), str) or not target["session_id"].strip():
         raise ValueError("session_id must be an explicit native target")
     runtime = target["runtime"]
-    functions = {"codex": _codex, "opencode": _opencode, "workbuddy": _workbuddy, "dsh": _dsh}
+    functions = {"codex": _codex, "opencode": _opencode, "workbuddy": _workbuddy,
+                 "antigravity": _antigravity, "dsh": _dsh}
     if runtime not in functions:
         raise ValueError(f"Unsupported native Runtime: {runtime}")
     extension = target.get("extension") or {}
