@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 99
+version: 100
 ---
 
 # PAOS 操作指南
@@ -92,11 +92,11 @@ S号寻址和跨Project参数查安装 `agent send --help`。普通消息使用�
 
 正式入职或换Runtime时，通过正常 `wake bind` 一次补完整Contact。恢复沿原Home、Thread、模型和STOP，不重复绑定或复制同事凭据；配置缺项按同版帮助修准确登记。
 
-已配置Codex接收器的Agent每次从原Desktop复工，先执行安装CLI的 `paos wake prepare-current`，再读取本人当前任务。该命令从宿主原有环境与登记定位本人，支持Project Agent与安装级Rooter，不接收同事ID、Thread、pipe或凭据。它只准备本人的被动接收入口，不发送提醒、不启动Harness或模型、不重放消息。启动结果仍需正常 `wake status` 确认就绪；`contact.py prepare` 保持只读，不能代替本命令。
+已配置 Codex 接收器的本人从原 Desktop 复工时，使用安装 CLI 的 `paos orient <project> <本人Sxxx> --resume`。安装级 Rooter 使用 `paos attention rooter-show --resume`。复工同时读取本人原件并准备接收器。只单独准备时，仍用 `paos wake prepare-current`。`receiver_preparation` 回告准备是否启动、复用或受阻。`paos wake status` 可核实际就绪，实际接续看本人读信。`orient --read` 和 `contact.py prepare` 供只读查询。
 
 正常准备会核本人进程实例、已鉴权接收器和其实际捕获的Desktop连接。同一有效连接复用；宿主连接已更换时，沿已确认本人的恢复路径处理。缺原环境、连接证明未知、外Thread或STOP按准确错误保留。失败只报告具体断点，不换身份或自动重试。
 
-安装人仍可将同版 `scripts/codex_receiver_session_start.py` 接入SessionStart startup/resume及UserPromptSubmit，保留宿主正常review/trust。但恢复不能只依赖Hook：本机定义可信不等于当前编排会执行它；[官方说明](https://learn.chatgpt.com/docs/hooks)明确云编排不加载本机command Hook。当前会话是否执行须用真实事件核验，不以人工prepare或接收器存活冒充。
+安装人可将同版 `scripts/codex_receiver_session_start.py` 接到 SessionStart startup/resume 和 UserPromptSubmit，按宿主入口审阅。登记的 Hook 到达 Python 后，接收器生命周期日志中的 `owner_hook_entered` 记录事件以及本人 Thread、连接环境是否可用。SessionStart 缺少 Desktop 环境时，Hook 提示本会话在原工具环境走复工入口。宿主加载事件决定 Hook 是否执行，云编排只支持其管理的 Global MCP Hook。 [Codex Hooks](https://learn.chatgpt.com/docs/hooks#hooks-with-cloud-orchestration)
 
 旧接收器缺本版连接证明，或需要载入新接收行为时，本人从安装Source的scripts目录执行 `python -X utf8 -B codex_receiver_session_start.py --update-current`；它只管理已核本人的原实例，保留原locator与STOP。正常复工不反复重载健康实例，也不因Source其它模块升级而重启所有接收器。
 

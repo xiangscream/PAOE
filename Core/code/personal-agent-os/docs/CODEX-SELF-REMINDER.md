@@ -4,7 +4,7 @@
 
 ## 目标侧启动
 
-目标本人每次从 Codex Desktop 原工具环境复工，先用安装CLI执行 `paos wake prepare-current`。它沿下述同一准备函数运行，支持Project与Rooter，不接受目标参数、不发送提醒。命令成功只报告启动或复用；随后读正常wake status核就绪。缺原环境或STOP跳过为CLI非零结果。
+目标本人从 Codex Desktop 原工具环境复工时，用安装 CLI 执行 `paos orient <project> <本人Sxxx> --resume`。Rooter 用 `paos attention rooter-show --resume`。两者读取本人工作上下文并准备同一接收器。只准备接收器的维护命令是 `paos wake prepare-current`。启动或复用回执与 `wake status` 就绪、读信证据分别核对。
 
 底层脚本仍支持维护调用。由目标本人从 Codex Desktop 正常提供的原生工具环境执行人工 prepare：使用已安装 Windows Python，工作目录为安装 Source 的 `scripts`，运行 `python -X utf8 -B codex_receiver_session_start.py --prepare-current`。本入口沿 installation、registry 和 Contact 唯一定位调用者本人的 Home，读取已登记 Python、运行文件和 STOP；不接收目标、pipe 或身份覆盖参数，也不读取伪造的 Hook 事件。
 
@@ -82,7 +82,7 @@ An installed hook must be checked on its own host; source files and prior adopti
 
 ## 正常复工与宿主接线
 
-正常工作入口使用 `paos wake prepare-current`；它调用同一 `prepare_current`，保留原Home、Thread、模型、Contact和STOP。健康且同连接的接收器不重复启动；失效或换连接沿原正常路径处理。状态查询保持只读。
+正常复工入口的 `--resume` 调用同一 `prepare_current`，校验请求的登记工位属于本人。健康且同连接的接收器直接复用，失效或换连接沿原正常路径处理。`receiver_preparation` 保留恢复结果。状态查询保持只读。
 
 宿主Hook可提供自动准备，但不是正常复工的唯一执行面。[官方Hooks说明](https://learn.chatgpt.com/docs/hooks)区分本地编排与云编排，后者不加载本机command Hook。定义已信任与当前会话真实执行必须分别核实；没有事件证据时保留未知，不用合成stdin、配置存在或手工准备证明自动恢复。
 
@@ -94,7 +94,7 @@ An installed hook must be checked on its own host; source files and prior adopti
 
 常驻观察应核具体工具Job的成员，以及创建工具结束、后继自然回合中的正式状态。嵌套Job可能仍有外层归属；不能仅因 `IsProcessInJob(..., NULL)` 为true就反复停止活实例。脱离工具Job不等于持续自愈，也不承诺Desktop退出、注销或重启后的可用性。历史缺exit的退出原因仍未知；自然正式来件的受理与业务消费另核，不盲发测试提醒。
 
-脚本不处理其他SessionStart来源，也不监听接收器进程退出。切回已打开的聊天或接收器突然退出本身不会执行准备；UserPromptSubmit只在真实输入事件发生时运行。没有Owner事件或宿主离线时不承诺自动重建，也不启动Harness。若Hook缺本人环境，保留明确断点，由Owner沿原工具入口prepare，不借用其他会话。退出日志只有starting/ready且无exit时，原因继续未知，不能仅凭父进程消失或当前无接收器就归因宿主清理、整机重启或信任缺失。
+切回已加载聊天时，是否收到 SessionStart 由宿主决定。UserPromptSubmit 对应实际输入。如果 SessionStart 到达脚本而缺少 Desktop 环境，已登记的会话会在 `additionalContext` 收到本人的 `--resume` 入口。接收器生命周期日志的 `owner_hook_entered` 保存事件和环境可用性，不含 prompt、管道地址或凭据。退出原因取真实退出记录。
 
 ## 验证
 

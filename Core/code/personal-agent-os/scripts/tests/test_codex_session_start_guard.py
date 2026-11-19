@@ -92,6 +92,16 @@ class SessionStartGuardTests(unittest.TestCase):
         self.assertIn("original_desktop_environment_missing", result["systemMessage"])
         launch.assert_not_called()
 
+    def test_resume_cannot_prepare_a_different_home(self):
+        own, _ = hook.registered_target('own-thread', self.descriptor)
+        other = {**own, 'home_id': 'another-home'}
+        with patch.object(hook, 'os', SimpleNamespace(name='nt', environ=self.environment)), \
+             patch.object(hook.subprocess, 'Popen') as launch:
+            result = paos._prepare_resume_receiver(Path(self.descriptor['path']), other)
+        self.assertFalse(result['ok'])
+        self.assertIn('resume_target_not_owner', result['systemMessage'])
+        launch.assert_not_called()
+
     def test_cli_stop_preserves_registration_and_does_not_start(self):
         stop = Path(self.target["stop_file"])
         stop.write_text("Human STOP", encoding="utf-8")
@@ -529,10 +539,21 @@ class SessionStartGuardTests(unittest.TestCase):
     def test_stdin_command_reports_missing_environment(self):
         environment = {key: value for key, value in os.environ.items()
                        if key not in {"CODEX_THREAD_ID", "CODEX_APP_TOOLS_PIPE_PATH"}}
+        environment['PAOS_INSTALLATION_FILE'] = self.descriptor['path']
+        runtime = Path(self.target['extension']['receiver_runtime_file'])
+        runtime.parent.mkdir()
         result = subprocess.run([sys.executable, "-B", str(Path(hook.__file__))],
             input=json.dumps(self.event).encode("utf-8"), env=environment, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("original_desktop_environment_missing", json.loads(result.stdout)["systemMessage"])
+        reply = json.loads(result.stdout)
+        self.assertIn("original_desktop_environment_missing", reply["systemMessage"])
+        self.assertIn('orient 3002 3002-s031 --resume', reply['hookSpecificOutput']['additionalContext'])
+        observed = json.loads(runtime.with_name(runtime.name + '.lifecycle.jsonl').read_text('utf-8'))
+        self.assertEqual(observed['event'], 'owner_hook_entered')
+        self.assertEqual(observed['hook'], 'SessionStart')
+        self.assertFalse(observed['owner_thread_matches'])
+        self.assertFalse(observed['desktop_connection_present'])
+        self.assertFalse(runtime.exists())
 
     def test_manual_command_needs_original_environment_and_rejects_target_override(self):
         environment = {key: value for key, value in os.environ.items()
