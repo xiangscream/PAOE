@@ -43,9 +43,9 @@ $targetProject = '3004'  # 接手人所在项目，查对方唤醒状态时用
 | 找协作者 | `& $paos peers $project $me --summary` | 按员工号和职责选择接手人。 |
 | 收信并读原文 | `& $paos inbox $project $me`，再执行 `& $paos mail read $project $me $mailId` | 从收件结果取真实的 `$mailId` 和对应的 `$noticeId`。 |
 | 静默接手并入 Task | `& $paos mail claim $project $me $mailId --task $taskId`（Rooter 用 `mail rooter-claim $mailId --task $taskId`） | 接手静默且幂等；省略 `--task` 时用 `--title` 新建 Task。个人 Current 由本人按优先级管理。细则见 [邮件接手与提醒边界](guide-paos-cat-operations.md#邮件接手todo-联动与提醒边界)。 |
-| 写回交付结果 | `& $paos mail result $project $me $mailId --result '已改稿并回读' --artifact-ref $artifact`（Rooter 用 `mail rooter-result $mailId ...`） | 写回关联 Task 与 Notice；需下游接续、提问或明确接不了时按下一节定向提醒。 |
+| 写回交付结果 | `& $paos mail result $project $me $mailId --result '已改稿并回读，原件见 Works/...' --artifact-ref $artifact`（Rooter 用 `mail rooter-result $mailId ...`） | `--result` 用单行、最多 500 字，需发件人直接打开原件时把路径写进结果；`--artifact-ref` 记入接件人 Task。本命令写回关联 Task 与 Notice 并收口原信，无需再跑 `attention handle`；不唤醒对方，需验收或接续时按下一节定向提醒。 |
 | 更新本人 Current | `& $paos attention todo-update $project $me --set 'next_action=核对原稿后交付链接'` | 写当前可执行的一步。Tasks/Pinned 的修改用 `attention todo-write --help` 查看正文与指纹参数。 |
-| 处理完成的通知 | `& $paos attention handle $project $me $noticeId --resolution '已交付' --action-ref $artifact` | `$artifact` 填实际成果路径，业务结果写回项目。 |
+| 处理普通通知 | `& $paos attention handle $project $me $noticeId --resolution '已处理' --action-ref $artifact` | 用于不走 `mail result` 路径的普通通知收口；`$artifact` 填实际成果或记录路径，业务结果写回项目。 |
 
 ### 派工与唤醒
 
