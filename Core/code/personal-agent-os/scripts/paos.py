@@ -668,7 +668,29 @@ def _execute_orient_read(
     if label:
         payload["identity"]["staff_number"] = label
         payload["staff_number"] = label
-    return payload if args.json_output else render_recovery_read(payload)
+    receiver = None
+    if getattr(args, "resume_owner", False):
+        receiver = _prepare_resume_receiver(installation_path, ref)
+        payload["receiver_preparation"] = receiver
+    if args.json_output:
+        return payload
+    originals = render_recovery_read(payload)
+    return f"{receiver['systemMessage']}\n\n{originals}" if receiver else originals
+
+
+def _prepare_resume_receiver(installation_path, home):
+    from codex_receiver_session_start import prepare_current
+    from wakeup_native.codex_receiver import ReceiverError
+
+    try:
+        message = prepare_current(installation_path=installation_path, expected_home=home)
+    except (ReceiverError, InjectionError, InstallationProblem, AttentionServiceProblem,
+            HomeProblem, RegistryProblem, WorkstationProblem, OSError, ValueError, KeyError) as problem:
+        message = f"receiver_prepare_unavailable: {getattr(problem, 'code', str(problem))}"
+    return {
+        "ok": message.startswith(("receiver_prepare_started:", "receiver_prepare_reused:")),
+        "systemMessage": message,
+    }
 
 
 def execute_orient(
@@ -676,6 +698,10 @@ def execute_orient(
     registry: ProjectRegistry,
     installation_path: Path,
 ) -> Any:
+    if getattr(args, "resume_owner", False):
+        if args.root:
+            raise CliError("复工使用本人登记的 Project root。", error_code="orient_resume_root_override")
+        return _execute_orient_read(args, registry, installation_path)
     if getattr(args, "read_originals", False):
         return _execute_orient_read(args, registry, installation_path)
     payload = _read_orient_inputs(
@@ -2097,7 +2123,10 @@ def execute_attention(
                 require_todo_current=(args.attention_command != "rooter-todo-write"),
             )
             if args.attention_command == "rooter-show":
-                return {"ok": True, **attention_read_home_state(home_ref)}
+                result = {"ok": True, **attention_read_home_state(home_ref)}
+                if getattr(args, "resume_owner", False):
+                    result["receiver_preparation"] = _prepare_resume_receiver(installation_path, home_ref)
+                return result
             if args.attention_command == "rooter-archive-input":
                 return {
                     "ok": True,
@@ -3237,8 +3266,11 @@ def build_parser() -> argparse.ArgumentParser:
     orient.add_argument("project_id")
     orient.add_argument("agent_id")
     orient.add_argument("--root", help="Override Project root when root_path is missing")
-    orient.add_argument("--read", dest="read_originals", action="store_true",
-                        help="Print the current Project AGENTS, Home AGENTS, INDEX, ENTRY and TODO source text")
+    orientation = orient.add_mutually_exclusive_group()
+    orientation.add_argument("--read", dest="read_originals", action="store_true",
+                             help="Print the current Project AGENTS, Home AGENTS, INDEX, ENTRY and TODO source text")
+    orientation.add_argument("--resume", dest="resume_owner", action="store_true",
+                             help="Prepare your registered Codex receiver and read your recovery source text")
 
     status = sub.add_parser(
         "status",
@@ -3462,6 +3494,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Read the registered Rooter Home without creating a Project Session",
     )
     x.add_argument("--home-id", default="rooter-001")
+    x.add_argument("--resume", dest="resume_owner", action="store_true",
+                   help="Prepare your registered Codex receiver during Rooter recovery")
 
     x = attention_sub.add_parser(
         "rooter-archive-input",

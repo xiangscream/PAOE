@@ -156,6 +156,27 @@ class HeadlessTests(unittest.TestCase):
         self.assertIn('project_agents', str(missing.get('details', {})))
 
 
+    def test_orient_resume_prepares_the_requested_home_and_returns_originals(self):
+        import codex_receiver_session_start as receiver
+
+        home = self.vault / 'Workstations/3002-s001'
+        (self.vault / 'AGENTS.md').write_text('# Project rules', encoding='utf-8')
+        (self.vault / 'INDEX.md').write_text('# Project index', encoding='utf-8')
+        with patch.object(receiver, 'prepare_current', return_value='receiver_prepare_started: fixture PID 123') as prepare:
+            plain = self.call('orient', '3002', '3002-s001', '--read')[1]
+            self.assertNotIn('receiver_preparation', plain)
+            prepare.assert_not_called()
+            resumed = self.call('orient', '3002', '3002-s001', '--resume')[1]
+            self.assertEqual(resumed['recovery'], plain['recovery'])
+            self.assertTrue(resumed['receiver_preparation']['ok'])
+            prepare.assert_called_once()
+            self.assertEqual(prepare.call_args.kwargs['installation_path'].resolve(), self.install.resolve())
+            self.assertEqual(Path(prepare.call_args.kwargs['expected_home']['home_path']).resolve(), home.resolve())
+        with patch.object(receiver, 'prepare_current', return_value='receiver_prepare_skipped: original_STOP_present'):
+            stopped = self.call('orient', '3002', '3002-s001', '--resume')[1]
+            self.assertFalse(stopped['receiver_preparation']['ok'])
+            self.assertEqual(stopped['recovery'], plain['recovery'])
+
     def test_orient_read_rejects_unreadable_home_rules(self):
         (self.vault / 'AGENTS.md').write_text('# Project rules', encoding='utf-8')
         (self.vault / 'INDEX.md').write_text('# Project index', encoding='utf-8')

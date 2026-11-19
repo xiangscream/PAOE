@@ -19,7 +19,7 @@ from paos_installation import InstallationProblem, load_installation_descriptor,
 from paos_registry import ProjectRegistry
 from paos_workstation import WorkstationProblem, posix_windows_drive_locator
 from runtime_injection import InjectionError
-from wakeup_native.codex_receiver import ReceiverError, reusable_owned_runtime, retire_owned_runtime
+from wakeup_native.codex_receiver import ReceiverError, record_lifecycle, reusable_owned_runtime, retire_owned_runtime
 
 
 def registered_target(thread_id, descriptor):
@@ -56,15 +56,43 @@ def registered_target(thread_id, descriptor):
     return matches[0]
 
 
-def prepare(event):
+def _is_prepare_event(event):
     name = event.get("hook_event_name")
-    if not (name == "UserPromptSubmit" or
-            name == "SessionStart" and event.get("source") in {"startup", "resume"}):
+    return name == "UserPromptSubmit" or name == "SessionStart" and event.get("source") in {"startup", "resume"}
+
+
+def observe_hook_entry(event):
+    """Record that a registered hook reached Python before the Owner environment guard."""
+    thread = event.get("session_id")
+    if not _is_prepare_event(event) or not isinstance(thread, str) or not thread:
+        return
+    descriptor = load_installation_descriptor(resolve_installation_path())
+    try:
+        home, target = registered_target(thread, descriptor)
+    except ValueError as exc:
+        if str(exc) == "contact_thread_not_registered":
+            return
+        raise
+    locator = (target.get("extension") or {}).get("receiver_runtime_file")
+    if not isinstance(locator, str) or not locator:
+        return home
+    runtime = Path(posix_windows_drive_locator(locator))
+    if not runtime.is_absolute() or not runtime.parent.is_dir():
+        return home
+    with runtime.with_name(runtime.name + ".lifecycle.jsonl").open("a", encoding="utf-8") as stream:
+        record_lifecycle(stream, "owner_hook_entered", hook=event["hook_event_name"], parent_pid=os.getppid(),
+                         owner_thread_matches=os.environ.get("CODEX_THREAD_ID") == thread,
+                         desktop_connection_present=bool(os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")))
+    return home
+
+
+def prepare(event):
+    if not _is_prepare_event(event):
         return "receiver_prepare_skipped: unsupported_event"
     return prepare_current(event=event)
 
 
-def prepare_current(*, event=None, update=False):
+def prepare_current(*, event=None, update=False, installation_path=None, expected_home=None):
     """Resolve only the current Desktop Owner; never accept a target override."""
     thread_id = os.environ.get("CODEX_THREAD_ID", "")
     if not thread_id or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH"):
@@ -74,8 +102,11 @@ def prepare_current(*, event=None, update=False):
     if os.name != "nt":
         return "receiver_prepare_skipped: windows_desktop_required"
 
-    descriptor = load_installation_descriptor(resolve_installation_path())
+    descriptor = load_installation_descriptor(installation_path or resolve_installation_path())
     home, target = registered_target(thread_id, descriptor)
+    if expected_home is not None and any(home.get(field) != expected_home.get(field)
+                                         for field in ("home_kind", "project_id", "home_id", "home_path")):
+        return "receiver_prepare_skipped: resume_target_not_owner"
     # Bind establishes Contact configuration; concurrent Owner resumes are readers.
     extension = target.get("extension") or {}
     locators = [extension.get("receiver_runtime_file"), target.get("stop_file"), extension.get("windows_python")]
@@ -115,6 +146,7 @@ def main():
                           help="Update only this Desktop Owner's verified receiver; keep STOP and unknown instances.")
     args = parser.parse_args()
     exit_code = 0
+    output = {}
     try:
         if args.update_current:
             message = prepare_current(update=True)
@@ -122,13 +154,30 @@ def main():
             message = prepare_current()
         else:
             event = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
+            home = None
+            try:
+                home = observe_hook_entry(event)
+            except (OSError, ValueError, KeyError, InstallationProblem, AttentionServiceProblem,
+                    HomeProblem, WorkstationProblem) as exc:
+                print(f"receiver_hook_observation_unavailable: {type(exc).__name__}", file=sys.stderr)
             message = prepare(event)
+            if (home and event.get("hook_event_name") == "SessionStart"
+                    and message == "receiver_prepare_skipped: original_desktop_environment_missing"):
+                command = ("attention rooter-show --resume" if home["home_kind"] == "rooter"
+                           else f"orient {home['project_id']} {home['home_id']} --resume")
+                output["hookSpecificOutput"] = {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": (
+                        "本会话已登记 PAOE 接收器。请用本人 ENTRY 中的安装 CLI 前缀，在当前原 Desktop 工具环境运行 "
+                        f"`{command}` 完成复工，并继续阅读当前输入。"
+                    ),
+                }
     except (OSError, UnicodeError, ValueError, KeyError, HomeProblem, InstallationProblem,
             AttentionServiceProblem, WorkstationProblem, ReceiverError, InjectionError) as exc:
         detail = f"{exc.code}: {exc}" if isinstance(exc, ReceiverError) else str(exc)
         message = f"receiver_prepare_unavailable: {detail}"
         exit_code = 1 if args.prepare_current or args.update_current else 0
-    print(json.dumps({"systemMessage": message}, ensure_ascii=False))
+    print(json.dumps({"systemMessage": message, **output}))
     return exit_code
 
 

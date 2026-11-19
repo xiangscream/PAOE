@@ -32,7 +32,7 @@ python notices/codex.py prepare
 python notices/codex.py status
 ```
 
-`prepare` 必须由本人在 Codex Desktop 工具环境执行。自动恢复复用已安装 SessionStart Hook；新建或修改的 Hook 需在官方入口审阅信任，见 [Hooks](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)。人工准备与自动恢复分别验证。
+已登记 Codex 接收器的本人从原 Desktop 用 `paos orient <project> <本人Sxxx> --resume` 复工，入口同时准备接收器。宿主可用时，SessionStart 和 UserPromptSubmit 也调用准备逻辑。新建或修改的 Hook 在官方入口审阅，实际执行看接收器日志。 [Hooks](https://learn.chatgpt.com/docs/hooks#review-and-trust-hooks)
 
 **OpenCode / OpenCode2：**
 

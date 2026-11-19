@@ -5,7 +5,7 @@ title: Project AGENTS 入口模板
 description: 项目公共工作指南的唯一编辑母本；项目副本承载派生公共区与本项目约定。
 tags: template, harness, entry
 status: active
-version: 27
+version: 28
 ---
 
 # 项目 <project-id> · Agent 工作入口
@@ -32,7 +32,7 @@ PAOE 是 Human 和多名 Agent 共同工作的本地环境。Human 给出目标�
 
 ### 1. 从当前任务恢复
 
-新会话、接班或压缩后，从本人 ENTRY 取得 CLI 前缀。已登记 Codex 接收器的本人，在原 Desktop 工具环境先执行 `wake prepare-current`；其他 Harness 沿 ENTRY 的正常入口。随后执行 `orient <project> <Sxxx> --read`，将当前 AGENTS、项目 INDEX、本人 ENTRY/TODO 的完整输出读入本轮上下文，再读当前任务所需原件。准备失败时保留具体错误交 Rooter，继续可独立完成的责任。摘要只帮助定位。Rooter 直接读本人工位和 System 入口，不虚构项目。
+新会话、接班或压缩后，从本人 ENTRY 取得 CLI 前缀。已登记 Codex 接收器的本人，在原 Desktop 工具环境执行 `orient <project> <本人Sxxx> --resume`。这一步同时准备接收器和读取当前 AGENTS、项目 INDEX、本人 ENTRY/TODO。其他 Harness 执行 `orient <project> <本人Sxxx> --read`。完整阅读返回原文，再读当前任务所需输入。准备失败时保留具体错误交 Rooter，继续可独立完成的责任。Rooter 从安装级入口执行 `attention rooter-show --resume` 并读本人工位和 System 原件。
 
 共同经历（EXM）是持续维护的外置记忆。恢复本人 Current 和当前输入后，在写新 TODO 或第一份实质计划前，读完页首“共同经历”中的短背景；进入新阶段、压缩恢复继续规划时也先读。主动联想可用的跨项目结论、成果与相关同事，结合本任务推进。
 
