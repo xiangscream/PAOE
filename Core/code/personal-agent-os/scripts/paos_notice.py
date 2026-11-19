@@ -1073,13 +1073,18 @@ def claim_notice(
     return {**read_notice(home_path, notice_id), "claim_changed": True}
 
 
+def normalize_notice_resolution(value: str) -> str:
+    """Apply the handled receipt's resolution contract before related writes."""
+    return _single_line(value, label="resolution")
+
+
 def handle_notice(
     *, home_path: Path, notice_id: str, resolution: str = "", action_ref: str = "",
 ) -> dict[str, Any]:
     """Atomically establish handled fact without read-modify-replace."""
     home_path = Path(home_path)
     current = read_notice(home_path, notice_id)
-    resolution = _single_line(resolution, label="resolution", max_chars=500)
+    resolution = normalize_notice_resolution(resolution)
     action_ref = _single_line(action_ref, label="action_ref", max_chars=1000)
     if current.get("state") == "handled":
         if (str(current.get("resolution") or "") == resolution

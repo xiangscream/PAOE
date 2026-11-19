@@ -490,6 +490,14 @@ class HeadlessTests(unittest.TestCase):
         progress = self.call('mail', 'reply', '3002', receiver, 'mail-A',
                              '--body', '进展', '--message-id', 'A-progress')[1]
         self.assertEqual(progress['handling']['notice']['state'], 'pending')
+        receiver_todo = self.vault / 'Workstations' / receiver / 'TODO.md'
+        receiver_before = receiver_todo.read_bytes()
+        _, too_long = self.call('mail', 'result', '3002', receiver, 'mail-A',
+                                '--result', 'x' * 600, ok=False)
+        self.assertEqual(too_long['error_code'], 'notice_field_too_long')
+        self.assertEqual(receiver_todo.read_bytes(), receiver_before)
+        self.assertEqual(self.call('mail', 'status', '3002', 'mail-A')[1]['deliveries'][0]['handoff']['state'],
+                         'claimed')
         before_result = todo.read_bytes()
         self.call('mail', 'result', '3002', receiver, 'mail-A', '--result', '交回 A')
         results = self.call(*task_status)[1]
@@ -499,12 +507,17 @@ class HeadlessTests(unittest.TestCase):
         self.call('mail', 'rooter-claim', 'mail-B')
         rooter_claim = self.call('mail', 'status', '3002', 'mail-B')[1]['deliveries'][0]['handoff']
         self.assertEqual((rooter_claim['state'], rooter_claim['claimed_by']), ('claimed', 'rooter-001'))
+        rooter_todo = self.rooter / 'TODO.md'
+        rooter_before = rooter_todo.read_bytes()
+        _, too_long = self.call('mail', 'rooter-result', 'mail-B', '--result', 'x' * 600, ok=False)
+        self.assertEqual(too_long['error_code'], 'notice_field_too_long')
+        self.assertEqual(rooter_todo.read_bytes(), rooter_before)
+        self.assertEqual(self.call(*task_status)[1]['mail_waiting'][0]['message_id'], 'mail-B')
         self.call('mail', 'rooter-result', 'mail-B', '--result', '安装报告')
         self.assertEqual(self.call(*task_status)[1]['mail_waiting'], [])
         self.assertEqual(todo.read_bytes(), before_result)
         self.assertEqual(parse_todo(todo.read_text(encoding='utf-8'))['current'], current)
 
-        rooter_todo = self.rooter / 'TODO.md'
         rooter_todo.write_text(render_todo(
             home_kind='rooter', home_id='rooter-001',
             objective='采用新版', next_action='等项目回告',

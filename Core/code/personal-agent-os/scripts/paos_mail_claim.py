@@ -16,7 +16,8 @@ from paos_attention_service import (
     read_project_mail_input as attention_read_project_mail_input,
 )
 from paos_notice import (
-    claim_notice, handle_notice, input_identity, notice_id_for, read_notice,
+    claim_notice, handle_notice, input_identity, normalize_notice_resolution,
+    notice_id_for, read_notice,
 )
 from paos_todo import parse_todo, render_todo, write_todo
 
@@ -143,6 +144,7 @@ def result_mail(*, root: Path, project: dict[str, Any], agent_id: str,
                 message_id: str, result: str, task_id: str = "",
                 artifact_ref: str = "",
                 recipient_aliases: set[str] | None = None) -> dict[str, Any]:
+    resolution = normalize_notice_resolution(result)
     read = attention_read_project_mail_input(
         root=root, project=project, agent_id=agent_id, message_id=message_id,
         recipient_aliases=recipient_aliases)
@@ -155,7 +157,7 @@ def result_mail(*, root: Path, project: dict[str, Any], agent_id: str,
         raise ValueError(f"Result 只能写回接手 Task {claimed_task}")
     task_id = claimed_task
     if notice.get("state") == "handled":
-        if (str(notice.get("resolution") or "") == result
+        if (str(notice.get("resolution") or "") == resolution
                 and str(notice.get("action_ref") or "") == task_id):
             doc, _ = _load_todo(Path(home["home_path"]) / "TODO.md")
             selected = next(
@@ -211,7 +213,7 @@ def result_mail(*, root: Path, project: dict[str, Any], agent_id: str,
         write_todo(todo_path, text, expected_fingerprint=fingerprint)
     handled = attention_handle_mail_input(
         root=root, project=project, agent_id=agent_id, message_id=message_id,
-        resolution=result, action_ref=task_id,
+        resolution=resolution, action_ref=task_id,
         recipient_aliases=recipient_aliases)
     return {
         "schema": "paos-mail-result/v1", "message_id": message_id,
@@ -277,6 +279,7 @@ def claim_rooter_mail(*, home: dict[str, Any], message_id: str,
 
 def result_rooter_mail(*, home: dict[str, Any], message_id: str, result: str,
                        task_id: str = "", artifact_ref: str = "") -> dict[str, Any]:
+    resolution = normalize_notice_resolution(result)
     notice = _rooter_notice(home, message_id)
     if not notice.get("claimed"):
         raise ValueError("Rooter Mail 尚未 claim，不能直接写 result")
@@ -285,7 +288,7 @@ def result_rooter_mail(*, home: dict[str, Any], message_id: str, result: str,
         raise ValueError(f"Result 只能写回接手 Task {claimed_task}")
     task_id = claimed_task
     if notice.get("state") == "handled":
-        if (str(notice.get("resolution") or "") == result
+        if (str(notice.get("resolution") or "") == resolution
                 and str(notice.get("action_ref") or "") == task_id):
             doc, _ = _load_todo(Path(home["home_path"]) / "TODO.md")
             selected = next(
@@ -336,7 +339,7 @@ def result_rooter_mail(*, home: dict[str, Any], message_id: str, result: str,
         write_todo(todo_path, text, expected_fingerprint=fingerprint)
     handled = handle_notice(
         home_path=home_path, notice_id=notice["notice_id"],
-        resolution=result, action_ref=task_id)
+        resolution=resolution, action_ref=task_id)
     return {
         "schema": "paos-mail-result/v1", "message_id": message_id,
         "home": home, "task_id": task_id, "task_state": selected.get("state"),

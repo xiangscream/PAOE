@@ -3915,7 +3915,7 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("project_id")
     x.add_argument("agent_id")
     x.add_argument("message_id")
-    x.add_argument("--result", required=True, help="Result text (literal, @FILE or -)")
+    x.add_argument("--result", required=True, help="One line up to 500 characters (literal, @FILE or -)")
     x.add_argument("--task", help="Task ID; omit to use the Task linked by claim")
     x.add_argument("--artifact-ref", help="Result artifact path or durable ref")
 
@@ -3932,7 +3932,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Record a result on a claimed Rooter Mail Task",
     )
     x.add_argument("message_id")
-    x.add_argument("--result", required=True, help="Result text (literal, @FILE or -)")
+    x.add_argument("--result", required=True, help="One line up to 500 characters (literal, @FILE or -)")
     x.add_argument("--task", help="Rooter Task ID; omit to use the linked Task")
     x.add_argument("--artifact-ref", help="Result artifact path or durable ref")
 
