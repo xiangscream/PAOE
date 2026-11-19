@@ -1,90 +1,80 @@
-# 项目库母版
+# 项目库母版与标准结构
 
-本目录定义**独立 Project Obsidian Vault 的完整基本架构**，目录与文件名可按项目业务适配，但下面各项职责必须有明确落点，且原件唯一（SSOT）。
+本目录定义 **独立 Project Obsidian Vault 的标准架构与母本规范**。各目录与文件职责有明确落点，且保持单点权威（SSOT）。
 
-本页是母版使用说明，不复制进实际项目。新建时使用下面的文件和目录；已有项目继续维护自己的业务原件与工位。
+本页是母版设计与创建说明，不复制进实际业务项目。
 
-## 标准结构与职责
+---
+
+## 1. 标准结构与文件职责
 
 ```text
 <Project Vault>/
-├── AGENTS.md           # 生效公共运行区 + 项目特殊运行约定
-├── INDEX.md            # 最新业务口径与资料/成果导航
-├── TEAM.md             # 项目真实成员、职责、Harness 与工位
-├── HISTORY.md          # 按业务主题归并的阶段成果与经验
-├── Inbox/              # 尚未归位的项目输入
-├── Materials/          # 原始资料、引用、参考、项目经验
-├── Works/              # 正在形成的正文、报告和成果
-├── Decisions/          # 正式决策和被接受结论
+├── AGENTS.md           # 生效公共运行区（底座契约） + 本项目特殊约定
+├── INDEX.md            # 项目最新业务口径、成果导航与外部原件稳定链接
+├── TEAM.md             # 项目在队成员、职责、专长、Harness 与工位入口
+├── HISTORY.md          # 按业务主题归并的阶段成果与关键经验
+├── Inbox/              # 尚未归位的临时输入与待确认材料
+├── Materials/          # 原始参考资料、外部输入快照与项目经验（TIPS.md）
+├── Works/              # 正在形成的正文、过程稿、评议与交付物
+├── Decisions/          # 正式决策、被接受结论与阶段基线
 ├── Workstations/
 │   └── <Sxxx>/
-│       ├── ENTRY.md    # 流程约束与本人业务入口
-│       ├── TODO.md     # Pinned / Current / Tasks / 结果
-│       ├── mailbox/    # 持久 Mail 原件
-│       ├── notices/    # 输入处理事实
-│       │   ├── README.md # 入职与按 Harness 配置唤醒器
-│       │   ├── codex.py   # Codex 可执行入口
-│       │   ├── opencode.py # OpenCode 可执行入口
-│       │   ├── dsh.py      # DSH 固定 Session 可执行入口
-│       │   └── wake_entry.py # 共用当前安装与本人工位校验
-│       └── Contact     # 如已配置，原生接收/STOP 等入口
-└── Archive/            # 可选历史导航；大批历史正文放在 Vault 外
+│       ├── ENTRY.md    # 工位运行入口、环境恢复与职责导航
+│       ├── TODO.md     # 唯一生效行动状态机（Pinned / Current / Tasks）
+│       ├── mailbox/    # 接收的 Durable Mail 原件
+│       ├── notices/    # 输入处理记录与唤醒器脚本（README / codex / opencode / dsh / wake_entry）
+│       └── Contact     # 本人工位公开联系包（按 OPS 生成）
+└── Archive/            # 库内历史简短导航；大批历史正文置于库外
 ```
 
-`Inbox`、`Materials`、`Works`、`Decisions`、`Workstations`、`Archive` 已是当前 `workstation init` 的标准目录；其他目录、源码库、`.git`、`.obsidian` 及业务文件按实际需要保留。当前业务正文可有多篇，只有各主题的“最新/正式”结论应有唯一权威原件。`HISTORY.md` 从成员已完成 TODO 和成果中提炼阶段进展、关键判断与经验；同一业务主题合并记录，详细过程沿原件回查。项目可在 Vault 旁建立 `<项目名>-History`，或采用安装指定的历史盘；INDEX 指向该库外位置，具体归位与历史规则见 [Project 文件与 Git](../Guide/guide-project-work-world.md#库外历史)。初始化产生 Archive 目录不代表应把全量历史堆在活跃库内。
+### 母本职责对照表（SSOT）
 
-| 母版 | 原件职责 | 已有项目怎样更新 |
+| 母版 / 文件 | 原件职责 | 维护与更新方式 |
 | --- | --- | --- |
-| [AGENTS](AGENTS.md) | 公共运行区唯一母本；项目约定在公共区外 | 只分发公共区，保留项目约定 |
-| [INDEX](INDEX.md) | 项目最新口径、业务原件、仓库及认证取用入口 | 由项目维护；不以母版覆盖业务内容 |
-| [TEAM](TEAM.md) | 项目成员职责、专长、Harness 与工位 | 按真实分工维护，修改原件后刷新 PROJECTS 聚合 |
-| [HISTORY](HISTORY.md) | 有价值的阶段成果、判断与经验 | 归并已完成 TODO，联动 INDEX 与库外清理 |
-| [ENTRY](Workstations/_workstation/ENTRY.md) | 分开说明流程约束与本人业务入口，CLI直接读取 | 生成器只填数据；已有入口按受影响部分合并，重复初始化不覆盖 |
-| [TODO](Workstations/_workstation/TODO.md) | TODO v4 的合法样例 | 只校验格式与身份；当前行动由本人维护，不复制样例任务 |
-| [入职与唤醒说明](Workstations/_workstation/notices/README.md) | 入职四项要求及 Codex / OpenCode / DSH / Antigravity App 使用入口 | 创建者按下方第 4 步补齐 notices 文件与 ONBOARD；当前 CLI 不自动带入，已有人工内容不覆盖 |
-| [采用公告](../Guide/Templates/project-announcement.md) | 一次真实采用事项的消息样板 | 需要时使用；不作为持续规则或任务状态 |
+| [AGENTS](AGENTS.md) | 公共运行区唯一母本；项目特殊约定留在公共区外 | 统一分发公共区；保留项目原有特殊约定 |
+| [INDEX](INDEX.md) | 项目最新业务口径、业务原件与外部权威链接 | 由项目合成人维护；不以母版覆盖业务内容 |
+| [TEAM](TEAM.md) | 项目成员职责、专长、Harness 与工位索引 | 按真实分工维护，修改后刷新 PROJECTS 聚合 |
+| [HISTORY](HISTORY.md) | 按业务主题汇总的阶段成果、关键判断与经验 | 由合成人从成员已完成 TODO 和成果归并 |
+| [ENTRY](Workstations/_workstation/ENTRY.md) | 工位环境恢复命令与本人工位导航 | `workstation init` 初始化展开，后续保留人工配置 |
+| [TODO](Workstations/_workstation/TODO.md) | TODO v4 结构规范与样例 | 本人维护；`todo-update` 维 Current，`todo-write` 维 Tasks |
+| [入职与唤醒说明](Workstations/_workstation/notices/README.md) | 入职四项要求及各 Harness 唤醒配置 | 新工位创建后由创建者带入，保留人工编辑 |
 
-页面可以互相导航；运行规则归 AGENTS，当前业务口径归 INDEX，成员与分工归 TEAM，阶段成果归 HISTORY。正文只在其归属处维护，导航引用原件，派生区通过现有工具更新。完成项汇总和归位随日常交付一起进行，不另抄一份任务流水账。
+---
 
-## 公共区编辑与同步
+## 2. 规则维护与公共区分发
 
-公共运行正文只编辑 [AGENTS 母本公共区](AGENTS.md)。项目副本携带派生公共区，项目约定保留在标记之外。分发、指纹与人工冲突处理的唯一操作正文见 [公共区统一分发](../Guide/guide-upgrade-adoption.md#公共区统一分发system-agents)。
+1. **公共运行区**：只编辑 `System/Project-Template/AGENTS.md` 中的公共区。各项目副本承载派生区，项目独立约定保留在标记之外。具体分发操作见 [公共区统一分发](../Guide/guide-upgrade-adoption.md#公共区统一分发system-agents)。
+2. **ENTRY 模板展开**：ENTRY 母本中的 `{{字段名}}` 由初始化工具替换身份与路径；不执行复杂表达式。Core 不另存文案。
+3. **保护人工基线**：Human 已编辑或确认的正文为后续修改基线。更新只改当前任务涉及段落，不擅自重写整份文件。
 
-ENTRY 母本中的 `{{字段名}}` 只替换身份、路径、链接和 CLI 数据，不执行表达式。标准 System 安装自动定位本文件；独立源码需用 `--entry-template` 指明。Core 不另存 ENTRY 文案。字段名称变更应与生成器同步；缺母本、未知字段或缺少必需字段时明确失败，且不创建工位或分配员工号。
-
-项目内导航直接使用相对 Markdown 链接，无需改成变量。身份、安装位置与跨库入口才按需填值；Libraries、工具和共同经历的直接链接放在 AGENTS 公共区外，从本机登记填写。初始化只创建文件，不配置或验证 Harness/Contact；本人随后填写实际状态与恢复方式，不把模板维护说明写进工位正文。
-
-Human 已编辑或确认的正文作为后续修改基线。更新只改当前任务涉及的段落；同步、迁移、升级或接入生成器均不授权重写其余正文。写前重读原件并核对差异；发现并发编辑先合并。备份用于追溯，不能作为覆盖当前原件的理由。
+---
 
 ## 新项目和工位的创建
 
-1. Human 明确授权建立独立目录及 Obsidian Vault、登记项目；使用母版建立 AGENTS、INDEX、TEAM、HISTORY；当前业务写 INDEX，分工写 TEAM，特殊运行约定写 AGENTS；ENTRY 由正常初始化入口读取母本展开，TODO 使用现行写者初始化。不得由示例虚构成员、任务、凭据或业务结论。
-2. 为新员工选定本机未使用的 Sxxx。新Project用 `project register` 登记；加入已有Project用 `project home-add` 增加该 Sxxx。随后用 `workstation init` 登记号码并创建同名工位。已有员工迁移沿原号码。参数读各自同版 `--help`；已有ENTRY/TODO保留人工内容。原生绑定在工位创建后完成，详见[接口参考](../Guide/guide-paos-interface-reference.md#项目与当前口径)。
-3. 使用[已安装机器入口](../UPGRADE.md#已安装机器上的首次使用)取得真实CLI，不用包内示例配置覆盖本机登记。下面`paos`代表该完整前缀；Project根取当前登记：
+1. **建立 Vault**：Human 明确授权建立目录与 Obsidian 库，使用母版初始化 AGENTS、INDEX、TEAM、HISTORY。
+2. **登记项目与成员**：
+   - 为新成员选定全局未使用的员工号（如 S070）。
+   - 新项目执行 `paos project register`，加入已有项目执行 `paos project home-add`。
+3. **初始化工位**：
+   使用已登记的机器入口执行 `workstation init`：
+   ```powershell
+   paos workstation init '<project-id>' '<本人Sxxx>' --root '<项目根绝对路径>' --objective '<本人目标>'
+   ```
+4. **补齐入职套件**：
+   将 `notices/` 目录（`README.md`、`codex.py`、`opencode.py`、`dsh.py`、`wake_entry.py`）复制进新工位，并在本人 TODO 合并 `ONBOARD` 任务。
+5. **入职验证**：
+   本人从原会话执行 ENTRY 中的恢复命令，核验方法与工具入口，完成首封 Mail 验收后回告。
 
-```powershell
-paos workstation init '<project-id>' '<本人Sxxx>' --root '<已登记项目根>' --objective '<本人目标>'
-```
-
-4. 将本母版 `notices/` 中的 `README.md`、`codex.py`、`opencode.py`、`dsh.py`、`wake_entry.py` 带入新工位，在本人 TODO 合并 `ONBOARD` 入职任务：了解 PAOE、继承业务理解、更新 TEAM、按实际 Harness 配置并验证唤醒器。各 Harness 的入口和参数见 [入职与唤醒说明](Workstations/_workstation/notices/README.md)。当前 CLI 初始化不会自动复制这些文件或导入母版任务，创建者须补齐这一步；已有 ENTRY/TODO/说明和脚本保留人工编辑，已完成入职不重置。任务由本人沿 TODO v4 写入入口维护，不用母版整份覆盖。
-5. 从实际 `Workstations/Sxxx` 打开生效 AGENTS/INDEX/ENTRY/TODO 与必要业务原件，验证 Guide、Library、Tool 定位，检查旧工作循环路径已退出；已有项目普通文件只在批准范围内修改。TEAM/ENTRY 改动后，Rooter沿现有 `paos_team_overview.py` 更新PROJECTS聚合，并执行本页“修改后检查”；不手改派生成员表。
-
-通用行为写入 AGENTS 公共母本；专题操作在 [Guide](../Guide/README.md)，专业方法在独立 Libraries。代码仓库自身的 AGENTS 保持独立的工程约定，不被项目公共区同步器覆盖。
+---
 
 ## 修改后检查
 
-修改规则或母版时，交付范围包含受影响的引用方、生成器和实际入口。先用旧路径、命令、字段查使用方，完成对应修改，再从 System 根执行一次只读检查：
+修改公共母版或关联规则后，交付前执行一致性检查：
 
 ```powershell
-python -X utf8 -B .\Core\code\personal-agent-os\scripts\paos_template_check.py --system-root . --installation-file .\Core\config\local\installation.json --retired-locator 'Protocols/' --retired-locator 'wf-agent-work-cycle.md'
+python -X utf8 -B .\Core\code\personal-agent-os\scripts\paos_template_check.py --system-root . --installation-file .\Core\config\local\installation.json
 ```
 
-检查包括：母版实际展开、TODO v4、现行本地 Markdown 链接与锚点、指定退役路径、已登记项目的公共区和 PROJECTS 是否过期。它不改真实文件、不新建 Project、不唤醒 Runtime。可追加 `--changed '<已修改文件>'` 列出检查范围内指向该文件的直接链接；独立母版预检可用 `--templates-only`，不能代替本机完整检查。
-
-检查器不验证 notices 文件已复制、ONBOARD 已写入或 Harness 已绑定；这些须在实际创建后按入职任务核对。
-
-- AGENTS 公共区过期：沿上方分发入口更新，保留人工内容。
-- PROJECTS 过期：沿聚合页已有入口重建，再检查。
-- 其他问题：回原件处理；链接能打开仍需核对相关文字、命令含义和责任是否一致。
-
-一次修改按“原件 → 使用方 → 检查 → 实际入口回读”收口。格式或路径检查通过，不等于外部网页、原生唤醒或业务语义已验证。不要后台监控、全库重写或给每页另建依赖台账。
+- 检查范围包括：母版实际展开有效性、TODO v4 结构、本地 Markdown 链接有效性、项目公共区是否过期。
+- 一次修改按“**原件修改 → 使用方联动 → 模板检查 → 实际入口回读**”完整闭环。

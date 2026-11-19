@@ -1,21 +1,43 @@
-# Guide · System 专项操作说明
+# Guide · System 专项操作指南
 
-通用最小工作方式的唯一编辑母本在 [Project-Template/AGENTS](../Project-Template/AGENTS.md) 的公共区；实际工作请先读取**所属项目生效的 AGENTS**。Rooter 按安装级 ENTRY 与适用的全局规则恢复。本目录只保留**按需读取**的专题说明，不是可登记的 Workflow/Skill/Tool Library。
+从所属项目的 `AGENTS.md` 公共区读取生效的运行规则。公共区由[项目母版](../Project-Template/AGENTS.md)分发。遇到具体操作时，按下表打开相应指南。
 
-| 需要什么 | 按需打开 |
-| --- | --- |
-| 按任务找专业方法、Tool 与同事 | [工作方法](guide-work-method.md) |
-| 快速查 CLI、联系与运行 | [操作入口](ops-entry.md) |
-| CLI 参数、返回与状态约定 | [接口参考](guide-paos-interface-reference.md) |
-| Mail、Notice、CAT、Wake/Contact 硬通信与操作 | [通信操作](guide-paos-cat-operations.md) |
-| 项目文档、成果版本、Git 与归档 | [项目工作世界](guide-project-work-world.md) |
-| Runtime 压缩、接班及在途输入 | [Runtime 接班](guide-runtime-handoff.md) |
-| 安装、故障与维修 | [Rooter 安装](guide-rooter-installation.md) |
-| 发布、采用和回退 | [升级采用](guide-upgrade-adoption.md) |
-| 两机采用、个人经历、TEAM 快照与同步维护者转接 | [跨机协作](guide-cross-machine-experience.md) |
-| 工具行为差异和排障 | [工具陷阱](guide-tool-pitfalls.md) |
-| Coordinator 总体安排、方向与跨成员配合 | [Coordinator](wf-coordinator-governance-cycle.md) |
-| 夜间补漏和经验回用 | [夜间整理](wf-night-maintenance.md) |
-| 发布与采用通知样板 | [Templates](Templates/README.md) |
+---
 
-**边界：** Guide 描述什么操作在什么场景使用；`protocol` 特指 CLI/CAT/Mail/Contact/Wake 等硬通信的字段、参数、状态、错误契约，并在对应 Guide 和实际实现内说明，不设同名总目录。CAT 服务按本机配置与实际调用核实。具体 Library 及 Tool 的登记源见 [资源](../RESOURCES.md)。
+## 专题指南索引
+
+### 1. 业务与资源按需定位
+
+| 场景 | 指南入口 | 核心内容 |
+| --- | --- | --- |
+| 项目文件放哪里、历史沉淀与 Git 协作 | [项目工作世界](guide-project-work-world.md) | 正文/材料/决策归位、库外历史、日常顺手维护、项目 TIPS 经验 |
+| 按任务查找专业方法、技能与本机工具 | [工作入口与资源检索](guide-work-method.md) | `paos library search` 与 Tool Catalog 核验原则 |
+| 快速查找 CLI 前缀、Contact 与运维入口 | [操作入口速查](ops-entry.md) | 常用运维命令、公开联系包生成与状态检查 |
+
+### 2. 协同、通信与接班
+
+| 场景 | 指南入口 | 核心内容 |
+| --- | --- | --- |
+| 成员间 Mail、Notice、CAT、Wake 通信实操 | [通信操作](guide-paos-cat-operations.md) | 持久邮件投递、通知处理生命周期与断点排查 |
+| 会话压缩、接班与在途输入接续 | [Runtime 接班](guide-runtime-handoff.md) | 压缩前状态固化、薄状态恢复与新旧会话平滑接力 |
+| Coordinator 总体安排、方向与跨组协调 | [Coordinator 工作循环](wf-coordinator-governance-cycle.md) | 优先级管理、阻碍拔除、依赖对齐与阶段收口 |
+| 跨机协作、两机采用与经历同步 | [跨机协作](guide-cross-machine-experience.md) | 跨机员工联系、资料同步维护与经历库刷新 |
+
+### 3. 系统维护、升级与安装
+
+| 场景 | 指南入口 | 核心内容 |
+| --- | --- | --- |
+| CLI 接口参数、返回格式与状态契约 | [接口参考](guide-paos-interface-reference.md) | CLI 返回协议、错误码与调用契约 |
+| 本机工具行为差异、排障与陷阱 | [工具陷阱](guide-tool-pitfalls.md) | WSL/Windows 路径差异、编码、文件移动操作要点 |
+| 软流程分发、版本发布与升级采用 | [升级采用](guide-upgrade-adoption.md) | 公共区同步指纹检查、发布公告与回退机制 |
+| Rooter 安装管理、全局恢复与维修 | [Rooter 安装](guide-rooter-installation.md) | 系统级工位维护、母本发布与机器环境支持 |
+| 夜间整理与自动维护 | [夜间整理](wf-night-maintenance.md) | 非侵入式库卫生巡检与状态汇总 |
+| 消息与公告标准样板 | [Templates](Templates/README.md) | 采用公告等标准格式参考 |
+
+---
+
+## 边界与说明
+
+- **Guide 的定位**：说明“在什么业务场景使用什么具体工具或步骤”。
+- **协议唯一性**：CLI/Mail/Notice/Wake 等硬接口的具体参数与状态定义由自身 `--help` 和代码实现保障，Guide 不另造私有协议。
+- **专业方法归属**：通用专业技能与行业工作流收录于独立 Libraries，不堆积在 System Guide。
