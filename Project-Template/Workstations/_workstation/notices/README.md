@@ -64,6 +64,10 @@ python notices/dsh.py status
 
 接收器由 DSH 的 `wake-receiver` 插件提供，只监听 `127.0.0.1`。`status` 读取绑定和接收器发现文件的 PID/heartbeat 事实，不连接入口；`prepared=true` 只表示记录、secret 存在、PID 未被确认死亡且 heartbeat 新鲜，heartbeat 缺失/不可解析/过期均为未准备，且不等于在线。记录可用时不再显示未注册 `reason` 或重新 bind 的 `next_action`，只有真正异常才给修复提示。需要在线健康时用 DSH 侧 `dsh_wake.py status`。接收器不创建 Session、不取消回合；PAOE STOP 只阻止后续注入，不能声称已停止运行中的回合。
 
+**Antigravity App：**
+
+从本人 [ENTRY](../ENTRY.md) 打开 OPS，选择「Antigravity App 唤醒器入职配置」。指南包含试用版本条件、本人 App 会话 ID 的核对、Sidecar、工位绑定与一次真读信。`agy` CLI 会话沿 CLI 的恢复入口使用。
+
 ## 使用与验收
 
 单次原生提醒：`python notices/codex.py wake --prompt "读取本人TODO并继续"`；OpenCode 换成 `opencode.py`，DSH 换成 `dsh.py`。这条命令只提醒，不保存 Mail；正式交接仍用 ENTRY 中的 `paos agent send --remind`。
