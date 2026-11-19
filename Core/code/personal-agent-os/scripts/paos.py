@@ -41,6 +41,11 @@ from paos_mail import (  # noqa: E402
     send_mail,
 )
 from paos_notice import NoticeProblem  # noqa: E402
+from paos_todo import TodoProblem  # noqa: E402
+from paos_mail_tracking import handoff_status, sent_task_status, track_sent_mail  # noqa: E402
+from paos_mail_claim import (  # noqa: E402
+    claim_mail, claim_rooter_mail, result_mail, result_rooter_mail,
+)
 from paos_agent_activation import (  # noqa: E402
     AgentActivationProblem,
     activate_mail_dispatch,
@@ -48,6 +53,7 @@ from paos_agent_activation import (  # noqa: E402
 )
 from paos_home import HomeProblem, agent_project_id, project_agent_home
 from paos_attention_service import (  # noqa: E402
+    ATTENTION_SERVICE_SCHEMA,
     resolve_home_by_registry,
     AttentionServiceProblem,
     read_source_status as attention_read_source_status,
@@ -2712,6 +2718,20 @@ def execute_mail(
     if original_agent_id:
         args.agent_id, agent_aliases = _canonical_identity_and_aliases(
             original_agent_id, installation_path)
+    if args.mail_command in {"rooter-claim", "rooter-result"}:
+        home = _registered_rooter_home(
+            installation_path or resolve_installation_path(
+                getattr(args, "installation_file", None)))
+        if args.mail_command == "rooter-claim":
+            return {"ok": True, **claim_rooter_mail(
+                home=home, message_id=str(args.message_id),
+                task_id=str(getattr(args, "task", "") or ""),
+                title=str(getattr(args, "title", "") or ""))}
+        return {"ok": True, **result_rooter_mail(
+            home=home, message_id=str(args.message_id),
+            result=text_arg(args.result, "mail result", required=True),
+            task_id=str(getattr(args, "task", "") or ""),
+            artifact_ref=str(getattr(args, "artifact_ref", "") or ""))}
     project = registry.read(args.project_id)
     root_raw = str(
         getattr(args, "root", None)
@@ -2725,6 +2745,29 @@ def execute_mail(
         )
     root = Path(posix_windows_drive_locator(root_raw)).expanduser()
     try:
+        if args.mail_command == "claim":
+            return {
+                "ok": True,
+                **claim_mail(
+                    root=root, project=project, agent_id=str(args.agent_id),
+                    message_id=str(args.message_id),
+                    task_id=str(getattr(args, "task", "") or ""),
+                    title=str(getattr(args, "title", "") or ""),
+                    recipient_aliases=agent_aliases,
+                ),
+            }
+        if args.mail_command == "result":
+            return {
+                "ok": True,
+                **result_mail(
+                    root=root, project=project, agent_id=str(args.agent_id),
+                    message_id=str(args.message_id),
+                    result=text_arg(args.result, "mail result", required=True),
+                    task_id=str(getattr(args, "task", "") or ""),
+                    artifact_ref=str(getattr(args, "artifact_ref", "") or ""),
+                    recipient_aliases=agent_aliases,
+                ),
+            }
         if args.mail_command == "send":
             if str(args.sender_kind or "human") == "agent" and args.sender_id:
                 args.sender_id = _canonical_identity_and_aliases(
@@ -2886,17 +2929,21 @@ def execute_mail(
                 sender_kind="agent",
                 sender_id=args.agent_id,
                 message_id=str(args.message_id or ""),
-                request_activation=True,
+                request_activation=False,
             )
-            handling = attention_handle_mail_input(
-                root=root,
-                project=project,
-                agent_id=args.agent_id,
-                message_id=args.in_reply_to,
-                resolution="replied",
-                action_ref=str((reply.get("mail") or {}).get("message_id") or ""),
-                recipient_aliases=agent_aliases,
-            )
+            notice = original["notice"]
+            if notice["state"] == "handled" or notice.get("claimed"):
+                handling = {"schema": ATTENTION_SERVICE_SCHEMA, "home": original["home"], "notice": notice}
+            else:
+                handling = attention_handle_mail_input(
+                    root=root,
+                    project=project,
+                    agent_id=args.agent_id,
+                    message_id=args.in_reply_to,
+                    resolution="replied",
+                    action_ref=str((reply.get("mail") or {}).get("message_id") or ""),
+                    recipient_aliases=agent_aliases,
+                )
             return {"ok": True, **reply, "handling": handling}
 
         if args.mail_command == "list":
@@ -2958,12 +3005,22 @@ def execute_mail(
                 ),
             }
 
-        if args.mail_command == "status":
-            return {
-                "ok": True,
-                **dispatch_status(root, args.message_id, registry_lookup=_registry_authoritative_or_none(getattr(args, "installation_file", None))),
-            }
-    except (MailProblem, AttentionServiceProblem) as problem:
+        if args.mail_command in {"status", "track", "task-status"}:
+            installation_file = getattr(args, "installation_file", None)
+            lookup = _registry_authoritative_or_none(installation_file)
+            if args.mail_command == "status":
+                return {"ok": True, **handoff_status(root, args.message_id, lookup, installation_file)}
+            if lookup is None:
+                raise CliError("Mail Task 需要当前安装的 Home 登记。", error_code="mail_tracking_home_required")
+            home = lookup(args.agent_id)
+            if args.mail_command == "track":
+                return {"ok": True, **track_sent_mail(
+                    root, args.project_id, args.message_id, home, args.task, lookup, installation_file,
+                )}
+            return {"ok": True, **sent_task_status(
+                root, args.project_id, home, args.task, lookup, installation_file,
+            )}
+    except (MailProblem, AttentionServiceProblem, TodoProblem, NoticeProblem) as problem:
         raise CliError(
             str(problem),
             error_code=getattr(problem, "code", "mail_error"),
@@ -3839,6 +3896,46 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("--message-id", help="Stable idempotency key for retry")
     x.add_argument("--root")
 
+    x = mails.add_parser(
+        "claim",
+        help="Quietly claim one Mail into this Agent's TODO and Notice",
+        epilog=("Example: paos mail claim 3002 S032 mail-001 --task T-...; "
+                "claim is quiet and idempotent; follow with mail result or a targeted reminder."),
+    )
+    x.add_argument("project_id")
+    x.add_argument("agent_id")
+    x.add_argument("message_id")
+    x.add_argument("--task", help="Existing Task ID to link; omit to create one")
+    x.add_argument("--title", help="Title when creating a new Task")
+
+    x = mails.add_parser(
+        "result",
+        help="Record a result on the claimed Mail's Task and Notice",
+    )
+    x.add_argument("project_id")
+    x.add_argument("agent_id")
+    x.add_argument("message_id")
+    x.add_argument("--result", required=True, help="Result text (literal, @FILE or -)")
+    x.add_argument("--task", help="Task ID; omit to use the Task linked by claim")
+    x.add_argument("--artifact-ref", help="Result artifact path or durable ref")
+
+    x = mails.add_parser(
+        "rooter-claim",
+        help="Quietly claim one Mail in the installation Rooter Home",
+    )
+    x.add_argument("message_id")
+    x.add_argument("--task", help="Existing Rooter Task ID to link")
+    x.add_argument("--title", help="Title when creating a new Rooter Task")
+
+    x = mails.add_parser(
+        "rooter-result",
+        help="Record a result on a claimed Rooter Mail Task",
+    )
+    x.add_argument("message_id")
+    x.add_argument("--result", required=True, help="Result text (literal, @FILE or -)")
+    x.add_argument("--task", help="Rooter Task ID; omit to use the linked Task")
+    x.add_argument("--artifact-ref", help="Result artifact path or durable ref")
+
     x = mails.add_parser("reply", help="Reply to an Agent Mail in this Agent's inbox")
     x.add_argument("project_id")
     x.add_argument("agent_id")
@@ -3869,10 +3966,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     x = mails.add_parser(
         "status",
-        help="Check immutable dispatch recipient delivery state",
+        help="Read delivery, claim and result for the original Mail",
     )
     x.add_argument("project_id")
     x.add_argument("message_id")
+    x.add_argument("--root")
+
+    x = mails.add_parser("track", help="Link a sent Mail to the sender's existing TODO Task")
+    x.add_argument("project_id")
+    x.add_argument("agent_id")
+    x.add_argument("message_id")
+    x.add_argument("--task", required=True, help="Existing Task ID")
+    x.add_argument("--root")
+
+    x = mails.add_parser("task-status", help="Read outstanding Mail for the sender's Task")
+    x.add_argument("project_id")
+    x.add_argument("agent_id")
+    x.add_argument("task")
     x.add_argument("--root")
 
     lib = sub.add_parser(

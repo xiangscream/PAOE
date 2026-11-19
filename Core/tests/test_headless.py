@@ -445,6 +445,7 @@ class HeadlessTests(unittest.TestCase):
         self.assertFalse((self.vault/'Workstations/rooter-001').exists())
         state=self.call('attention','rooter-show')[1]
         notice=next(n for n in state['notices']['items'] if n['source_ref']=='rooter-reply')
+        self.assertEqual(notice['activation_requests'],[])
         self.call('attention','rooter-read',notice['notice_id'])
         self.call('attention','rooter-handle',notice['notice_id'],
                   '--resolution','已核结果','--action-ref','Works/验收结果.md')
@@ -454,6 +455,70 @@ class HeadlessTests(unittest.TestCase):
         original=self.call('mail','read','3002','3002-s002','rooter-request')[1]
         self.assertEqual(original['notice']['resolution'],'replied')
         self.assertEqual(original['notice']['action_ref'],'rooter-reply')
+        followup=self.call('mail','reply','3002','3002-s002','rooter-request',
+                           '--body','补充验收入口','--message-id','rooter-reply-followup')[1]
+        self.assertTrue((self.rooter/'mailbox/rooter-reply-followup.md').is_file())
+        self.assertEqual(followup['handling']['notice']['action_ref'],'rooter-reply')
+
+    def test_tracked_mail_resolves_only_its_own_sender_wait(self):
+        sender = '3002-s001'
+        receiver = '3002-s002'
+        todo = self.vault / 'Workstations' / sender / 'TODO.md'
+        todo.write_text(render_todo(
+            home_kind='project_agent', home_id=sender, project_id='3002',
+            objective='主线', next_action='核对结果', waiting='另等人工判断',
+            tasks=[{'id': 'T-existing', 'title': '收两个结果', 'state': 'doing'}],
+        ), encoding='utf-8')
+        current = parse_todo(todo.read_text(encoding='utf-8'))['current']
+        self.send('mail-A')
+        self.call('agent', 'send', '3002', '--to', 'rooter-001', '--sender-kind', 'agent',
+                  '--sender-id', sender, '--subject', '安装报告', '--body', '请给结果',
+                  '--message-id', 'mail-B')
+        for mid in ('mail-A', 'mail-B'):
+            linked = self.call('mail', 'track', '3002', sender, mid, '--task', 'T-existing')[1]
+            self.assertTrue(linked['changed'])
+            replay = self.call('mail', 'track', '3002', sender, mid, '--task', 'T-existing')[1]
+            self.assertFalse(replay['changed'])
+        task_status = ('mail', 'task-status', '3002', sender, 'T-existing')
+        self.assertEqual([item['message_id'] for item in self.call(*task_status)[1]['mail_waiting']],
+                         ['mail-A', 'mail-B'])
+
+        self.call('mail', 'claim', '3002', receiver, 'mail-A')
+        claim = self.call('mail', 'status', '3002', 'mail-A')[1]['deliveries'][0]['handoff']
+        self.assertEqual((claim['state'], claim['claimed_by']), ('claimed', receiver))
+        self.assertTrue(claim['task_id'])
+        progress = self.call('mail', 'reply', '3002', receiver, 'mail-A',
+                             '--body', '进展', '--message-id', 'A-progress')[1]
+        self.assertEqual(progress['handling']['notice']['state'], 'pending')
+        before_result = todo.read_bytes()
+        self.call('mail', 'result', '3002', receiver, 'mail-A', '--result', '交回 A')
+        results = self.call(*task_status)[1]
+        self.assertEqual([item['message_id'] for item in results['mail_waiting']], ['mail-B'])
+        handoff = self.call('mail', 'status', '3002', 'mail-A')[1]['deliveries'][0]['handoff']
+        self.assertEqual((handoff['state'], handoff['result']), ('resolved', '交回 A'))
+        self.call('mail', 'rooter-claim', 'mail-B')
+        rooter_claim = self.call('mail', 'status', '3002', 'mail-B')[1]['deliveries'][0]['handoff']
+        self.assertEqual((rooter_claim['state'], rooter_claim['claimed_by']), ('claimed', 'rooter-001'))
+        self.call('mail', 'rooter-result', 'mail-B', '--result', '安装报告')
+        self.assertEqual(self.call(*task_status)[1]['mail_waiting'], [])
+        self.assertEqual(todo.read_bytes(), before_result)
+        self.assertEqual(parse_todo(todo.read_text(encoding='utf-8'))['current'], current)
+
+        rooter_todo = self.rooter / 'TODO.md'
+        rooter_todo.write_text(render_todo(
+            home_kind='rooter', home_id='rooter-001',
+            objective='采用新版', next_action='等项目回告',
+            tasks=[{'id': 'R-adopt', 'title': '核对项目采用', 'state': 'doing'}],
+        ), encoding='utf-8')
+        self.call('agent', 'send', '3002', '--to', receiver, '--sender-kind', 'agent',
+                  '--sender-id', 'rooter-001', '--subject', '项目采用', '--body', '请回报',
+                  '--message-id', 'mail-C')
+        self.call('mail', 'track', '3002', 'rooter-001', 'mail-C', '--task', 'R-adopt')
+        rooter_task = ('mail', 'task-status', '3002', 'rooter-001', 'R-adopt')
+        self.assertEqual(self.call(*rooter_task)[1]['mail_waiting'][0]['message_id'], 'mail-C')
+        self.call('mail', 'claim', '3002', receiver, 'mail-C')
+        self.call('mail', 'result', '3002', receiver, 'mail-C', '--result', '项目采用报告')
+        self.assertEqual(self.call(*rooter_task)[1]['mail_waiting'], [])
 
     def test_mail_reply_uses_registered_same_and_cross_project_homes(self):
         p2=dict(self.project,id='3003',root_path=str(self.root/'另一项目'),

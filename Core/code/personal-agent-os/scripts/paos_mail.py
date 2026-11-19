@@ -790,6 +790,8 @@ def dispatch_status(
         "schema": "paos-workstation-mail-status/v1",
         "message_id": message_id,
         "project_id": dispatch.get("project_id"),
+        "sender_kind": dispatch.get("sender_kind"),
+        "sender_id": dispatch.get("sender_id"),
         "subject": dispatch.get("subject"),
         "audience": dispatch.get("audience"),
         "recipients": list(dispatch.get("recipients") or []),

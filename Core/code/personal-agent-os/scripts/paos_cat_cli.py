@@ -36,19 +36,25 @@ def add_cat_parser(sub):
         required=True,
         choices=["participant", "observer", "left"],
         help=(
-            "participant: by default receives reminders and can speak; "
+            "participant: can receive reminders and speak; "
             "observer: read-only, no reminders, no speech; "
             "left: resigned from seat, history kept, no reminders/speech"
         ),
     )
-    send = commands.add_parser("send", help="Persist public speech, then remind other members once")
-    send.add_argument("room_id")
-    send.add_argument("--from", dest="sender_id", required=True,
-                      help="Global staff number Sxxx or exact joined Home ID")
-    send.add_argument("--body", required=True, help="Literal text, @FILE or '-' for stdin")
-    send.add_argument("--message-id", required=True, help="Reuse this ID for idempotent replay")
+    send = commands.add_parser("send", help="Persist a public message quietly unless a reminder is requested")
+    invite = commands.add_parser("invite", help="Invite one Agent with a public message and one reminder")
+    for post in (send, invite):
+        post.add_argument("room_id")
+        post.add_argument("--from", dest="sender_id", required=True,
+                          help="Global staff number Sxxx or exact joined Home ID")
+        post.add_argument("--body", required=True, help="Literal text, @FILE or '-' for stdin")
+        post.add_argument("--message-id", required=True, help="Reuse this ID for idempotent replay")
+    invite.add_argument("--to", dest="target_id", required=True, help="Employee to invite to this room")
     send.add_argument("--reply-to", help="Existing message ID in this room")
-    send.add_argument("--no-notify", action="store_true", help="Save speech without native reminders")
+    reminders = send.add_mutually_exclusive_group()
+    reminders.add_argument("--mention", dest="target_id", help="Remind only this participating employee")
+    reminders.add_argument("--no-notify", action="store_true", help="Save quietly, the default")
+    reminders.add_argument("--notify", action="store_true", help="Explicitly remind this room's participants")
     read = commands.add_parser("read", help="Read public messages after a sequence number")
     read.add_argument("room_id")
     read.add_argument("--after", type=int, default=0)
@@ -117,10 +123,17 @@ def execute_cat(args, client, text_arg):
         return client.request("GET", path + "/messages?" + urlencode({"after": args.after}))
     if command == "close":
         return client.request("POST", path + "/close", {})
-    return client.request("POST", path + "/messages", {
+    payload = {
         "message_id": args.message_id,
         "sender_id": args.sender_id,
         "body": text_arg(args.body, "public message", required=True),
-        "reply_to": args.reply_to,
-        "notify": not args.no_notify,
-    })
+    }
+    if command == "invite":
+        payload.update(target_id=args.target_id, invite=True)
+    else:
+        payload["reply_to"] = args.reply_to
+        if args.target_id:
+            payload["target_id"] = args.target_id
+        else:
+            payload["notify"] = args.notify
+    return client.request("POST", path + "/messages", payload)

@@ -1,14 +1,38 @@
-"""CAT page routes use the existing CLI, fixed Human identity and one send."""
+"""CAT routing keeps a post quiet unless its caller selects a reminder."""
+import argparse
 import json
 import io
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import test_board
 from front.paos_front_server import make_server
+from paos_cat_cli import add_cat_parser, execute_cat
+
+
+class CatCliTests(unittest.TestCase):
+    def test_post_paths_keep_the_requested_reminder_scope(self):
+        parser = argparse.ArgumentParser()
+        add_cat_parser(parser.add_subparsers(required=True))
+        for verb, flags, fields in (
+            ("send", [], {"notify": False, "reply_to": None}),
+            ("send", ["--notify"], {"notify": True, "reply_to": None}),
+            ("send", ["--mention", "S029"], {"target_id": "S029", "reply_to": None}),
+            ("invite", ["--to", "S069"], {"target_id": "S069", "invite": True}),
+        ):
+            with self.subTest(verb=verb, flags=flags):
+                args = parser.parse_args([
+                    "cat", verb, "room-one", "--from", "S010", "--body", "question",
+                    "--message-id", "original", *flags,
+                ])
+                client = Mock()
+                execute_cat(args, client, lambda value, *_, **__: value)
+                client.request.assert_called_once_with("POST", "/api/rooms/room-one/messages", {
+                    "message_id": "original", "sender_id": "S010", "body": "question", **fields,
+                })
 
 
 class CatBoardTests(unittest.TestCase):
@@ -89,20 +113,27 @@ class CatBoardTests(unittest.TestCase):
         cli.assert_not_called()
 
     def test_human_reply_uses_one_existing_join_and_one_original_send(self):
-        replies = [
-            {"ok": True, "member": {"home_id": "human", "state": "participant"}},
-            {"ok": True, "accepted": True, "dispatch": "queued", "message": {"id": "same-id"}},
-        ]
-        with patch.object(self.board, "cat", side_effect=replies) as call:
-            status, receipt = self.call("/api/room/room-one/message",
-                {"body": "回复原讨论", "message_id": "same-id", "reply_to": "original"})
-        self.assertEqual(status, 200)
-        self.assertEqual(receipt["dispatch"], "queued")
-        self.assertEqual(call.call_args_list[0].args[0], ["join", "room-one", "--home", "human", "--label", "Human"])
-        self.assertEqual(call.call_args_list[1].args[0],
-            ["send", "room-one", "--from", "human", "--body", "-",
-             "--message-id", "same-id", "--reply-to", "original"])
-        self.assertEqual(call.call_args_list[1].kwargs["input_text"], "回复原讨论")
+        for fields, flag, dispatch in (
+            ({}, "--no-notify", "skipped"),
+            ({"notify": True}, "--notify", "queued"),
+        ):
+            with self.subTest(flag=flag):
+                replies = [
+                    {"ok": True, "member": {"home_id": "human", "state": "participant"}},
+                    {"ok": True, "accepted": True, "dispatch": dispatch, "message": {"id": "same-id"}},
+                ]
+                with patch.object(self.board, "cat", side_effect=replies) as call:
+                    status, receipt = self.call("/api/room/room-one/message", {
+                        "body": "回复原讨论", "message_id": "same-id", "reply_to": "original", **fields,
+                    })
+                self.assertEqual(status, 200)
+                self.assertEqual(receipt["dispatch"], dispatch)
+                self.assertEqual(call.call_args_list[0].args[0],
+                    ["join", "room-one", "--home", "human", "--label", "Human"])
+                self.assertEqual(call.call_args_list[1].args[0],
+                    ["send", "room-one", "--from", "human", "--body", "-",
+                     "--message-id", "same-id", "--reply-to", "original", flag])
+                self.assertEqual(call.call_args_list[1].kwargs["input_text"], "回复原讨论")
 
     def test_page_cannot_choose_an_agent_signature(self):
         with patch.object(self.board, "cat") as call:
