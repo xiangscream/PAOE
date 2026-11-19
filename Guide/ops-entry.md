@@ -28,7 +28,7 @@ version: 45
 以下 PowerShell 命令已在 System 0.2.29 核对，0.2.30 沿用同一接口。先从本人 ENTRY 确认项目号、员工号与 CLI 前缀。下列变量以 REMO 为例，调用前换成本次实际值，各小节按需使用。
 
 ~~~powershell
-$paos = 'C:/Users/remo/.paos/bin/paos.cmd'
+$paos = Join-Path $env:USERPROFILE '.paos/bin/paos.cmd'
 $project = '3004'    # 发起方所在项目
 $me = 'S042'         # 本人员工号
 $peer = 'S043'       # 本次接手人
@@ -95,10 +95,10 @@ $tools.raw_markdown -split '\r?\n' | Select-String -SimpleMatch 'lark-cli'
 
 读命中项的 `source_path`，用原件里的步骤。工具目录支持整页读取，可在输出中筛选工具名。要找本项目已确认的 Tips，用 `& $paos project experience $project`。
 
-EXM 使用本机登记的检索入口。从项目 AGENTS 的「共同经历」进入本机说明。下面是 REMO 的实际调用方式。
+从项目 AGENTS 的「共同经历」进入本机 EXM 方法，取得检索脚本路径。REMO 的脚本在本机 PAOE 根目录下的 `Data/exm/exm.ps1`，其余机器按各自的登记填写。
 
 ~~~powershell
-$exm = 'D:/PAOE/Data/exm/exm.ps1'
+$exm = '<从本机 EXM 方法取得的完整脚本路径>'
 & $exm search '充电站' -n 5 --format json                 # 名称或术语已知
 & $exm query '少量抽样导致遗漏长录音中的产品讨论' --no-rerank -n 8 --format json
 & $exm get 'qmd://exm/Daily/2026-10-19.md' --full-path  # 换成所选结果的 file
