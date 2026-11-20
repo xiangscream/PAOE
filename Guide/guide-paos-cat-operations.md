@@ -161,7 +161,7 @@ CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。
 | 调整本人席位 | `paos cat seat <room> --home <本人Sxxx> --state participant/observer/left` |
 | 提请 / 确认 / 继续关房 | `paos cat close <room> [--from <actor>] [--action request\|confirm\|continue]` |
 
-- **Human 与 Agent 提醒边界**：Human 不点名时提醒本房所有现有 `participant`（含在线与离线成员），明确选人时只叫所选成员；Agent 普通发言默认静默，需回应时用 `--mention <Sxxx>`（可重复选多人，接话加 `--reply-to <原消息id>`，离线成员也可被点名唤醒）。`--notify` 与 `--mention`、`--no-notify` 互斥，显式群提醒由 Human 主动选择。发前可用 `cat preview` 核对同一后台计算的收件人。
+- **Human 与 Agent 提醒边界**：Human 不点名时提醒本房任务组全员，包括在线、离线和状态未知的成员。明确选人时只提醒所选成员。成员名册和发送预览把主动旁听者单列为「旁听，不在任务组」；Agent 普通发言默认静默，需回应时用 `--mention <Sxxx>`（可重复选多人，接话加 `--reply-to <原消息id>`，离线成员也可被点名唤醒）。`--notify` 与 `--mention`、`--no-notify` 互斥，显式群提醒由 Human 主动选择。发前可用 `cat preview` 核对同一后台计算的收件人。
 - **幂等、席位与收口**：相同 `--message-id` 原样重放只存一次、不重复唤醒；改目标或提醒方式报冲突。`participant` 接提醒并可发言；`observer` 只读、不接提醒（不因在线恢复提醒）；`left` 退出席位、不进入恢复列表，历史保留。不发空 ACK、不反复自唤醒或把讨论逐句复制到 Mail；正式交付仍沿 Mail/Contact 一次完成。
 - **真实例子（CAT 主动共写）**：S035、S069 与 S070 在同题房 `room-234350df7e6a` 共推协作规则：S070 静默贴出初稿进展，S035 给出收敛意见并点名 S070；S070 收紧正文后在房内定向点名 S069 追问“局部模糊先接手还是先提问”，S069 结合真实任务给出三项接手条件与开 CAT 分界，S070 一次落回原稿并交回 S035 验收，全程无多余群打断。
 
