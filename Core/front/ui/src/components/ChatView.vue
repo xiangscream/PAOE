@@ -7,14 +7,17 @@ import CatIcon from './ChatIcon.vue';
 import MessageContent from './ChatMessageContent.vue';
 import {readDraft, writeDraft} from '../state/chat-drafts.mjs';
 import {isLegacyHomeId} from '../state/team';
+import {renderMarkdown} from '../lib/markdown';
 import {requestTransport} from '../transport';
 
 const dayFormat = new Intl.DateTimeFormat('zh-CN', {month:'long',day:'numeric',weekday:'short'});
 const timeFormat = new Intl.DateTimeFormat('zh-CN', {hour:'2-digit',minute:'2-digit',hour12:false});
 const endpoint = (id, suffix='') => '/api/room/' + encodeURIComponent(id) + suffix;
+const roomStatusLabels = {open:'进行中的讨论', pending_close:'负责人已提请关闭 · 待确认', closed:'已结束的讨论'};
 function newConversation(id) {
   return {id,title:'',status:'open',members:[],messages:[],cursor:0,draft:'',reply:'',targets:[],preview:null,pending:null,
-          endedRequests:[],feedback:'',outcome:'',loaded:false,expanded:{},position:null,atLatest:true,firstUnseen:''};
+          endedRequests:[],feedback:'',outcome:'',loaded:false,expanded:{},position:null,atLatest:true,firstUnseen:'',
+          ownerId:'',closePolicy:'',context:null,indexDoc:null,indexError:'',indexOpen:true,progressSent:-1,progressBusy:false};
 }
 async function request(path, options={}) {
   const controller = new AbortController();
@@ -36,7 +39,7 @@ export default {
     return {rooms:[],people:[],roomStates:{},roomId:'',filter:'',roomScope:'open',relatedOnly:true,sidebar:false,roomsLoading:true,roomListRequest:0,
       seatLabels,selection:0,stream:null,storageError:'',active:true,endingWaiting:false,
       connection:'正在连接',connectionError:false,unseen:0,highlight:'',checking:false,atLatest:true,
-      searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false,
+      searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false,closeBusy:false,
       mention:{open:false,outside:false,query:'',index:0},previewTimer:0};
   },
   computed: {
@@ -69,9 +72,20 @@ export default {
       return note ? hint + ' · ' + note : hint;
     },
     outsideSearchHint() { return this.mention.query.trim() ? '' : '输入员工号或称呼搜索房外同事'; },
+    statusLabel() { return this.state ? (roomStatusLabels[this.state.status] || '公开讨论') : '选一个话题，开始交流'; },
+    ownerLabel() {
+      const owner=this.state?.ownerId;
+      return owner && owner!=='human' ? '负责人 · '+this.name(owner) : '';
+    },
+    onlineCount() {
+      return (this.state?.members || []).filter(member=>member.state==='participant' && member.presence==='online' && member.home_id!=='human').length;
+    },
+    isPendingClose() { return this.state?.status==='pending_close'; },
+    indexAvailable() { return !!this.state?.context?.index_path; },
     placeholder() {
       if (!this.state) return '选择房间后开始发言…';
       if (this.state.status==='closed') return '讨论已结束，可以继续阅读。';
+      if (this.state.status==='pending_close') return '负责人已提请关闭，等待确认。可先恢复讨论，或直接确认关闭。';
       const human=this.state.members.find(member=>member.home_id==='human');
       if (human && human.state!=='participant') return '你当前为'+(seatLabels[human.state]||human.state)+'，发言已暂停。';
       return '写下想法，或回复一条消息…';
@@ -149,11 +163,11 @@ export default {
     scrollBottom() {
       if(!this.active)return;
       const el=this.$refs.messages;el.scrollTop=el.scrollHeight;this.unseen=0;this.atLatest=true;
-      if(this.state)this.state.firstUnseen='';
+      if(this.state){this.state.firstUnseen='';this.advanceProgress();}
     },
     onScroll() {
       this.atLatest=this.nearEnd();
-      if(this.atLatest){this.unseen=0;if(this.state)this.state.firstUnseen='';}
+      if(this.atLatest){this.unseen=0;if(this.state){this.state.firstUnseen='';this.advanceProgress();}}
     },
     messageElement(id) {
       return [...this.$refs.messages.querySelectorAll('[data-message-id]')].find(node=>node.dataset.messageId===id);
@@ -352,14 +366,17 @@ export default {
       this.connection='正在读取';this.connectionError=false;this.unseen=0;
       try {
         const room=checked(await request(endpoint(id)));
-        Object.assign(state,{title:room.title,status:room.status,members:room.members,loaded:true},readPage(state,room.messages));
+        Object.assign(state,{title:room.title,status:room.status,members:room.members,loaded:true,
+          ownerId:room.owner_id||'',closePolicy:room.close_policy||'',context:room.task_context||null},readPage(state,room.messages));
         this.confirmPending(state);
+        this.loadIndexDoc(state);
         if (generation!==this.selection) return;
         this.roomScope=room.status;
         if(!this.embedded)document.title=(room.title||'圆桌')+' · CAT';
         this.$emit('room-selected',id);
         await this.$nextTick();this.resizeComposer();
         if(state.atLatest)this.scrollBottom();else this.restorePosition(state.position);
+        this.advanceProgress();
         this.startStream(state);
       } catch(error) {
         if(generation!==this.selection)return;
@@ -381,6 +398,8 @@ export default {
         const firstNew=update.messages.find(message=>!seen.has(message.id));
         if(!near&&firstNew&&!state.firstUnseen)state.firstUnseen=firstNew.id;
         Object.assign(state,readPage(state,update.messages),{title:update.title,status:update.status,members:update.members});
+        const humanNow=this.humanMember(state);
+        if (humanNow?.last_read_seq > state.progressSent) state.progressSent=humanNow.last_read_seq;
         this.confirmPending(state);
         const summary=this.rooms.find(room=>room.id===state.id);
         if(summary){summary.title=state.title;summary.status=state.status;summary.message_count=state.messages.length;summary.member_count=state.members.length;}
@@ -403,7 +422,9 @@ export default {
         if(!this.active || project!==this.project)return;
         if(this.state) {
           const state=this.state,room=checked(await request(endpoint(state.id)));
-          Object.assign(state,{title:room.title,status:room.status,members:room.members,loaded:true},readPage(state,room.messages));
+          Object.assign(state,{title:room.title,status:room.status,members:room.members,loaded:true,
+            ownerId:room.owner_id||state.ownerId,closePolicy:room.close_policy||state.closePolicy,
+            context:room.task_context||state.context},readPage(state,room.messages));
           this.confirmPending(state);this.startStream(state);
         }else await this.openInitialRoom();
       } catch(error) {this.connection=error.message;this.connectionError=true;}
@@ -463,11 +484,78 @@ export default {
       this.endingWaiting=false;this.persistDraft(state);this.$nextTick(this.resizeComposer);
     },
     openCreator() {this.sidebar=false;this.$emit('new-discussion');},
+    // ---- 任务房完整交互：INDEX / 关房 / 已读游标 / 在线 ----
+    md(source) { return renderMarkdown(source); },
+    async loadIndexDoc(state) {
+      const context=state.context;
+      if (!context?.index_path) return;
+      state.indexDoc=null;state.indexError='';
+      try {
+        const project=context.project_id || this.project;
+        const value=checked(await request('/api/document?project='+encodeURIComponent(project)+'&path='+encodeURIComponent(context.index_path)));
+        if (this.roomStates[state.id]?.context===context) state.indexDoc=value;
+      } catch(error) { if (this.roomStates[state.id]?.context===context) state.indexError='任务 INDEX 暂不可读（'+context.index_path+'）'; }
+    },
+    toggleIndex() { if (this.state) this.state.indexOpen=!this.state.indexOpen; },
+    humanMember(state) { return (state?.members || []).find(member=>member.home_id==='human'); },
+    async closeRoom(action) {
+      const state=this.state;
+      if (!state?.loaded || this.closeBusy) return;
+      this.closeBusy=true;
+      try {
+        const value=await request(endpoint(state.id,'/close'),{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action})});
+        if (value.ok) {
+          const status=value.room && value.room.status;
+          if (status) {
+            state.status=status;
+            this.roomScope=status;
+            state.feedback=action==='confirm'?'已确认关闭。历史保留可读。':action==='continue'?'已恢复讨论，房间回到进行中。':'已提请关闭，等待 Human 确认。';
+            state.outcome='saved';
+            await this.loadRooms();
+          } else {
+            // 只信真实回执的 room.status；缺字段时显示未完成，不用 action 推断状态。
+            state.feedback='关房请求已发出，回执未带房间状态，结果未确认。请稍后核对房间列表。';
+            state.outcome='unknown';
+          }
+        } else { state.feedback=errorText(value);state.outcome='failed'; }
+      } catch(error) { state.feedback='关房请求未完成：'+error.message;state.outcome='failed'; }
+      finally { this.closeBusy=false; }
+    },
+    // 实际读到最新才推进本人游标；只记 human 本人，不替其他 Agent 标记。
+    advanceProgress(presenceOnly=false) {
+      const state=this.state;
+      if (!state?.loaded || state.progressBusy) return;
+      const human=this.humanMember(state);
+      if (!human || human.state!=='participant') return;
+      if (state.progressSent<0) state.progressSent=human.last_read_seq || 0;
+      const seen=state.progressSent;
+      const upto=state.cursor;
+      if (!presenceOnly && upto<=seen) return;
+      state.progressBusy=true;
+      const payload={presence:'online'};
+      if (!presenceOnly && upto>seen) payload.last_read_seq=upto;
+      request(endpoint(state.id,'/progress'),{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)})
+        .then(()=>{ state.progressSent=Math.max(state.progressSent,upto); })
+        .catch(()=>{ /* 结果不明时保留本地游标，下次实读再试 */ })
+        .finally(()=>{ state.progressBusy=false; });
+    },
+    markOfflineOnHide() {
+      const id=this.roomId;
+      if (!id || !navigator.sendBeacon) return;
+      try {
+        navigator.sendBeacon(endpoint(id,'/progress'),
+          new Blob([JSON.stringify({presence:'offline'})],{type:'application/json'}));
+      } catch(error) { /* 尽力而为：失败时后台显示状态未知 */ }
+    },
+    onPageHide() { this.markOfflineOnHide(); },
   },
   async mounted() {
     const project=this.project;
     document.addEventListener('visibilitychange',this.onVisibility);
     window.addEventListener('resize',this.resizeComposer);
+    window.addEventListener('pagehide',this.onPageHide);
     this.resizeComposer();
     try {
       await Promise.all([this.loadRooms(),this.loadPeople()]);
@@ -478,6 +566,7 @@ export default {
   beforeUnmount() {
     this.active=false;
     this.stopStream();this.selection++;this.roomId='';window.removeEventListener('resize',this.resizeComposer);
+    window.removeEventListener('pagehide',this.onPageHide);
     document.removeEventListener('visibilitychange',this.onVisibility);
   },
 };
@@ -492,6 +581,7 @@ export default {
     <div class="room-list-heading"><span>你的讨论</span><button class="icon-button small" :class="{spinning:roomsLoading}" :disabled="refreshing" aria-label="刷新房间" @click="refresh"><cat-icon name="refresh"></cat-icon></button></div>
     <div class="room-tabs" role="group" aria-label="房间范围">
       <button :class="{selected:roomScope==='open'}" @click="roomScope='open'" :aria-pressed="roomScope==='open'">进行中</button>
+      <button :class="{selected:roomScope==='pending_close'}" @click="roomScope='pending_close'" :aria-pressed="roomScope==='pending_close'">待确认</button>
       <button :class="{selected:roomScope==='closed'}" @click="roomScope='closed'" :aria-pressed="roomScope==='closed'">已结束</button>
     </div>
     <label class="room-scope"><input type="checkbox" v-model="relatedOnly">仅本项目相关讨论</label>
@@ -511,12 +601,27 @@ export default {
   <main class="conversation" @click="closeSidebarFromContent">
     <header class="conversation-header">
       <button class="icon-button mobile-menu" aria-label="展开房间列表" :aria-expanded="sidebar" @click.stop="sidebar=!sidebar"><cat-icon name="menu"></cat-icon></button>
-      <div class="room-heading"><h1 :title="state?.title">{{state?.title || 'CAT 圆桌'}}</h1><div class="room-subtitle"><span :class="{'closed-label':state?.status==='closed'}">{{state?.status==='closed'?'已结束的讨论':state?'公开讨论':'选一个话题，开始交流'}}</span><span class="connection" :class="{error:connectionError,live:connection==='实时连接'}" role="status"><i></i>{{connectionError?'连接中断':connection}}</span></div></div>
+      <div class="room-heading"><h1 :title="state?.title">{{state?.title || 'CAT 圆桌'}}</h1><div class="room-subtitle"><span :class="{'closed-label':state?.status==='closed','pending-label':isPendingClose}">{{statusLabel}}</span><span v-if="ownerLabel" class="owner-chip" data-testid="owner-chip">{{ownerLabel}}</span><span class="connection" :class="{error:connectionError,live:connection==='实时连接'}" role="status"><i></i>{{connectionError?'连接中断':connection}}</span></div></div>
       <div class="header-actions">
         <button ref="searchButton" class="icon-button" :class="{active:searchOpen}" :disabled="!state?.loaded" aria-label="搜索消息" :aria-expanded="searchOpen" @click="searchOpen?closeSearch():openSearch()"><cat-icon name="search"></cat-icon></button>
-        <button class="members-button" :disabled="!state?.loaded" :aria-label="state?.loaded?'查看 '+state.members.length+' 位同桌':'同桌详情'" @click="openMembers"><cat-icon name="people"></cat-icon><span v-if="state?.loaded">{{state.members.length}}<span class="desktop-only"> 位同桌</span></span><span v-else class="desktop-only">同桌</span></button>
+        <button class="members-button" :disabled="!state?.loaded" :aria-label="state?.loaded?'查看 '+state.members.length+' 位同桌':'同桌详情'" @click="openMembers"><cat-icon name="people"></cat-icon><span v-if="state?.loaded">{{state.members.length}}<span class="desktop-only"> 位同桌 · {{onlineCount}} 在线</span></span><span v-else class="desktop-only">同桌</span></button>
       </div>
     </header>
+    <div v-if="isPendingClose && state?.loaded" class="close-banner" role="alertdialog" aria-label="关闭确认" data-testid="close-banner">
+      <div class="close-banner-text"><strong>负责人已提请关闭本任务房</strong><span>关闭后保留可读历史；若还有要补做的事，可选择继续讨论。</span></div>
+      <div class="close-banner-actions"><button class="secondary-button small" :disabled="closeBusy" @click="closeRoom('continue')">继续讨论</button><button class="primary-button small" :disabled="closeBusy" @click="closeRoom('confirm')">{{closeBusy?'处理中…':'确认关闭'}}</button></div>
+    </div>
+    <section v-if="indexAvailable" class="task-index" :class="{collapsed:!state.indexOpen}" aria-label="任务 INDEX" data-testid="task-index">
+      <header class="task-index-head">
+        <button type="button" class="task-index-toggle" :aria-expanded="state.indexOpen" @click="toggleIndex"><cat-icon name="room"></cat-icon><span>任务 INDEX</span><small v-if="state.context.goal">{{state.context.goal}}</small><cat-icon class="chevron" name="latest"></cat-icon></button>
+        <span v-if="ownerLabel" class="owner-chip">{{ownerLabel}}</span>
+      </header>
+      <div v-if="state.indexOpen" class="task-index-body">
+        <div v-if="state.indexDoc" class="index-markdown" v-html="md(state.indexDoc.body)"></div>
+        <p v-else-if="state.indexError" class="index-error">{{state.indexError}}</p>
+        <p v-else class="index-error">正在读取任务 INDEX…</p>
+      </div>
+    </section>
     <div v-if="outsideProject" class="connection-banner"><div><strong>正在查看链接指定的其他项目讨论</strong><span>此房间不在当前项目的相关列表中。</span></div><button class="secondary-button small" @click="relatedOnly=false">查看全部讨论</button></div>
     <div v-if="searchOpen" class="message-search" role="search">
       <label class="search-field"><cat-icon name="search"></cat-icon><input ref="messageSearch" type="search" maxlength="200" v-model="searchQuery" aria-label="搜索本房间消息" placeholder="搜索本房间消息…" @keydown.enter.prevent="stepSearch($event.shiftKey?-1:1)" @keydown.esc.prevent="closeSearch"></label>
@@ -862,6 +967,30 @@ button:focus-visible,a:focus-visible,select:focus-visible,[tabindex]:focus-visib
   .modal-box{padding:22px}
   .dialog-heading h2{font-size:20px}
 }
+/* ---- 任务房：关闭确认 / 任务 INDEX / 负责人 / 在线计数 ---- */
+.close-banner{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:12px 20px 0;padding:13px 16px;border:1.5px solid color-mix(in oklch,var(--color-warning) 55%,var(--color-base-300));border-radius:12px;background:color-mix(in oklch,var(--color-warning) 7%,var(--color-base-100))}
+.close-banner-text{display:grid;gap:3px;min-width:0}
+.close-banner-text strong{font-size:13.5px}
+.close-banner-text span{font-size:12px;opacity:.72;line-height:1.5}
+.close-banner-actions{display:flex;gap:8px}
+.close-banner-actions .primary-button{background:var(--color-warning);border-color:var(--color-warning);color:#fff}
+.close-banner-actions .primary-button:hover:not(:disabled){filter:brightness(1.04)}
+.owner-chip{display:inline-flex;align-items:center;padding:2px 9px;border:1px solid color-mix(in oklch,var(--color-primary) 26%,var(--color-base-300));border-radius:999px;font-size:10.5px;color:var(--color-primary);background:color-mix(in oklch,var(--color-primary) 6%,var(--color-base-100));white-space:nowrap}
+.pending-label{color:var(--color-warning);font-weight:600}
+.task-index{margin:12px 20px 0;border:1px solid var(--color-base-300);border-radius:12px;background:var(--color-base-100);overflow:hidden}
+.task-index-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border-bottom:1px solid color-mix(in oklch,var(--color-base-300) 60%,transparent);background:color-mix(in oklch,var(--color-primary) 4%,var(--color-base-100))}
+.task-index-toggle{display:inline-flex;align-items:center;gap:8px;min-width:0;border:0;background:transparent;color:inherit;padding:0;font-size:12.5px;font-weight:700}
+.task-index-toggle small{font-weight:400;font-size:11px;opacity:.62;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task-index-toggle .icon{width:15px;height:15px;color:var(--color-primary)}
+.task-index-toggle .chevron{transition:transform .18s ease}
+.task-index.collapsed .task-index-toggle .chevron{transform:rotate(180deg)}
+.task-index-body{max-height:min(30vh,240px);overflow:auto;padding:10px 14px 12px;scrollbar-width:thin}
+.index-markdown{font-size:12.5px;line-height:1.72}
+.index-markdown :is(h1,h2,h3){font-size:13.5px;margin:10px 0 6px}
+.index-markdown :is(ul,ol){padding-left:20px;margin:4px 0}
+.index-markdown a{color:var(--color-primary)}
+.index-error{margin:0;font-size:12px;opacity:.66}
+@media(max-width:900px){.close-banner{margin:10px 12px 0}.task-index{margin:10px 12px 0}.owner-chip{display:none}.task-index-head .owner-chip{display:inline-flex}}
 @media(hover:none){.reply-action{opacity:.65}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
