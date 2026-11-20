@@ -546,18 +546,18 @@ class Board:
                 "cat": ({**rooms_result} if rooms_result.get("deferred")
                         else {"ok": True}) if rooms_result.get("ok") else rooms_result}
 
-    def rooms(self, project_id: str = "") -> dict:
+    def rooms(self, project_id: str = "", home_id: str = "") -> dict:
         homes = None
         if project_id:
             record = self.registry.read_record(project_id)
             homes = set(record["homes"])
             aliases = self._legacy_home_aliases()
-            for home_id in record["homes"]:
+            for project_home in record["homes"]:
                 number = staff_number(
-                    home_id, installation_path=self.installation_file,
+                    project_home, installation_path=self.installation_file,
                     installation=self.installation) or ""
                 homes.update(aliases.get(number, []))
-        result = self.cat(["list"])
+        result = self.cat(["list", "--home", home_id] if home_id else ["list"])
         if not result.get("ok") or homes is None:
             return result
         related = []
@@ -569,11 +569,16 @@ class Board:
                 related.append(room)
         return {**result, "rooms": related}
 
-    def create_room(self, title: str, members: list[str]) -> dict:
+    def create_room(self, title: str, members: list[str], *, details: dict | None = None) -> dict:
         for member in members:
             self.home(member)
         labels = {person["id"]: person["name"] for person in self.people()}
-        result = self.cat(["create", "--title", title])
+        details = details or {}
+        args = ["create", "--title", title, "--from", "human", "--owner",
+                str(details.get("owner_id") or "human"), "--close-policy",
+                str(details.get("close_policy") or "owner")]
+        args.extend(self._context_args(details.get("task_context")))
+        result = self.cat(args)
         if not result.get("ok"):
             return result
         room_id = result["room"]["id"]
@@ -615,16 +620,71 @@ class Board:
         result = self.cat(["show", room_id])
         return {"ok": True, **result["room"]} if result.get("ok") else result
 
+    @staticmethod
+    def _context_args(context: dict | None) -> list[str]:
+        if context is None:
+            return []
+        if not isinstance(context, dict):
+            raise BoardProblem("task_context_invalid", "任务入口需要一组文本字段。")
+        args = []
+        for field in ("goal", "source_ref", "human_request_ref", "project_id", "index_path"):
+            if field in context:
+                if not isinstance(context[field], str):
+                    raise BoardProblem("task_context_invalid", f"{field} 必须是文本。")
+                args.extend(["--" + field.replace("_", "-"), context[field]])
+        return args
+
+    def preview_recipients(self, room_id: str, target_ids: list[str], *,
+                           invite: bool = False, notify: bool | None = None) -> dict:
+        args = ["preview", room_id, "--from", "human"]
+        for target in target_ids:
+            args.extend(["--mention", target])
+        if invite:
+            args.append("--invite")
+        if notify is not None:
+            if not isinstance(notify, bool):
+                raise BoardProblem("notify_invalid", "提醒开关必须是布尔值。")
+            args.append("--notify" if notify else "--no-notify")
+        return self.cat(args)
+
+    def room_progress(self, room_id: str, payload: dict) -> dict:
+        # The page is Human's reader. Agent progress uses the same CLI from its Home.
+        args = ["progress", room_id, "--home", "human"]
+        if "presence" in payload:
+            args.extend(["--presence", str(payload["presence"])])
+        if "last_read_seq" in payload:
+            value = payload["last_read_seq"]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise BoardProblem("invalid_cursor", "已读位置必须是非负整数。")
+            args.extend(["--read-to", str(value)])
+        return self.cat(args)
+
+    def room_context(self, room_id: str, payload: dict) -> dict:
+        args = ["context", room_id, "--from", "human"]
+        if "owner_id" in payload:
+            args.extend(["--owner", str(payload["owner_id"])])
+        args.extend(self._context_args(payload.get("task_context")))
+        return self.cat(args)
+
+    def close_room(self, room_id: str, action: str) -> dict:
+        return self.cat(["close", room_id, "--from", "human", "--action", action])
+
     def send_message(self, room_id: str, sender: str, body: str, message_id: str,
-                     reply_to: str = "", notify: bool = False) -> dict:
+                     reply_to: str = "", notify: bool | None = None,
+                     target_ids: list[str] | None = None, invite: bool = False) -> dict:
         joined = self.cat(["join", room_id, "--home", sender, "--label", "Human" if sender == "human" else sender])
         if not joined.get("ok"):
             return {**joined, "message_submitted": False}
         # Stdin preserves literal @mentions and long text without CLI @FILE semantics.
         args = ["send", room_id, "--from", sender, "--body", "-", "--message-id", message_id]
+        if invite:
+            args.append("--invite")
         if reply_to:
             args += ["--reply-to", reply_to]
-        args.append("--notify" if notify else "--no-notify")
+        for target in target_ids or []:
+            args.extend(["--mention", target])
+        if notify is not None:
+            args.append("--notify" if notify else "--no-notify")
         return self.cat(args, input_text=body)
 
     def hint(self, home_id: str, example: dict) -> dict:
@@ -642,6 +702,18 @@ class Board:
                               "--message-id", f"board-reference-{uuid.uuid4().hex}"])
 
 
+def _human_sender(payload: dict) -> None:
+    if payload.get("sender_id", "human") != "human" or payload.get("actor_id", "human") != "human":
+        raise BoardProblem("human_sender_only", "此网页使用 Human 身份发言和确认。")
+
+
+def _target_ids(payload: dict) -> list[str]:
+    targets = payload.get("target_ids", [])
+    if not isinstance(targets, list) or not all(isinstance(value, str) and value.strip() for value in targets):
+        raise BoardProblem("targets_invalid", "请选择员工号列表。")
+    return targets
+
+
 def dispatch_request(board: Board, method: str, path: str,
                      body: dict | None = None, *, defer_cat: bool = False) -> tuple[int, dict]:
     """Dispatch one existing frontend request without HTTP.
@@ -657,7 +729,8 @@ def dispatch_request(board: Board, method: str, path: str,
         if method == "GET":
             parts = url.path.strip("/").split("/")
             if url.path == "/api/cat/rooms":
-                value = board.rooms(parse_qs(url.query).get("project", [""])[0])
+                query = parse_qs(url.query)
+                value = board.rooms(query.get("project", [""])[0], query.get("home_id", [""])[0])
             elif url.path == "/api/cat/people":
                 value = {"ok": True, "people": board.people()}
             elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "events":
@@ -702,12 +775,20 @@ def dispatch_request(board: Board, method: str, path: str,
                 members = payload.get("members")
                 if not isinstance(members, list) or len(members) < 2 or not all(isinstance(x, str) for x in members):
                     raise BoardProblem("members_invalid", "请选择至少两个登记工位。")
-                value = board.create_room(str(payload.get("title") or "画板沟通"), members)
+                _human_sender(payload)
+                value = board.create_room(str(payload.get("title") or "画板沟通"), members, details=payload)
             elif url.path == "/api/hint":
                 value = board.hint(str(payload.get("agent_id") or ""), payload.get("example") or {})
-            elif url.path.startswith("/api/room/") and url.path.endswith("/message"):
-                if payload.get("sender_id", "human") != "human":
-                    raise BoardProblem("human_sender_only", "此网页使用 Human 身份发言。")
+            elif url.path.startswith("/api/room/") and url.path.endswith("/message-preview"):
+                _human_sender(payload)
+                value = board.preview_recipients(unquote(url.path.rsplit("/", 2)[-2]),
+                    _target_ids(payload), invite=payload.get("invite") is True, notify=payload.get("notify"))
+            elif url.path.startswith("/api/room/") and url.path.endswith(("/message", "/invite")):
+                _human_sender(payload)
+                targets = _target_ids(payload)
+                notify = payload.get("notify")
+                if notify is not None and not isinstance(notify, bool):
+                    raise BoardProblem("notify_invalid", "提醒开关必须是布尔值。")
                 text = str(payload.get("body") or "").strip()
                 if not text:
                     raise BoardProblem("empty_body", "请输入发言内容。")
@@ -715,7 +796,19 @@ def dispatch_request(board: Board, method: str, path: str,
                                            "human", text,
                                            str(payload.get("message_id") or f"board-{uuid.uuid4().hex}"),
                                            str(payload.get("reply_to") or ""),
-                                           bool(payload.get("notify", False)))
+                                           notify, targets, invite=url.path.endswith("/invite") or payload.get("invite") is True)
+            elif url.path.startswith("/api/room/") and url.path.endswith("/progress"):
+                _human_sender(payload)
+                if payload.get("home_id", "human") != "human":
+                    raise BoardProblem("human_sender_only", "网页只记录 Human 本人的已读位置。")
+                value = board.room_progress(unquote(url.path.rsplit("/", 2)[-2]), payload)
+            elif url.path.startswith("/api/room/") and url.path.endswith("/context"):
+                _human_sender(payload)
+                value = board.room_context(unquote(url.path.rsplit("/", 2)[-2]), payload)
+            elif url.path.startswith("/api/room/") and url.path.endswith("/close"):
+                _human_sender(payload)
+                value = board.close_room(unquote(url.path.rsplit("/", 2)[-2]),
+                                        str(payload.get("action") or "request"))
             elif url.path == "/api/collaboration":
                 value = board.collaboration(payload)
             else:

@@ -9,11 +9,11 @@ function storage() {
 
 test('navigation or reload keeps the original in-flight request and makes it check-only', () => {
   const disk=storage();
-  const state={id:'room-one',draft:'原正文',reply:'quoted',pending:{id:'human-original',body:'原正文',reply:'quoted',sending:true},messages:[{body:'不得缓存'}]};
+  const state={id:'room-one',draft:'原正文',reply:'quoted',targets:['S029'],pending:{id:'human-original',body:'原正文',reply:'quoted',sending:true},messages:[{body:'不得缓存'}]};
   writeDraft(disk,state);
   const restored=readDraft(disk,state.id);
-  assert.deepEqual(restored,{draft:'原正文',reply:'quoted',pending:{id:'human-original',body:'原正文',reply:'quoted',sending:false},endedRequests:[]});
-  assert.deepEqual(readDraft(disk,'room-two'),{draft:'',reply:'',pending:null,endedRequests:[]});
+  assert.deepEqual(restored,{draft:'原正文',reply:'quoted',targets:['S029'],pending:{id:'human-original',body:'原正文',reply:'quoted',sending:false},endedRequests:[]});
+  assert.deepEqual(readDraft(disk,'room-two'),{draft:'',reply:'',targets:[],pending:null,endedRequests:[]});
   assert.equal('messages' in restored,false);
 });
 
@@ -22,6 +22,6 @@ test('confirming a saved message clears only its own composer', () => {
   writeDraft(disk,{id:'one',draft:'a',reply:'',pending:null});
   writeDraft(disk,{id:'two',draft:'b',reply:'q',pending:null});
   writeDraft(disk,{id:'one',draft:'',reply:'',pending:null});
-  assert.deepEqual(readDraft(disk,'one'),{draft:'',reply:'',pending:null,endedRequests:[]});
+  assert.deepEqual(readDraft(disk,'one'),{draft:'',reply:'',targets:[],pending:null,endedRequests:[]});
   assert.equal(readDraft(disk,'two').draft,'b');
 });

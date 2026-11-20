@@ -1,4 +1,4 @@
-"""CAT routing keeps a post quiet unless its caller selects a reminder."""
+"""CAT callers share member, recipient and task-room contracts."""
 import argparse
 import json
 import io
@@ -18,10 +18,14 @@ class CatCliTests(unittest.TestCase):
         parser = argparse.ArgumentParser()
         add_cat_parser(parser.add_subparsers(required=True))
         for verb, flags, fields in (
-            ("send", [], {"notify": False, "reply_to": None}),
-            ("send", ["--notify"], {"notify": True, "reply_to": None}),
-            ("send", ["--mention", "S029"], {"target_id": "S029", "reply_to": None}),
-            ("invite", ["--to", "S069"], {"target_id": "S069", "invite": True}),
+            ("send", [], {"target_ids": [], "reply_to": None}),
+            ("send", ["--notify"], {"target_ids": [], "notify": True, "reply_to": None}),
+            ("send", ["--no-notify"], {"target_ids": [], "notify": False, "reply_to": None}),
+            ("send", ["--mention", "S029", "--mention", "S040"],
+             {"target_ids": ["S029", "S040"], "reply_to": None}),
+            ("send", ["--mention", "S029", "--invite"],
+             {"target_ids": ["S029"], "reply_to": None, "invite": True}),
+            ("invite", ["--to", "S069"], {"target_ids": ["S069"], "invite": True}),
         ):
             with self.subTest(verb=verb, flags=flags):
                 args = parser.parse_args([
@@ -33,6 +37,48 @@ class CatCliTests(unittest.TestCase):
                 client.request.assert_called_once_with("POST", "/api/rooms/room-one/messages", {
                     "message_id": "original", "sender_id": "S010", "body": "question", **fields,
                 })
+
+    def test_room_recovery_progress_preview_and_close_use_the_backend_contract(self):
+        parser = argparse.ArgumentParser()
+        add_cat_parser(parser.add_subparsers(required=True))
+        cases = [
+            (["list", "--home", "S040"], "GET", "/api/rooms?home_id=S040", None),
+            (["preview", "room-one", "--from", "human", "--mention", "S029", "--mention", "S040"],
+             "POST", "/api/rooms/room-one/message-preview",
+             {"sender_id": "human", "target_ids": ["S029", "S040"], "invite": False}),
+            (["preview", "room-one", "--from", "S010", "--notify"],
+             "POST", "/api/rooms/room-one/message-preview",
+             {"sender_id": "S010", "target_ids": [], "invite": False, "notify": True}),
+            (["progress", "room-one", "--home", "S040", "--presence", "offline", "--read-to", "7"],
+             "POST", "/api/rooms/room-one/members/S040/progress", {"presence": "offline", "last_read_seq": 7}),
+            (["close", "room-one", "--from", "S040", "--action", "request"],
+             "POST", "/api/rooms/room-one/close", {"actor_id": "S040", "action": "request"}),
+            (["close", "room-one", "--from", "human", "--action", "confirm"],
+             "POST", "/api/rooms/room-one/close", {"actor_id": "human", "action": "confirm"}),
+            (["create", "--title", "真实任务", "--from", "S010", "--owner", "S040",
+              "--close-policy", "human_confirm", "--project-id", "3002", "--index-path", "Works/task/INDEX.md"],
+             "POST", "/api/rooms", {"title": "真实任务", "created_by": "S010", "owner_id": "S040",
+              "close_policy": "human_confirm", "task_context": {"project_id": "3002", "index_path": "Works/task/INDEX.md"}}),
+        ]
+        for flags, method, path, payload in cases:
+            with self.subTest(flags=flags):
+                client = Mock()
+                execute_cat(parser.parse_args(["cat", *flags]), client, lambda v, *_a, **_k: v)
+                expected = (method, path) if payload is None else (method, path, payload)
+                client.request.assert_called_once_with(*expected)
+
+    def test_room_summary_keeps_the_index_without_dumping_message_history(self):
+        parser = argparse.ArgumentParser()
+        add_cat_parser(parser.add_subparsers(required=True))
+        context = {"project_id": "3002", "index_path": "Works/task/INDEX.md"}
+        client = Mock()
+        client.request.return_value = {"ok": True, "room": {
+            "id": "room-one", "task_context": context, "messages": [{"seq": 8, "body": "large history"}],
+            "owner_id": "S040", "close_policy": "human_confirm"}}
+        result = execute_cat(parser.parse_args(["cat", "show", "room-one"]), client, None)
+        self.assertEqual(result["summary"]["task_context"], context)
+        self.assertEqual(result["summary"]["counts"]["last_seq"], 8)
+        self.assertNotIn("messages", result["summary"])
 
 
 class CatBoardTests(unittest.TestCase):
@@ -114,7 +160,8 @@ class CatBoardTests(unittest.TestCase):
 
     def test_human_reply_uses_one_existing_join_and_one_original_send(self):
         for fields, flag, dispatch in (
-            ({}, "--no-notify", "skipped"),
+            ({}, None, "queued"),
+            ({"notify": False}, "--no-notify", "skipped"),
             ({"notify": True}, "--notify", "queued"),
         ):
             with self.subTest(flag=flag):
@@ -132,8 +179,56 @@ class CatBoardTests(unittest.TestCase):
                     ["join", "room-one", "--home", "human", "--label", "Human"])
                 self.assertEqual(call.call_args_list[1].args[0],
                     ["send", "room-one", "--from", "human", "--body", "-",
-                     "--message-id", "same-id", "--reply-to", "original", flag])
+                     "--message-id", "same-id", "--reply-to", "original"] + ([flag] if flag else []))
                 self.assertEqual(call.call_args_list[1].kwargs["input_text"], "回复原讨论")
+
+    def test_recipient_preview_is_read_only_and_selected_send_keeps_the_same_targets(self):
+        targets = ["S029", "S040"]
+        with patch.object(self.board, "cat", return_value={
+                "ok": True, "recipient_mode": "selected", "recipients": targets}) as call:
+            status, preview = self.call("/api/room/room-one/message-preview", {"target_ids": targets})
+        self.assertEqual(status, 200)
+        self.assertEqual(preview["recipients"], targets)
+        call.assert_called_once_with(["preview", "room-one", "--from", "human",
+                                      "--mention", "S029", "--mention", "S040"])
+        with patch.object(self.board, "cat", return_value={"ok": True, "recipient_mode": "none", "recipients": []}) as call:
+            self.call("/api/room/room-one/message-preview", {"notify": False})
+        call.assert_called_once_with(["preview", "room-one", "--from", "human", "--no-notify"])
+        with patch.object(self.board, "cat", side_effect=[{"ok": True}, {"ok": True, "accepted": True}]) as call:
+            self.call("/api/room/room-one/message", {"target_ids": targets, "body": "@不解析正文", "message_id": "selected"})
+        self.assertEqual(call.call_args_list[-1].args[0], [
+            "send", "room-one", "--from", "human", "--body", "-", "--message-id", "selected",
+            "--mention", "S029", "--mention", "S040"])
+        self.assertEqual(call.call_args_list[-1].kwargs["input_text"], "@不解析正文")
+
+    def test_invitation_keeps_join_of_targets_and_message_in_the_backend_transaction(self):
+        for suffix, extra in (("invite", {}), ("message", {"invite": True})):
+            with self.subTest(suffix=suffix), patch.object(
+                    self.board, "cat", side_effect=[{"ok": True}, {"ok": True}]) as call:
+                self.call("/api/room/room-one/" + suffix, {"target_ids": ["S069", "S040"],
+                    "body": "请一起讨论", "message_id": "invited", **extra})
+            self.assertEqual(call.call_count, 2)
+            self.assertEqual(call.call_args_list[-1].args[0], ["send", "room-one", "--from", "human", "--body", "-",
+                "--message-id", "invited", "--invite", "--mention", "S069", "--mention", "S040"])
+
+    def test_invalid_selected_targets_do_not_join_or_send(self):
+        with patch.object(self.board, "cat") as cat:
+            for targets in ("S040", [4], [""]):
+                status, value = self.call("/api/room/room-one/message", {"body": "kept", "target_ids": targets})
+                self.assertEqual(status, 422)
+                self.assertEqual(value["error_code"], "targets_invalid")
+        cat.assert_not_called()
+
+    def test_progress_and_close_forward_explicit_human_actions(self):
+        with patch.object(self.board, "cat", return_value={"ok": True}) as cat:
+            self.call("/api/room/room-one/progress", {"last_read_seq": 7})
+            self.assertEqual(cat.call_args.args[0], ["progress", "room-one", "--home", "human", "--read-to", "7"])
+            self.call("/api/room/room-one/close", {"action": "confirm"})
+            self.assertEqual(cat.call_args.args[0], ["close", "room-one", "--from", "human", "--action", "confirm"])
+        with patch.object(self.board, "cat") as cat:
+            self.assertEqual(self.call("/api/room/room-one/progress", {"last_read_seq": True})[0], 422)
+            self.assertEqual(self.call("/api/room/room-one/progress", {"home_id": "S040", "presence": "online"})[0], 422)
+        cat.assert_not_called()
 
     def test_page_cannot_choose_an_agent_signature(self):
         with patch.object(self.board, "cat") as call:

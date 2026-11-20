@@ -21,6 +21,7 @@ export function sendOutcome(value) {
   if (value?.ok && value.accepted === true && value.message?.id) {
     const dispatch = {
       queued: '同桌提醒已排队',
+      coalesced: '后续未读已并入在途提醒',
       skipped: '本条未请求提醒',
       none: '没有其他需要提醒的参与者',
       not_configured: '提醒入口未配置',
