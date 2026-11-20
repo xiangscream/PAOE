@@ -425,6 +425,7 @@ export default {
           Object.assign(state,{title:room.title,status:room.status,members:room.members,loaded:true,
             ownerId:room.owner_id||state.ownerId,closePolicy:room.close_policy||state.closePolicy,
             context:room.task_context||state.context},readPage(state,room.messages));
+          await this.loadIndexDoc(state);
           this.confirmPending(state);this.startStream(state);
         }else await this.openInitialRoom();
       } catch(error) {this.connection=error.message;this.connectionError=true;}
@@ -537,13 +538,15 @@ export default {
       const cursorAdvance=upto>seen && this.atLatest;                // 未看到尾部不推进游标
       if (!cursorAdvance && state.presenceMarked) return;            // presence 已标记且无新游标则不重复
       state.progressBusy=true;
+      let acknowledged=false;
       const payload={presence:'online'};
       if (cursorAdvance) payload.last_read_seq=upto;
       request(endpoint(state.id,'/progress'),{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)})
         .then(value=>{
           if (value && value.ok) {
-            state.progressSent=Math.max(state.progressSent,upto);
+            acknowledged=true;
+            if (cursorAdvance) state.progressSent=Math.max(state.progressSent,upto);
             state.presenceMarked=true;
             state.progressLag=false;                                 // 真实成功回执才推进本地游标
           } else {
@@ -551,7 +554,12 @@ export default {
           }
         })
         .catch(()=>{ state.progressLag=true; })                      // 结果不明同样保留未同步事实
-        .finally(()=>{ state.progressBusy=false; });
+        .finally(()=>{
+          state.progressBusy=false;
+          // A later visible page can arrive while the previous position is being saved.
+          if (acknowledged && this.state===state && this.atLatest && state.cursor>state.progressSent)
+            this.advanceProgress();
+        });
     },
     markOfflineOnHide() {
       const id=this.roomId;
@@ -559,7 +567,7 @@ export default {
       try {
         navigator.sendBeacon(endpoint(id,'/progress'),
           new Blob([JSON.stringify({presence:'offline'})],{type:'application/json'}));
-      } catch(error) { /* 尽力而为：失败时后台显示状态未知 */ }
+      } catch(error) { /* 卸载通知未保证送达，后台保留最近一次显式状态。 */ }
     },
     onPageHide() { this.markOfflineOnHide(); },
   },

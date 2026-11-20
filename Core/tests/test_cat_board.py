@@ -191,6 +191,9 @@ class CatBoardTests(unittest.TestCase):
         self.assertEqual(preview["recipients"], targets)
         call.assert_called_once_with(["preview", "room-one", "--from", "human",
                                       "--mention", "S029", "--mention", "S040"])
+        with patch.object(self.board, "cat", return_value={"ok": True, "recipient_mode": "none", "recipients": []}) as call:
+            self.call("/api/room/room-one/message-preview", {"notify": False})
+        call.assert_called_once_with(["preview", "room-one", "--from", "human", "--no-notify"])
         with patch.object(self.board, "cat", side_effect=[{"ok": True}, {"ok": True, "accepted": True}]) as call:
             self.call("/api/room/room-one/message", {"target_ids": targets, "body": "@不解析正文", "message_id": "selected"})
         self.assertEqual(call.call_args_list[-1].args[0], [

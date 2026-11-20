@@ -39,7 +39,8 @@ export function outsideCandidates(people, members, query = '') {
   const seated = new Set((members || []).map(member => member.home_id));
   return (people || []).filter(person => {
     const id = staffId(person);
-    if (!id || id === 'human' || seated.has(id) || (person.home_id && seated.has(person.home_id))) return false;
+    const aliases = [id, person.home_id, person.id, ...(person.legacy_home_ids || [])];
+    if (!id || id === 'human' || aliases.some(alias => seated.has(alias))) return false;
     return id.toLowerCase().includes(needle)
       || (person.name || '').toLowerCase().includes(needle)
       || roleLine(person).toLowerCase().includes(needle);

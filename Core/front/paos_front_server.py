@@ -634,12 +634,17 @@ class Board:
                 args.extend(["--" + field.replace("_", "-"), context[field]])
         return args
 
-    def preview_recipients(self, room_id: str, target_ids: list[str], *, invite: bool = False) -> dict:
+    def preview_recipients(self, room_id: str, target_ids: list[str], *,
+                           invite: bool = False, notify: bool | None = None) -> dict:
         args = ["preview", room_id, "--from", "human"]
         for target in target_ids:
             args.extend(["--mention", target])
         if invite:
             args.append("--invite")
+        if notify is not None:
+            if not isinstance(notify, bool):
+                raise BoardProblem("notify_invalid", "提醒开关必须是布尔值。")
+            args.append("--notify" if notify else "--no-notify")
         return self.cat(args)
 
     def room_progress(self, room_id: str, payload: dict) -> dict:
@@ -777,7 +782,7 @@ def dispatch_request(board: Board, method: str, path: str,
             elif url.path.startswith("/api/room/") and url.path.endswith("/message-preview"):
                 _human_sender(payload)
                 value = board.preview_recipients(unquote(url.path.rsplit("/", 2)[-2]),
-                                                  _target_ids(payload), invite=payload.get("invite") is True)
+                    _target_ids(payload), invite=payload.get("invite") is True, notify=payload.get("notify"))
             elif url.path.startswith("/api/room/") and url.path.endswith(("/message", "/invite")):
                 _human_sender(payload)
                 targets = _target_ids(payload)

@@ -124,7 +124,7 @@ S号寻址和跨Project参数查安装 `agent send --help`。普通消息使用�
 
 ## CAT 圆桌
 
-网页入口、轻量JSON与实时显示的功能说明见 [CAT](../CAT/README.md)；启动方式沿现有System网页入口，不另建消息服务。本节是 CAT 讨论、任务房与在线协作的唯一操作细则（任务房新增参数随本轮配对版本发行，具体参数以同版 `--help` 为准）。
+网页入口、轻量JSON与实时显示的功能说明见 [CAT](../CAT/README.md)；启动方式沿现有System网页入口，不另建消息服务。本节是 CAT 讨论、任务房与在线协作的唯一操作细则（具体参数以同版 `--help` 为准）。
 
 CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。Room与同事从现行Project/联系入口取得。
 
@@ -136,6 +136,7 @@ CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。
   - **Human 任务房（`--close-policy human_confirm`）**：Human 明确要求为大任务开房时，登记目标、原任务/成果入口、Human 开房要求、Human 指定的负责人（`--owner`）与项目已有短 INDEX（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面，不造第二份任务正文）。房间持续开放，即使成员全部离线也继续保留；负责人完成后用 `cat close --action request` 提请关闭（进入 `pending_close`），须由 Human 手动确认（`--action confirm`）才关闭，或用 `--action continue` 恢复 `open`。
   - **Agent 小房（`--close-policy owner`）**：Agent 为局部问题自行开的房间，由发起人或约定负责人在结论归位后自行关闭；即使 Human 后来进小房发言仍沿原关房约定。关闭后历史可读。
 - **房间 INDEX 与负责人**：任务房负责人由 Human 指定，沿 [Coordinator 工作循环](wf-coordinator-governance-cycle.md#4-项目口径收口与阶段归并) 维护任务 INDEX（任务目标与交付、Human 当前要求、待定问题、下一步与负责人），引用对应 Human 消息并标明归并到哪一条；任务结束后稳定结论归入项目 INDEX 或成果原件。
+  网页或 Obsidian 中点击刷新，会重新读取关联的项目 INDEX 原页。
 
 ### 在线循环、离线语义与恢复扫房
 
@@ -145,7 +146,7 @@ CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。
 
 ### 发言提醒、多选点名与命令速查
 
-| 目的 | 命令（以同版 `--help` 为准；任务房参数本轮待发行） |
+| 目的 | 命令（以同版 `--help` 为准） |
 | --- | --- |
 | 扫本人负责房间与未读增量 | `paos cat list --home <本人Sxxx>` |
 | 创建任务房 / 小房 | `paos cat create --title "<标题>" [--from <actor>] [--owner <owner>] [--close-policy human_confirm\|owner] [--goal "..."] [--source-ref <路径>] [--human-request-ref <来源>] [--project-id <id>] [--index-path <相对路径>]` |

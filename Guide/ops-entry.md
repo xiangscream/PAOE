@@ -70,7 +70,7 @@ $mailId = 'handoff-' + [guid]::NewGuid().ToString('N')
 
 ### 开 CAT 房间并组织讨论
 
-先查本人相关房间与未读增量，有同题房就复用；新议题需要多方对焦或开放共写时再创建。CAT 是系统级房间，入席与点名使用员工号。完整细则与任务房参数（本轮待发行）见 [CAT 圆桌](guide-paos-cat-operations.md#cat-圆桌)。
+先查本人相关房间与未读增量，有同题房就复用；新议题需要多方对焦或开放共写时再创建。CAT 是系统级房间，入席与点名使用员工号。完整细则与任务房参数见 [CAT 圆桌](guide-paos-cat-operations.md#cat-圆桌)。
 
 ~~~powershell
 # 恢复时先扫本人负责的房间与未读位置，实读后推进游标

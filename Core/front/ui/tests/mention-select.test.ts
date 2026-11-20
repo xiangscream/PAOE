@@ -75,6 +75,8 @@ describe('outsideCandidates', () => {
   it('requires a query and never offers seated colleagues', () => {
     expect(outsideCandidates(people, members, '')).toEqual([])
     expect(outsideCandidates(people, members, '069')).toEqual([])
+    expect(outsideCandidates([{home_id:'S069', legacy_home_ids:['3002-s069'], name:'在场成员'}],
+      [{home_id:'3002-s069'}], '069')).toEqual([])
   })
   it('matches by staff number, name and role', () => {
     expect(outsideCandidates(people, members, '080').map(staffId)).toEqual(['S080'])

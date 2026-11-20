@@ -131,12 +131,14 @@ it('does not advance the cursor while the tail is not actually visible', async (
   const {wrapper, progress} = mountRoom()
   await flushPromises()
   const sent = () => progress.mock.calls.map(([, options]) => JSON.parse(String(options!.body)) as Record<string, unknown>).filter(payload => 'last_read_seq' in payload)
-  const vm = wrapper.vm as unknown as {atLatest: boolean; roomStates: Record<string, {cursor: number}>; advanceProgress: () => void}
+  const vm = wrapper.vm as unknown as {atLatest: boolean; roomStates: Record<string, {cursor: number; progressSent: number; presenceMarked: boolean}>; advanceProgress: () => void}
   vm.roomStates['task-room'].cursor = 3        // 新消息到达但仍在旧位置
+  vm.roomStates['task-room'].presenceMarked = false // 回房先重记在线，尚未看到新尾部
   vm.atLatest = false
   vm.advanceProgress()
   await flushPromises()
   expect(sent()).toEqual([{presence:'online', last_read_seq:2}])   // 未看到尾部不推进
+  expect(vm.roomStates['task-room'].progressSent).toBe(2)         // presence-only 的成功不等于读到 3
   vm.atLatest = true                            // 实际滚到最新
   vm.advanceProgress()
   await flushPromises()
@@ -163,4 +165,23 @@ it('keeps the unsynced fact when the progress receipt is not ok', async () => {
   expect(vm.roomStates['task-room'].progressSent).toBe(5)           // 真实成功回执才推进
   expect(vm.roomStates['task-room'].progressLag).toBe(false)
   expect(wrapper.find('[data-testid="progress-lag"]').exists()).toBe(false)
+})
+
+it('saves the newer visible position after an in-flight progress write settles', async () => {
+  let release!: (value: unknown) => void
+  let first = true
+  const pending = new Promise(resolve => { release = resolve })
+  const {wrapper, progress} = mountRoom({}, {progressResult: () => {
+    if (first) { first=false; return pending }
+    return {ok:true}
+  }})
+  await flushPromises()
+  const vm = wrapper.vm as unknown as {roomStates: Record<string, {cursor: number; progressSent: number}>; advanceProgress: () => void}
+  vm.roomStates['task-room'].cursor=4
+  vm.advanceProgress()
+  expect(progress).toHaveBeenCalledTimes(1)
+  release({ok:true})
+  await flushPromises()
+  expect(JSON.parse(String(progress.mock.calls.at(-1)![1]!.body))).toEqual({presence:'online',last_read_seq:4})
+  expect(vm.roomStates['task-room'].progressSent).toBe(4)
 })
