@@ -25,7 +25,12 @@ jobs:
         run: |
           npm test
           npm run build
-      - name: Compiled frontend matches source
-        run: git diff --exit-code -- Core/front/dist
+      - name: Obsidian native hosts and production bundles
+        working-directory: Core/front/ui
+        run: |
+          node node_modules/vue-tsc/bin/vue-tsc.js -p ../../obsidian/tsconfig.json --noEmit
+          node build-obsidian.mjs
+      - name: Compiled web and Obsidian frontends match source
+        run: git diff --exit-code -- Core/front/dist Core/obsidian
       - name: System release and isolated upgrade contracts
         run: python -B -m unittest discover -s tests -v
