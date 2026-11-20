@@ -72,4 +72,3 @@ export function observerNote(members) {
   const count = (members || []).filter(member => member.state === 'observer').length;
   return count ? `另有 ${count} 位旁听不在提醒范围` : '';
 }
-
