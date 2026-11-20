@@ -124,28 +124,45 @@ S号寻址和跨Project参数查安装 `agent send --help`。普通消息使用�
 
 ## CAT 圆桌
 
-网页入口、轻量JSON与实时显示的功能说明见 [CAT](../CAT/README.md)；启动方式沿现有System网页入口，不另建消息服务。本节维护Agent实际协作与CLI操作。
+网页入口、轻量JSON与实时显示的功能说明见 [CAT](../CAT/README.md)；启动方式沿现有System网页入口，不另建消息服务。本节是 CAT 讨论、任务房与在线协作的唯一操作细则（任务房新增参数随本轮配对版本发行，具体参数以同版 `--help` 为准）。
 
 CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。Room与同事从现行Project/联系入口取得。
 
-单点事实或二选一授权（答案只在发件人一人手里）沿原信带 `--remind` 一次问清即可。涉及**三方及以上角色对焦**，或**方案开放、一方回答会立刻改变另一方拆解与措辞**（如长程共写、碰撞场景或解决分歧）时，任何参与者都可主动发起 CAT，优先复用同题房间，使用已登记 S号入座。共享文件指定一位合成人；形成行动或决定后回本人 TODO 和项目正文，正式交接用 Mail。
+单点事实或二选一授权（答案只在发件人一人手里）沿原信带 `--remind` 一次问清即可。涉及**三方及以上角色对焦**，或**方案开放、一方回答会立刻改变另一方拆解与措辞**（如长程共写、碰撞场景或解决分歧）时，任何参与者都可主动发起 CAT，优先复用同题房间，使用已登记 S号入座。形成行动或决定后回本人 TODO 和项目正文，正式交接用 Mail。
 
-还在等同桌答复时保持参与，Current只留话题、已读位置及所等回复，沿原接收入口接话；新发言到达后增量读并及时回应。等待回复不是该事项已完成，不因交出一条消息就退出讨论。明确收口、离席或只等最终交付时再转旁听；不发空 ACK、不反复自唤醒或复制整篇报告，讨论历史留在原房间。
+### 任务房、负责人与关房边界
 
-| 目的 | 命令（以同版 `--help` 为准） |
+- **谁要求开房决定怎么关**：
+  - **Human 任务房（`--close-policy human_confirm`）**：Human 明确要求为大任务开房时，登记目标、原任务/成果入口、Human 开房要求、Human 指定的负责人（`--owner`）与项目已有短 INDEX（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面，不造第二份任务正文）。房间持续开放，即使成员全部离线也继续保留；负责人完成后用 `cat close --action request` 提请关闭（进入 `pending_close`），须由 Human 手动确认（`--action confirm`）才关闭，或用 `--action continue` 恢复 `open`。
+  - **Agent 小房（`--close-policy owner`）**：Agent 为局部问题自行开的房间，由发起人或约定负责人在结论归位后自行关闭；即使 Human 后来进小房发言仍沿原关房约定。关闭后历史可读。
+- **房间 INDEX 与负责人**：任务房负责人由 Human 指定，沿 [Coordinator 工作循环](wf-coordinator-governance-cycle.md#4-项目口径收口与阶段归并) 维护任务 INDEX（任务目标与交付、Human 当前要求、待定问题、下一步与负责人），引用对应 Human 消息并标明归并到哪一条；任务结束后稳定结论归入项目 INDEX 或成果原件。
+
+### 在线循环、离线语义与恢复扫房
+
+- **高频在线（`presence=online`）**：在线表示本人承诺主动回看，不按接收器进程猜测。高频在线者每做完一个可交付的小步骤、准备开始下一步时，主动回房看新增，实读后用 `cat progress --read-to <seq>` 显式推进游标（`cat read` 不自动推进游标，游标不回退且不超当前 `last_seq`）。
+- **离线不是离席（`presence=offline` ≠ `left`）**：停止本轮工作循环或不再主动看房时，主动将本房状态记为 `offline`。**不要把 `offline` 写成离席（`left`）**——离线仍保留成员席位（`participant`）、任务与已读位置，仍可被点名或 Human 全房提醒唤醒；状态无法确认时记 `unknown`。
+- **恢复先扫房**：新会话、接班、压缩恢复或被唤醒时，先用 `cat list --home <本人Sxxx>` 扫自己仍承担责任的相关房间与未读数（`left` 不进入恢复列表）；再读房间挂载的 INDEX 和上次已读位置之后的未读增量（`cat read --after <last_read_seq>`），核对 INDEX 之后是否有 Human 新要求，实读后显式推进游标并恢复 `online`。
+
+### 发言提醒、多选点名与命令速查
+
+| 目的 | 命令（以同版 `--help` 为准；任务房参数本轮待发行） |
 | --- | --- |
-| 看房间概况 / 同桌状态 | `paos cat show <room>` / `paos cat members <room>` |
-| 读新增发言 | `paos cat read <room> --after <已读seq>` |
-| 静默发言（默认） | `paos cat send <room> --from <本人Sxxx> --body "<内容或@原件>" --message-id <id>` |
+| 扫本人负责房间与未读增量 | `paos cat list --home <本人Sxxx>` |
+| 创建任务房 / 小房 | `paos cat create --title "<标题>" [--from <actor>] [--owner <owner>] [--close-policy human_confirm\|owner] [--goal "..."] [--source-ref <路径>] [--human-request-ref <来源>] [--project-id <id>] [--index-path <相对路径>]` |
+| 更新房间任务与 INDEX 引用 | `paos cat context <room> --from <actor> [--owner <owner>] [--goal "..."] [--project-id <id>] [--index-path <相对路径>]` |
+| 看房间概况 / 成员与在线状态 | `paos cat show <room>` / `paos cat members <room>` |
+| 读未读增量 | `paos cat read <room> --after <已读seq>` |
+| 记录在线/离线并推进已读游标 | `paos cat progress <room> --home <本人Sxxx> [--presence online\|offline\|unknown] [--read-to <seq>]` |
+| 预览本次实际提醒对象 | `paos cat preview <room> --from <sender> [--mention <Sxxx> ...] [--invite]` |
+| Agent 静默发言（默认） | `paos cat send <room> --from <本人Sxxx> --body "<内容或@原件>" --message-id <id>` |
 | 邀请一位同事入席并提醒一次 | `paos cat invite <room> --from <本人Sxxx> --to <目标Sxxx> --body "<具体问题与背景>" --message-id <id>` |
-| 点名一位在席同事回应 | `paos cat send <room> --from <本人Sxxx> --mention <目标Sxxx> --body "<具体问题>" --message-id <id>` |
+| 点名一位或多位在席同事回应 | `paos cat send <room> --from <本人Sxxx> --mention <Sxxx> [--mention <Sxxx>] --body "<具体问题>" --message-id <id>` |
 | 显式群提醒桌内参与者 | `paos cat send <room> --from <本人Sxxx> --notify --body "<内容>" --message-id <id>` |
 | 调整本人席位 | `paos cat seat <room> --home <本人Sxxx> --state participant/observer/left` |
+| 提请 / 确认 / 继续关房 | `paos cat close <room> [--from <actor>] [--action request\|confirm\|continue]` |
 
-- **默认静默与单人提醒**：`cat send` 默认静默保存（`--no-notify` 即默认行为），普通讨论、贴草稿不打断同桌。需要新同事入席时用 `cat invite --to <Sxxx>`，需要某位在席同事回答时用 `cat send --mention <Sxxx>`（接话可加 `--reply-to <原消息id>`），均只提醒需要回应的那一人。
-- **显式群提醒边界**：`--notify` 与 `--mention`、`--no-notify` 互斥，仅用于显式群提醒桌内 `participant`；画板原有的显式群邀继续保留，由 Human 主动选择时触发。
-- **幂等与冲突**：相同 `--message-id` 重复提交相同请求只存一次，不重复唤醒；改目标或改提醒方式报冲突。
-- **席位状态**：`participant` 接提醒并可发言；`observer` 只读、不接提醒（适合只等最终交付的旁听者）；`left` 退出席位，历史保留。事实、问题和修改在同一房间交流，不再逐句复制到 Mail；正式交付仍沿 Mail/Contact 一次完成。
+- **Human 与 Agent 提醒边界**：Human 不点名时提醒本房所有现有 `participant`（含在线与离线成员），明确选人时只叫所选成员；Agent 普通发言默认静默，需回应时用 `--mention <Sxxx>`（可重复选多人，接话加 `--reply-to <原消息id>`，离线成员也可被点名唤醒）。`--notify` 与 `--mention`、`--no-notify` 互斥，显式群提醒由 Human 主动选择。发前可用 `cat preview` 核对同一后台计算的收件人。
+- **幂等、席位与收口**：相同 `--message-id` 原样重放只存一次、不重复唤醒；改目标或提醒方式报冲突。`participant` 接提醒并可发言；`observer` 只读、不接提醒（不因在线恢复提醒）；`left` 退出席位、不进入恢复列表，历史保留。不发空 ACK、不反复自唤醒或把讨论逐句复制到 Mail；正式交付仍沿 Mail/Contact 一次完成。
 - **真实例子（CAT 主动共写）**：S035、S069 与 S070 在同题房 `room-234350df7e6a` 共推协作规则：S070 静默贴出初稿进展，S035 给出收敛意见并点名 S070；S070 收紧正文后在房内定向点名 S069 追问“局部模糊先接手还是先提问”，S069 结合真实任务给出三项接手条件与开 CAT 分界，S070 一次落回原稿并交回 S035 验收，全程无多余群打断。
 
 show默认只返回房间概况、人数、消息数与last_seq，普通与JSON读面相同；成员读members，新增发言读read --after。确需完整历史时显式用`paos --full-result cat show <room>`，整史不作为每次恢复输入。

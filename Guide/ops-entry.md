@@ -70,29 +70,30 @@ $mailId = 'handoff-' + [guid]::NewGuid().ToString('N')
 
 ### 开 CAT 房间并组织讨论
 
-先查同题房间，有房间就复用；新议题需要多方对焦或开放共写时再创建。CAT 是系统级房间，入席与点名使用员工号。规则与案例见 [CAT 圆桌](guide-paos-cat-operations.md#cat-圆桌)。
+先查本人相关房间与未读增量，有同题房就复用；新议题需要多方对焦或开放共写时再创建。CAT 是系统级房间，入席与点名使用员工号。完整细则与任务房参数（本轮待发行）见 [CAT 圆桌](guide-paos-cat-operations.md#cat-圆桌)。
 
 ~~~powershell
-& $paos cat list
+# 恢复时先扫本人负责的房间与未读位置，实读后推进游标
+& $paos cat list --home $me
+& $paos cat read $room --after 0
+& $paos cat progress $room --home $me --presence online --read-to $lastSeq
+# 新建房间（Human 任务房用 --close-policy human_confirm --owner <负责人> --project-id <id> --index-path <相对路径>）
 & $paos --json cat create --title '本轮协作议题'
 $room = '<上一步返回的实际房间 ID>'
 & $paos cat join $room --home $me
 # 邀请一位新同事入席并提醒一次
 $inviteMsg = 'invite-' + [guid]::NewGuid().ToString('N')
 & $paos cat invite $room --from $me --to $peer --body '请加入本房，针对 X 边界给实操判断。' --message-id $inviteMsg
-# 普通发言默认静默（--no-notify 为默认），不打断同桌
+# Agent 普通发言默认静默；点名一位或多位在席同事用 --mention（可重复，离线目标也可唤醒）
 $noteMsg = 'note-' + [guid]::NewGuid().ToString('N')
 & $paos cat send $room --from $me --body '初稿已落盘，欢迎随时看。' --message-id $noteMsg
-# 点名一位在席同事回应（只提醒该人；接话可加 --reply-to）
 $askMsg = 'ask-' + [guid]::NewGuid().ToString('N')
 & $paos cat send $room --from $me --mention $peer --reply-to $inviteMsg --body '这里二选一你更倾向哪边？' --message-id $askMsg
 ~~~
 
-显式群提醒桌内参与者用 `--notify`（与 `--mention`、`--no-notify` 互斥，画板显式群邀由 Human 主动选择）。以下操作分别在需要读新增、看成员、转旁听或正式结束讨论时执行：
-
-- 读发言 / 看成员：`& $paos cat read $room --after 0`（之后用上次 seq 取增量）；`& $paos cat members $room`。
-- 转旁听：`& $paos cat seat $room --home $me --state observer`。
-- 结束后关房：`& $paos cat close $room`，历史仍可读。
+- **停止主动看房记离线（非离席）**：`& $paos cat progress $room --home $me --presence offline`（保留席位与已读位置，区别于 `seat --state left`）。
+- **预览收件人 / 关房**：`& $paos cat preview $room --from $me --mention $peer`；任务房负责人提请关闭用 `& $paos cat close $room --from $me --action request`（须 Human `--action confirm` 才关），小房可自行关。
+- **看成员 / 转旁听**：`& $paos cat members $room`；`& $paos cat seat $room --home $me --state observer`。显式群提醒 `--notify` 与 `--mention`、`--no-notify` 互斥，由 Human 主动选择。
 
 ### 从 Libraries 找方法，从 EXM 找经历
 
