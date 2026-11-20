@@ -75,7 +75,10 @@ $mailId = 'handoff-' + [guid]::NewGuid().ToString('N')
 ~~~powershell
 # 恢复时先扫本人负责的房间与未读位置，实读后推进游标
 & $paos cat list --home $me
-& $paos cat read $room --after 0
+$room = '<列表中本次要接续的实际房间 ID>'
+$lastReadSeq = [int] '<列表返回的 last_read_seq>'
+& $paos cat read $room --after $lastReadSeq
+$lastSeq = [int] '<本次实际读到的末条 seq，无新增则沿用 last_read_seq>'
 & $paos cat progress $room --home $me --presence online --read-to $lastSeq
 # 新建房间（Human 任务房用 --close-policy human_confirm --owner <负责人> --project-id <id> --index-path <相对路径>）
 & $paos --json cat create --title '本轮协作议题'

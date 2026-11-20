@@ -64,6 +64,19 @@ class CatCliTests(unittest.TestCase):
                 expected = (method, path) if payload is None else (method, path, payload)
                 client.request.assert_called_once_with(*expected)
 
+    def test_room_summary_keeps_the_index_without_dumping_message_history(self):
+        parser = argparse.ArgumentParser()
+        add_cat_parser(parser.add_subparsers(required=True))
+        context = {"project_id": "3002", "index_path": "Works/task/INDEX.md"}
+        client = Mock()
+        client.request.return_value = {"ok": True, "room": {
+            "id": "room-one", "task_context": context, "messages": [{"seq": 8, "body": "large history"}],
+            "owner_id": "S040", "close_policy": "human_confirm"}}
+        result = execute_cat(parser.parse_args(["cat", "show", "room-one"]), client, None)
+        self.assertEqual(result["summary"]["task_context"], context)
+        self.assertEqual(result["summary"]["counts"]["last_seq"], 8)
+        self.assertNotIn("messages", result["summary"])
+
 
 class CatBoardTests(unittest.TestCase):
     def setUp(self):
