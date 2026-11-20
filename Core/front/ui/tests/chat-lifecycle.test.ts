@@ -39,8 +39,8 @@ it('ending an unknown send preserves its id and a late old message cannot clear 
   const button=(label:string)=>wrapper.findAll('button').find(item=>item.text()===label)!
   await wrapper.get('#message-input').setValue('原消息')
   await wrapper.get('.composer form').trigger('submit');await flushPromises()
-  // 只数真正发送：/message-preview 是只读预览，不算重复发送。
-  const posts=()=>fetch.mock.calls.filter(([path,options])=>options?.method==='POST' && !String(path).endsWith('/message-preview'))
+  // 只数真正发送：/message-preview 与 /progress（只读预览与本人游标记录）都不算重复发送。
+  const posts=()=>fetch.mock.calls.filter(([path,options])=>options?.method==='POST' && !String(path).endsWith('/message-preview') && !String(path).endsWith('/progress'))
   const original=JSON.parse(posts()[0][1]!.body as string).message_id
   await button('核对原消息').trigger('click');await flushPromises()
   await button('结束本地等待').trigger('click')

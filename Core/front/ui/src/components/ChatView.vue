@@ -17,7 +17,7 @@ const roomStatusLabels = {open:'进行中的讨论', pending_close:'负责人已
 function newConversation(id) {
   return {id,title:'',status:'open',members:[],messages:[],cursor:0,draft:'',reply:'',targets:[],preview:null,pending:null,
           endedRequests:[],feedback:'',outcome:'',loaded:false,expanded:{},position:null,atLatest:true,firstUnseen:'',
-          ownerId:'',closePolicy:'',context:null,indexDoc:null,indexError:'',indexOpen:true,progressSent:-1,progressBusy:false};
+          ownerId:'',closePolicy:'',context:null,indexDoc:null,indexError:'',indexOpen:true,progressSent:-1,progressBusy:false,progressLag:false,presenceMarked:false};
 }
 async function request(path, options={}) {
   const controller = new AbortController();
@@ -376,7 +376,7 @@ export default {
         this.$emit('room-selected',id);
         await this.$nextTick();this.resizeComposer();
         if(state.atLatest)this.scrollBottom();else this.restorePosition(state.position);
-        this.advanceProgress();
+        this.advanceProgress();   // 进入即标 online；游标只在真实看到最新时随 scrollBottom/onScroll 推进
         this.startStream(state);
       } catch(error) {
         if(generation!==this.selection)return;
@@ -523,22 +523,34 @@ export default {
       finally { this.closeBusy=false; }
     },
     // 实际读到最新才推进本人游标；只记 human 本人，不替其他 Agent 标记。
-    advanceProgress(presenceOnly=false) {
+    // 首次进度由后台原子建读者：Human 只看不发言的新房也要能记（human 无席位时不拦截）。
+    // presence 每次进入房标记一次；last_read_seq 只在真实看到最新且序号前进时携带；
+    // 只有真实成功回执才推进本地游标，失败保留「已读未同步」事实，不自动重发旧载荷。
+    advanceProgress() {
       const state=this.state;
       if (!state?.loaded || state.progressBusy) return;
+      if (document.hidden) return;                                   // 页面不可见不算实读
       const human=this.humanMember(state);
-      if (!human || human.state!=='participant') return;
-      if (state.progressSent<0) state.progressSent=human.last_read_seq || 0;
-      const seen=state.progressSent;
-      const upto=state.cursor;
-      if (!presenceOnly && upto<=seen) return;
+      if (human && human.state!=='participant') return;              // 已退席/旁听不推进
+      if (state.progressSent<0) state.progressSent=(human && human.last_read_seq) || 0;
+      const seen=state.progressSent, upto=state.cursor;
+      const cursorAdvance=upto>seen && this.atLatest;                // 未看到尾部不推进游标
+      if (!cursorAdvance && state.presenceMarked) return;            // presence 已标记且无新游标则不重复
       state.progressBusy=true;
       const payload={presence:'online'};
-      if (!presenceOnly && upto>seen) payload.last_read_seq=upto;
+      if (cursorAdvance) payload.last_read_seq=upto;
       request(endpoint(state.id,'/progress'),{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(payload)})
-        .then(()=>{ state.progressSent=Math.max(state.progressSent,upto); })
-        .catch(()=>{ /* 结果不明时保留本地游标，下次实读再试 */ })
+        .then(value=>{
+          if (value && value.ok) {
+            state.progressSent=Math.max(state.progressSent,upto);
+            state.presenceMarked=true;
+            state.progressLag=false;                                 // 真实成功回执才推进本地游标
+          } else {
+            state.progressLag=true;                                  // 后台拒绝：保留未同步事实，不自报已同步
+          }
+        })
+        .catch(()=>{ state.progressLag=true; })                      // 结果不明同样保留未同步事实
         .finally(()=>{ state.progressBusy=false; });
     },
     markOfflineOnHide() {
@@ -601,7 +613,7 @@ export default {
   <main class="conversation" @click="closeSidebarFromContent">
     <header class="conversation-header">
       <button class="icon-button mobile-menu" aria-label="展开房间列表" :aria-expanded="sidebar" @click.stop="sidebar=!sidebar"><cat-icon name="menu"></cat-icon></button>
-      <div class="room-heading"><h1 :title="state?.title">{{state?.title || 'CAT 圆桌'}}</h1><div class="room-subtitle"><span :class="{'closed-label':state?.status==='closed','pending-label':isPendingClose}">{{statusLabel}}</span><span v-if="ownerLabel" class="owner-chip" data-testid="owner-chip">{{ownerLabel}}</span><span class="connection" :class="{error:connectionError,live:connection==='实时连接'}" role="status"><i></i>{{connectionError?'连接中断':connection}}</span></div></div>
+      <div class="room-heading"><h1 :title="state?.title">{{state?.title || 'CAT 圆桌'}}</h1><div class="room-subtitle"><span :class="{'closed-label':state?.status==='closed','pending-label':isPendingClose}">{{statusLabel}}</span><span v-if="ownerLabel" class="owner-chip" data-testid="owner-chip">{{ownerLabel}}</span><span v-if="state?.progressLag" class="progress-lag" data-testid="progress-lag" title="已读位置的最近一次同步未获成功回执；下次读到最新时会再次尝试。">已读未同步</span><span class="connection" :class="{error:connectionError,live:connection==='实时连接'}" role="status"><i></i>{{connectionError?'连接中断':connection}}</span></div></div>
       <div class="header-actions">
         <button ref="searchButton" class="icon-button" :class="{active:searchOpen}" :disabled="!state?.loaded" aria-label="搜索消息" :aria-expanded="searchOpen" @click="searchOpen?closeSearch():openSearch()"><cat-icon name="search"></cat-icon></button>
         <button class="members-button" :disabled="!state?.loaded" :aria-label="state?.loaded?'查看 '+state.members.length+' 位同桌':'同桌详情'" @click="openMembers"><cat-icon name="people"></cat-icon><span v-if="state?.loaded">{{state.members.length}}<span class="desktop-only"> 位同桌 · {{onlineCount}} 在线</span></span><span v-else class="desktop-only">同桌</span></button>
@@ -976,6 +988,7 @@ button:focus-visible,a:focus-visible,select:focus-visible,[tabindex]:focus-visib
 .close-banner-actions .primary-button{background:var(--color-warning);border-color:var(--color-warning);color:#fff}
 .close-banner-actions .primary-button:hover:not(:disabled){filter:brightness(1.04)}
 .owner-chip{display:inline-flex;align-items:center;padding:2px 9px;border:1px solid color-mix(in oklch,var(--color-primary) 26%,var(--color-base-300));border-radius:999px;font-size:10.5px;color:var(--color-primary);background:color-mix(in oklch,var(--color-primary) 6%,var(--color-base-100));white-space:nowrap}
+.progress-lag{display:inline-flex;align-items:center;padding:2px 9px;border:1px solid color-mix(in oklch,var(--color-warning) 45%,var(--color-base-300));border-radius:999px;font-size:10.5px;color:var(--color-warning);background:color-mix(in oklch,var(--color-warning) 7%,var(--color-base-100));white-space:nowrap}
 .pending-label{color:var(--color-warning);font-weight:600}
 .task-index{margin:12px 20px 0;border:1px solid var(--color-base-300);border-radius:12px;background:var(--color-base-100);overflow:hidden}
 .task-index-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border-bottom:1px solid color-mix(in oklch,var(--color-base-300) 60%,transparent);background:color-mix(in oklch,var(--color-primary) 4%,var(--color-base-100))}

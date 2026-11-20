@@ -18,7 +18,7 @@ const people = () => [{staff_number:'S069', name:'结构文案', roles:['编辑'
 
 interface CloseReceipt { ok: boolean; room?: { status?: string } }
 
-function mountRoom(roomOverrides: Record<string, unknown> = {}, handlers: { document?: (path: string) => Promise<unknown>; closeResult?: () => CloseReceipt } = {}) {
+function mountRoom(roomOverrides: Record<string, unknown> = {}, handlers: { document?: (path: string) => Promise<unknown>; closeResult?: () => CloseReceipt; progressResult?: () => unknown } = {}) {
   const room = () => ({
     ok:true, id:'task-room', title:'任务房验收', status:'open', members:members(),
     owner_id:'S069', close_policy:'human_confirm',
@@ -27,7 +27,7 @@ function mountRoom(roomOverrides: Record<string, unknown> = {}, handlers: { docu
               {id:'m2', seq:2, sender_id:'S070', body:'进展', created_at:'2026-11-20T11:00:00Z'}],
     ...roomOverrides,
   })
-  const progress = vi.fn(async (_p: string, _o?: RequestInit) => ({ok:true}))
+  const progress = vi.fn(async (_p: string, _o?: RequestInit) => handlers.progressResult ? handlers.progressResult() : {ok:true})
   const close = vi.fn(async (_p: string, options?: RequestInit): Promise<CloseReceipt> => {
     const {action} = JSON.parse(String(options?.body)) as {action: string}
     return handlers.closeResult ? handlers.closeResult() : {ok:true, room:{status: action==='confirm' ? 'closed' : 'open'}}
@@ -110,4 +110,57 @@ it('counts online task-group members for the header summary', async () => {
   const {wrapper} = mountRoom()
   await flushPromises()
   expect(wrapper.get('.members-button').text()).toContain('1 在线')   // 任务组口径：S069 在线；human 自身与旁听不计
+})
+
+it('marks a first-time reader online and advances the cursor without an existing human seat', async () => {
+  // 新房 Human 只看不发言：无 human 席位，首次 progress 由后台原子建读者。
+  const {wrapper, progress} = mountRoom({members: members().filter(member => member.home_id !== 'human')})
+  await flushPromises()
+  const payloads = () => progress.mock.calls.map(([, options]) => JSON.parse(String(options!.body)) as Record<string, unknown>)
+  expect(payloads()).toContainEqual({presence:'online', last_read_seq:2})
+})
+
+it('marks an empty room online without sending a cursor', async () => {
+  const {wrapper, progress} = mountRoom({members: members().filter(member => member.home_id !== 'human'), messages: []})
+  await flushPromises()
+  const payloads = () => progress.mock.calls.map(([, options]) => JSON.parse(String(options!.body)) as Record<string, unknown>)
+  expect(payloads()).toEqual([{presence:'online'}])
+})
+
+it('does not advance the cursor while the tail is not actually visible', async () => {
+  const {wrapper, progress} = mountRoom()
+  await flushPromises()
+  const sent = () => progress.mock.calls.map(([, options]) => JSON.parse(String(options!.body)) as Record<string, unknown>).filter(payload => 'last_read_seq' in payload)
+  const vm = wrapper.vm as unknown as {atLatest: boolean; roomStates: Record<string, {cursor: number}>; advanceProgress: () => void}
+  vm.roomStates['task-room'].cursor = 3        // 新消息到达但仍在旧位置
+  vm.atLatest = false
+  vm.advanceProgress()
+  await flushPromises()
+  expect(sent()).toEqual([{presence:'online', last_read_seq:2}])   // 未看到尾部不推进
+  vm.atLatest = true                            // 实际滚到最新
+  vm.advanceProgress()
+  await flushPromises()
+  expect(sent().at(-1)).toEqual({presence:'online', last_read_seq:3})
+})
+
+it('keeps the unsynced fact when the progress receipt is not ok', async () => {
+  let succeed = false
+  const {wrapper, progress} = mountRoom({}, {progressResult: () => (succeed ? {ok:true} : {ok:false, error:'rejected'})})
+  await flushPromises()
+  // 回执未 ok：本地游标不推进，界面显示「已读未同步」而不是自报已同步。
+  expect(wrapper.find('[data-testid="progress-lag"]').exists()).toBe(true)
+  const vm = wrapper.vm as unknown as {roomStates: Record<string, {cursor: number; progressSent: number; progressLag: boolean}>; advanceProgress: () => void}
+  vm.roomStates['task-room'].cursor = 4
+  vm.advanceProgress()
+  await flushPromises()
+  expect(vm.roomStates['task-room'].progressSent).toBe(0)           // 失败不推进
+  const retry = progress.mock.calls.at(-1)!
+  expect(JSON.parse(String(retry[1]!.body))).toEqual({presence:'online', last_read_seq:4})  // 下次实读发最新位置，不重发旧载荷
+  succeed = true
+  vm.roomStates['task-room'].cursor = 5
+  vm.advanceProgress()
+  await flushPromises()
+  expect(vm.roomStates['task-room'].progressSent).toBe(5)           // 真实成功回执才推进
+  expect(vm.roomStates['task-room'].progressLag).toBe(false)
+  expect(wrapper.find('[data-testid="progress-lag"]').exists()).toBe(false)
 })
