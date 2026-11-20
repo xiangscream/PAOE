@@ -39,7 +39,10 @@ def add_cat_parser(sub):
     preview = commands.add_parser("preview", help="Preview the recipients using the same rule as send")
     preview.add_argument("room_id")
     preview.add_argument("--from", dest="sender_id", required=True)
-    preview.add_argument("--mention", action="append", default=[], dest="target_ids")
+    preview_reminders = preview.add_mutually_exclusive_group()
+    preview_reminders.add_argument("--mention", action="append", default=[], dest="target_ids")
+    preview_reminders.add_argument("--notify", action="store_true", default=None)
+    preview_reminders.add_argument("--no-notify", action="store_false", dest="notify")
     preview.add_argument("--invite", action="store_true")
     join = commands.add_parser("join", help="Join by global staff number Sxxx or exact Home ID")
     join.add_argument("room_id")
@@ -183,9 +186,12 @@ def execute_cat(args, client, text_arg):
                    if getattr(args, field) is not None}
         return client.request("POST", path + "/members/" + quote(args.home, safe="") + "/progress", payload)
     if command == "preview":
-        return client.request("POST", path + "/message-preview", {
+        payload = {
             "sender_id": args.sender_id, "target_ids": args.target_ids, "invite": args.invite,
-        })
+        }
+        if args.notify is not None:
+            payload["notify"] = args.notify
+        return client.request("POST", path + "/message-preview", payload)
     payload = {
         "message_id": args.message_id,
         "sender_id": args.sender_id,
