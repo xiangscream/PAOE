@@ -196,12 +196,14 @@ class CatBoardTests(unittest.TestCase):
         self.assertEqual(call.call_args_list[-1].kwargs["input_text"], "@不解析正文")
 
     def test_invitation_keeps_join_of_targets_and_message_in_the_backend_transaction(self):
-        with patch.object(self.board, "cat", side_effect=[{"ok": True}, {"ok": True}]) as call:
-            self.call("/api/room/room-one/invite", {"target_ids": ["S069", "S040"],
-                                                  "body": "请一起讨论", "message_id": "invited"})
-        self.assertEqual(call.call_count, 2)
-        self.assertEqual(call.call_args_list[-1].args[0], ["send", "room-one", "--from", "human", "--body", "-",
-            "--message-id", "invited", "--invite", "--mention", "S069", "--mention", "S040"])
+        for suffix, extra in (("invite", {}), ("message", {"invite": True})):
+            with self.subTest(suffix=suffix), patch.object(
+                    self.board, "cat", side_effect=[{"ok": True}, {"ok": True}]) as call:
+                self.call("/api/room/room-one/" + suffix, {"target_ids": ["S069", "S040"],
+                    "body": "请一起讨论", "message_id": "invited", **extra})
+            self.assertEqual(call.call_count, 2)
+            self.assertEqual(call.call_args_list[-1].args[0], ["send", "room-one", "--from", "human", "--body", "-",
+                "--message-id", "invited", "--invite", "--mention", "S069", "--mention", "S040"])
 
     def test_invalid_selected_targets_do_not_join_or_send(self):
         with patch.object(self.board, "cat") as cat:

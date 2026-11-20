@@ -791,7 +791,7 @@ def dispatch_request(board: Board, method: str, path: str,
                                            "human", text,
                                            str(payload.get("message_id") or f"board-{uuid.uuid4().hex}"),
                                            str(payload.get("reply_to") or ""),
-                                           notify, targets, invite=url.path.endswith("/invite"))
+                                           notify, targets, invite=url.path.endswith("/invite") or payload.get("invite") is True)
             elif url.path.startswith("/api/room/") and url.path.endswith("/progress"):
                 _human_sender(payload)
                 if payload.get("home_id", "human") != "human":
