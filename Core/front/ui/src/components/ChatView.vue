@@ -2,6 +2,7 @@
 import {markRaw} from 'vue';
 import {readPage, acceptMessage, sendOutcome, errorText, seatLabels} from '../../../cat-state.mjs';
 import {findMessages, messagePreview} from '../../../cat-content.mjs';
+import {memberCandidates, outsideCandidates, presenceInfo, rosterEntry, observerNote, scopeText, staffId, roleLine} from '../../../mention-select.mjs';
 import CatIcon from './ChatIcon.vue';
 import MessageContent from './ChatMessageContent.vue';
 import {readDraft, writeDraft} from '../state/chat-drafts.mjs';
@@ -12,7 +13,7 @@ const dayFormat = new Intl.DateTimeFormat('zh-CN', {month:'long',day:'numeric',w
 const timeFormat = new Intl.DateTimeFormat('zh-CN', {hour:'2-digit',minute:'2-digit',hour12:false});
 const endpoint = (id, suffix='') => '/api/room/' + encodeURIComponent(id) + suffix;
 function newConversation(id) {
-  return {id,title:'',status:'open',members:[],messages:[],cursor:0,draft:'',reply:'',pending:null,
+  return {id,title:'',status:'open',members:[],messages:[],cursor:0,draft:'',reply:'',targets:[],preview:null,pending:null,
           endedRequests:[],feedback:'',outcome:'',loaded:false,expanded:{},position:null,atLatest:true,firstUnseen:''};
 }
 async function request(path, options={}) {
@@ -35,7 +36,8 @@ export default {
     return {rooms:[],people:[],roomStates:{},roomId:'',filter:'',roomScope:'open',relatedOnly:true,sidebar:false,roomsLoading:true,roomListRequest:0,
       seatLabels,selection:0,stream:null,storageError:'',active:true,endingWaiting:false,
       connection:'正在连接',connectionError:false,unseen:0,highlight:'',checking:false,atLatest:true,
-      searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false};
+      searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false,
+      mention:{open:false,outside:false,query:'',index:0},previewTimer:0};
   },
   computed: {
     state() { return this.roomStates[this.roomId] || null; },
@@ -56,6 +58,17 @@ export default {
         (!human || human.state==='participant');
     },
     canSend() { return this.canCompose && !!this.state.draft.trim(); },
+    mentionRoomCandidates() { return memberCandidates(this.state?.members || [], this.mention.query); },
+    mentionOutsideCandidates() { return outsideCandidates(this.people, this.state?.members || [], this.mention.query); },
+    mentionList() { return this.mention.outside ? this.mentionOutsideCandidates : this.mentionRoomCandidates; },
+    observerCount() { return (this.state?.members || []).filter(member => member.state === 'observer').length; },
+    scopeHint() { return scopeText(this.state?.preview); },
+    scopeLine() {
+      const hint = this.scopeHint;
+      const note = this.state?.preview?.recipient_mode === 'all' ? observerNote(this.state?.members) : '';
+      return note ? hint + ' · ' + note : hint;
+    },
+    outsideSearchHint() { return this.mention.query.trim() ? '' : '输入员工号或称呼搜索房外同事'; },
     placeholder() {
       if (!this.state) return '选择房间后开始发言…';
       if (this.state.status==='closed') return '讨论已结束，可以继续阅读。';
@@ -83,6 +96,8 @@ export default {
   methods: {
     day(value) { return dayFormat.format(new Date(value)); },
     time(value) { return timeFormat.format(new Date(value)); },
+    presenceOf(member) { return presenceInfo(member?.presence); },
+    rosterOf(member) { return rosterEntry(member); },
     personFor(id) {
       return this.people.find(person =>
         person.id===id || person.home_id===id || person.staff_number===id ||
@@ -185,6 +200,98 @@ export default {
     },
     replyTo(id) { if (this.canCompose) {this.state.reply=id;this.persistDraft(this.state);this.$nextTick(()=>{this.resizeComposer();this.$refs.input.focus();});} },
     cancelReply() { if (this.canCompose) {this.state.reply='';this.persistDraft(this.state);} this.$nextTick(()=>{this.resizeComposer();this.$refs.input.focus();}); },
+    // ---- 任务房首片：选人与收件范围预览 ----
+    openMention(outside=false) {
+      if (!this.canCompose) return;
+      this.mention.open=true;this.mention.outside=outside;this.mention.query='';this.mention.index=0;
+      this.$nextTick(()=>{this.$refs.mentionSearch?.focus();});
+    },
+    closeMention() { this.mention.open=false;this.mention.query='';this.mention.index=0;this.$nextTick(()=>{this.$refs.input?.focus();}); },
+    setMentionQuery(value) {
+      this.mention.query=value;this.mention.index=0;
+    },
+    mentionStep(direction) {
+      const count=this.mentionList.length;
+      if (count) this.mention.index=(this.mention.index+direction+count)%count;
+    },
+    mentionKey(event) {
+      if (event.key==='Escape') {event.preventDefault();this.closeMention();}
+      else if (event.key==='ArrowDown') {event.preventDefault();this.mentionStep(1);}
+      else if (event.key==='ArrowUp') {event.preventDefault();this.mentionStep(-1);}
+      else if (event.key==='Enter' && this.mentionList[this.mention.index]) {event.preventDefault();this.pickCandidate(this.mentionList[this.mention.index]);}
+    },
+    candidateId(candidate) { return this.mention.outside ? staffId(candidate) : candidate.home_id; },
+    candidateName(candidate) { return this.mention.outside ? (candidate.name || staffId(candidate)) : this.name(candidate.home_id); },
+    candidateRole(candidate) { return this.mention.outside ? roleLine(candidate) : roleLine(this.personFor(candidate.home_id), candidate); },
+    pickCandidate(candidate) {
+      if (this.mention.outside) {this.invitePerson(candidate);return;}
+      const id=candidate.home_id;
+      const adding=!this.state.targets.includes(id);
+      this.toggleTarget(id,true);
+      if (adding) this.insertMentionText(this.name(id));   // 取消选择时不再追加正文 @
+      this.mention.query='';this.mention.index=0;
+      this.$nextTick(()=>{this.$refs.mentionSearch?.focus();});
+    },
+    toggleTarget(id, keepPanel=false) {
+      if (!this.state) return;
+      const current=this.state.targets, at=current.indexOf(id);
+      if (at>=0) current.splice(at,1); else current.push(id);
+      this.schedulePreview();
+      this.persistDraft(this.state);
+      if (!keepPanel && this.mention.open && !this.mention.outside) this.closeMention();
+    },
+    removeTarget(id) {
+      if (!this.state) return;
+      const at=this.state.targets.indexOf(id);
+      if (at>=0) this.state.targets.splice(at,1);
+      this.schedulePreview();this.persistDraft(this.state);
+    },
+    insertMentionText(label) {
+      // 正文里的 @ 只是给读者看的提示；真实收件人只来自 targets（后台口径，不解析正文）。
+      const separator=this.state.draft && !this.state.draft.endsWith(' ') ? ' ' : '';
+      this.setDraft(this.state.draft+separator+'@'+label+' ');
+    },
+    schedulePreview() {
+      clearTimeout(this.previewTimer);
+      this.previewTimer=setTimeout(()=>{this.refreshPreview();},250);
+    },
+    // 发送前才需要看到收件范围：进入输入即取一次预览，不做房间加载时的无效请求。
+    ensurePreview() { if (this.state?.loaded && !this.state.preview) this.refreshPreview(); },
+    async refreshPreview() {
+      const state=this.state;
+      if (!state?.loaded) return;
+      try {
+        const value=await request(endpoint(state.id,'/message-preview'),{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({target_ids:state.targets})});
+        if (this.state!==state) return;
+        if (value && value.ok) state.preview={recipient_mode:value.recipient_mode,recipients:value.recipients||[],unavailable:false};
+        else state.preview={unavailable:true};
+      } catch(error) { if (this.state===state) state.preview={unavailable:true}; }
+    },
+    async invitePerson(person) {
+      const state=this.state, id=staffId(person);
+      if (!this.canCompose || !id || state.pending) return;
+      const body=state.draft.trim() || ('邀请 '+this.candidateName(person)+' 加入本房参与协作。');
+      const outgoing={id:'human-'+crypto.randomUUID(),body,reply:'',sending:true};
+      state.pending=outgoing;
+      if(!this.persistDraft(state)){state.pending=null;state.feedback='发送前未能保存请求，请先恢复浏览器存储。';state.outcome='failed';return;}
+      state.feedback='正在发出邀请…';state.outcome='';
+      let value;
+      try {value=await request(endpoint(state.id,'/message'),{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({message_id:outgoing.id,body:outgoing.body,invite:true,target_ids:[id]})});}
+      catch(error){value={ok:false,error:error.message};}
+      const outcome=sendOutcome(value);
+      state.feedback=outcome.text;state.outcome=outcome.state;
+      if(outcome.state==='saved'){
+        Object.assign(state,acceptMessage(state,value.message));state.pending=null;state.draft='';state.reply='';
+        state.targets=[];   // 邀请以当前草稿为正文：正文与点名选择一并清空
+        this.refreshPreview();
+        if(this.roomId===state.id){await this.$nextTick();this.scrollBottom();}
+      }else if(outcome.state==='failed')state.pending=null;
+      else if(state.pending)state.pending.sending=false;
+      this.persistDraft(state);
+      this.closeMention();
+    },
     async jumpTo(id) {
       const state=this.state;state.expanded[id]=true;this.atLatest=false;
       await this.$nextTick();
@@ -228,7 +335,7 @@ export default {
       this.sidebar=false;
       if (this.roomId===id && this.state?.loaded) return;
       if(this.state){this.state.position=this.readingPosition();this.state.atLatest=this.atLatest;}
-      this.searchOpen=false;this.searchQuery='';this.searchReturn=null;this.highlight='';
+      this.searchOpen=false;this.searchQuery='';this.searchReturn=null;this.highlight='';this.mention.open=false;
       this.stopStream(); const generation=++this.selection;
       if (!this.roomStates[id]) {
         const state=newConversation(id);
@@ -314,20 +421,23 @@ export default {
     },
     async send() {
       if(!this.canSend)return;
-      const state=this.state,outgoing={id:'human-'+crypto.randomUUID(),body:state.draft.trim(),reply:state.reply,sending:true};
+      const state=this.state,payload={message_id:'human-'+crypto.randomUUID(),body:state.draft.trim(),reply_to:state.reply};
+      if(state.targets.length)payload.target_ids=state.targets.slice();
+      const outgoing={id:payload.message_id,...payload,sending:true};
       state.pending=outgoing;
       if(!this.persistDraft(state)){state.pending=null;state.feedback='发送前未能保存请求，请先恢复浏览器存储。';state.outcome='failed';return;}
       state.feedback='正在保存消息…';state.outcome='';
       let value;
       try {value=await request(endpoint(state.id,'/message'),{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({message_id:outgoing.id,body:outgoing.body,reply_to:outgoing.reply})});}
+        body:JSON.stringify(payload)});}
       catch(error){value={ok:false,error:error.message};}
       let outcome=sendOutcome(value);
-      const observed=state.messages.find(message=>message.id===outgoing.id);
+      const observed=state.messages.find(message=>message.id===outgoing.message_id);
       if(outcome.state==='unknown' && observed)outcome={state:'saved',text:'已核到原消息 · 消息已保存，提醒结果以原回执为准。'};
       state.feedback=outcome.text;state.outcome=outcome.state;
       if(outcome.state==='saved'){
         Object.assign(state,acceptMessage(state,value.message||observed));state.pending=null;state.draft='';state.reply='';
+        state.targets=[];this.refreshPreview();
         if(this.roomId===state.id){await this.$nextTick();this.scrollBottom();}
       }else if(outcome.state==='failed')state.pending=null;
       else if(state.pending)state.pending.sending=false;
@@ -438,10 +548,34 @@ export default {
       <div class="composer-inner">
         <p v-if="storageError" class="form-error" role="alert">{{storageError}}</p>
         <div v-if="reply" class="reply-bar" id="reply-bar"><cat-icon name="reply"></cat-icon><div><strong>回复 {{name(reply.sender_id)}}</strong><p>{{preview(reply.body)}}</p></div><button type="button" id="cancel-reply" class="icon-button small" aria-label="取消回复" :disabled="!canCompose" @click.stop="cancelReply"><cat-icon name="close"></cat-icon></button></div>
-        <form @submit.prevent="send">
+        <div v-if="state?.targets?.length" class="target-chips" aria-label="点名收件人">
+          <span v-for="id in state.targets" :key="id" class="target-chip"><span class="avatar" :class="avatarTone(id)">{{avatar(id)}}</span>{{name(id)}}<button type="button" class="chip-remove" :aria-label="'移除 '+name(id)" :disabled="!canCompose" @click="removeTarget(id)"><cat-icon name="close"></cat-icon></button></span>
+          <button type="button" class="text-button chip-clear" :disabled="!canCompose" @click="state.targets=[];schedulePreview();persistDraft(state)">清空点名</button>
+        </div>
+        <div v-if="mention.open" class="mention-panel" role="dialog" aria-label="选择提醒对象">
+          <div class="mention-tabs">
+            <button type="button" :class="{selected:!mention.outside}" @click="openMention(false)">房内成员</button>
+            <button type="button" :class="{selected:mention.outside}" @click="openMention(true)">房外邀请</button>
+            <button type="button" class="icon-button small" aria-label="关闭选人" @click="closeMention"><cat-icon name="close"></cat-icon></button>
+          </div>
+          <div class="search-field mention-search"><cat-icon name="search"></cat-icon><input ref="mentionSearch" :value="mention.query" :placeholder="mention.outside?'搜索房外同事（员工号 / 称呼）':'筛选房内成员'" @input="setMentionQuery($event.target.value)" @keydown="mentionKey"></div>
+          <p v-if="mention.outside && outsideSearchHint" class="mention-hint">{{outsideSearchHint}}</p>
+          <ul class="mention-list" role="listbox">
+            <li v-for="(candidate,index) in mentionList" :key="candidateId(candidate)">
+              <button type="button" role="option" :aria-selected="index===mention.index" :class="{active:index===mention.index, picked:!mention.outside && state?.targets?.includes(candidate.home_id)}" @click="mention.index=index;pickCandidate(candidate)">
+                <span class="avatar" :class="mention.outside?'tone-guest':avatarTone(candidate.home_id)">{{mention.outside?candidateName(candidate).slice(0,2):avatar(candidate.home_id)}}</span>
+                <span class="candidate-text"><strong>{{candidateName(candidate)}}</strong><small>{{candidateId(candidate)}}<template v-if="candidateRole(candidate)"> · {{candidateRole(candidate)}}</template></small></span>
+                <span v-if="mention.outside" class="presence presence-invite">邀请入房</span>
+                <span v-else class="presence" :class="'presence-'+presenceOf(candidate).value">{{presenceOf(candidate).label}}<template v-if="presenceOf(candidate).wakeHint"> · {{presenceOf(candidate).wakeHint}}</template></span>
+              </button>
+            </li>
+            <li v-if="!mentionList.length" class="mention-empty">{{mention.outside?'没有匹配的房外同事':'没有匹配的房内成员'}}</li>
+          </ul>
+        </div>
+        <form @submit.prevent="send" @focusin="ensurePreview">
           <label class="sr-only" for="message-input">发言内容</label>
           <textarea id="message-input" ref="input" :value="state?.draft || ''" @input="setDraft($event.target.value)" rows="1" maxlength="20000" :disabled="!canCompose" :placeholder="placeholder" @keydown="onComposerKey"></textarea>
-          <div class="composer-footer"><span class="identity"><span class="human-dot"></span>你 · Human</span><div class="send-actions"><span class="keyboard-hint">Ctrl / ⌘ + Enter</span><button class="primary-button send-button" type="submit" :disabled="!canSend"><span>{{state?.pending?.sending?'发送中':'发送'}}</span><cat-icon name="send"></cat-icon></button></div></div>
+          <div class="composer-footer"><span class="identity"><span class="human-dot"></span>你 · Human</span><span v-if="scopeLine" class="scope-line" role="status" data-testid="scope-line">{{scopeLine}}</span><div class="send-actions"><button type="button" class="secondary-button small mention-toggle" :disabled="!canCompose" @click="openMention(false)">@ 选人</button><span class="keyboard-hint">Ctrl / ⌘ + Enter</span><button class="primary-button send-button" type="submit" :disabled="!canSend"><span>{{state?.pending?.sending?'发送中':'发送'}}</span><cat-icon name="send"></cat-icon></button></div></div>
         </form>
         <div v-if="state?.feedback" class="send-feedback"><p :class="state.outcome" role="status" aria-live="polite">{{state.feedback}}</p><template v-if="state.pending && !state.pending.sending"><button class="text-button" :disabled="checking" @click="checkPending">{{checking?'核对中…':'核对原消息'}}</button><button class="text-button" :disabled="checking" @click="endingWaiting=true">结束本地等待</button></template></div>
         <section v-if="endingWaiting && state?.pending" class="waiting-confirm" aria-label="结束消息等待">
@@ -457,9 +591,9 @@ export default {
     </section>
   </main>
   <dialog ref="memberDialog" class="modal side-modal" aria-labelledby="members-title">
-    <section class="modal-box member-sheet"><header class="dialog-heading"><div><span class="eyebrow">这场讨论</span><h2 id="members-title">{{state?.members.length || 0}} 位同桌</h2></div><button class="icon-button" aria-label="关闭同桌详情" @click="$refs.memberDialog.close()"><cat-icon name="close"></cat-icon></button></header><p class="dialog-description">成员和参与状态来自当前房间。</p>
-      <div class="member-list"><div v-for="member in state?.members || []" :key="member.home_id" class="member-row"><span class="avatar" :class="avatarTone(member.home_id)">{{avatar(member.home_id)}}</span><strong>{{name(member.home_id)}}</strong><span class="seat-status" :class="'seat-'+member.state">{{seatLabels[member.state] || member.state}}</span></div></div>
-      <footer class="member-note">旁听者可以阅读讨论，不接收新消息提醒。</footer>
+    <section class="modal-box member-sheet"><header class="dialog-heading"><div><span class="eyebrow">这场讨论</span><h2 id="members-title">{{state?.members.length || 0}} 位同桌<template v-if="observerCount"> · {{observerCount}} 位旁听</template></h2></div><button class="icon-button" aria-label="关闭同桌详情" @click="$refs.memberDialog.close()"><cat-icon name="close"></cat-icon></button></header><p class="dialog-description">成员、参与状态与在线情况来自当前房间；旁听已明确退出执行与提醒范围。</p>
+      <div class="member-list"><div v-for="member in state?.members || []" :key="member.home_id" class="member-row"><span class="avatar" :class="avatarTone(member.home_id)">{{avatar(member.home_id)}}</span><strong>{{name(member.home_id)}}</strong><span class="seat-status" :class="'seat-'+member.state">{{seatLabels[member.state] || member.state}}</span><span class="presence" :class="'presence-'+rosterOf(member).kind + (rosterOf(member).kind==='participant' ? ' presence-'+presenceOf(member).value : '')" :title="rosterOf(member).detail">{{rosterOf(member).presenceLabel}}<template v-if="rosterOf(member).kind==='participant' && rosterOf(member).wakeHint"> · {{rosterOf(member).wakeHint}}</template></span></div></div>
+      <footer class="member-note">旁听者可以阅读讨论，不接收新消息提醒；离线成员保留席位与已读位置。</footer>
     </section>
     <form method="dialog" class="modal-backdrop"><button aria-label="关闭成员抽屉">关闭</button></form>
   </dialog>
@@ -730,5 +864,44 @@ button:focus-visible,a:focus-visible,select:focus-visible,[tabindex]:focus-visib
 }
 @media(hover:none){.reply-action{opacity:.65}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---- 任务房首片：点名收件人与选人面板 ---- */
+.composer-inner{position:relative}
+.target-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px;padding:7px 9px;border:1px dashed color-mix(in oklch,var(--color-primary) 38%,var(--color-base-300));border-radius:11px;background:color-mix(in oklch,var(--color-primary) 4%,var(--color-base-100))}
+.target-chip{display:inline-flex;align-items:center;gap:7px;padding:4px 7px 4px 5px;border:1px solid color-mix(in oklch,var(--color-primary) 26%,var(--color-base-300));border-radius:9px;background:var(--color-base-100);font-size:12px;line-height:1.4}
+.target-chip .avatar{width:22px;height:22px;font-size:10px}
+.chip-remove{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border:0;border-radius:6px;background:transparent;color:color-mix(in oklch,var(--color-base-content) 55%,transparent)}
+.chip-remove:hover:not(:disabled){background:color-mix(in oklch,var(--color-error) 12%,var(--color-base-100));color:var(--color-error)}
+.chip-remove .icon{width:12px;height:12px}
+.chip-clear{font-size:11px;margin-left:2px}
+.scope-line{flex:1;min-width:0;text-align:center;font-size:11px;color:color-mix(in oklch,var(--color-base-content) 55%,transparent);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mention-toggle{gap:5px}
+.mention-panel{position:absolute;left:0;right:0;bottom:calc(100% + 8px);z-index:30;display:flex;flex-direction:column;max-height:min(46vh,420px);padding:11px;border:1px solid var(--color-base-300);border-radius:13px;background:var(--color-base-100);box-shadow:0 -8px 30px #0000000f;overflow:hidden}
+.mention-tabs{display:flex;align-items:center;gap:4px;margin-bottom:9px}
+.mention-tabs button[type=button]:not(.icon-button){padding:6px 11px;border:0;border-radius:8px;background:transparent;color:inherit;font-size:12px;opacity:.62}
+.mention-tabs button.selected{background:color-mix(in oklch,var(--color-primary) 11%,var(--color-base-100));color:var(--color-primary);font-weight:600;opacity:1}
+.mention-tabs .icon-button{margin-left:auto}
+.mention-search{margin-bottom:8px}
+.mention-hint{margin:0 0 6px 2px;font-size:11px;opacity:.6}
+.mention-list{flex:1;min-height:0;overflow:auto;margin:0;padding:0;list-style:none;scrollbar-width:thin}
+.mention-list li{margin-bottom:3px}
+.mention-list button[type=button]{width:100%;display:flex;align-items:center;gap:10px;padding:8px 9px;border:0;border-radius:10px;background:transparent;color:inherit;text-align:left}
+.mention-list button:hover:not(:disabled),.mention-list button.active{background:color-mix(in oklch,var(--color-primary) 8%,var(--color-base-100))}
+.mention-list button.picked{outline:1.5px solid color-mix(in oklch,var(--color-primary) 40%,transparent)}
+.mention-list .avatar{width:30px;height:30px;font-size:11px;flex-shrink:0}
+.tone-guest{background:color-mix(in oklch,var(--color-base-content) 10%,var(--color-base-200));color:color-mix(in oklch,var(--color-base-content) 72%,transparent)}
+.candidate-text{min-width:0;flex:1;display:grid;gap:2px}
+.candidate-text strong{font-size:13px;font-weight:600;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.candidate-text small{font-size:10.5px;opacity:.6;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.presence{flex-shrink:0;display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:10.5px;font-weight:600;line-height:1.35}
+.presence::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.8}
+.presence-online{background:color-mix(in oklch,var(--color-success) 14%,var(--color-base-100));color:var(--color-success)}
+.presence-offline{background:color-mix(in oklch,var(--color-warning) 13%,var(--color-base-100));color:var(--color-warning)}
+.presence-unknown{background:color-mix(in oklch,var(--color-base-content) 8%,var(--color-base-100));color:color-mix(in oklch,var(--color-base-content) 62%,transparent)}
+.presence-observer{background:color-mix(in oklch,var(--color-base-content) 8%,var(--color-base-100));color:color-mix(in oklch,var(--color-base-content) 62%,transparent)}
+.presence-left{background:transparent;color:color-mix(in oklch,var(--color-base-content) 42%,transparent)}
+.presence-invite{background:color-mix(in oklch,var(--color-primary) 11%,var(--color-base-100));color:var(--color-primary)}
+.member-row .presence{margin-left:auto}
+@media(max-width:900px){.scope-line{display:none}.mention-panel{left:-8px;right:-8px}}
 
 </style>
