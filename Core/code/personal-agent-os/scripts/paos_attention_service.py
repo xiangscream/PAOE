@@ -2277,6 +2277,7 @@ def send_mail_source(
     sender_id: str = "",
     message_id: str = "",
     request_activation: bool,
+    installation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Persist Mail, then Notice; optionally persist one activation intent.
 
@@ -2297,6 +2298,7 @@ def send_mail_source(
             sender_id=sender_id,
             message_id=message_id,
             registry_lookup=resolve_home_by_registry,
+            installation_path=installation_path,
         )
         request_id = ""
         if request_activation:
