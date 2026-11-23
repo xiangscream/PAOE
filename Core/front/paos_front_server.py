@@ -246,9 +246,14 @@ class Board:
             "team_path": info["path"],
         }
 
+    def _ui_board_path(self, record: dict) -> Path:
+        from paos_data_paths import project_scope, ui_board_path
+        return ui_board_path(
+            project_scope(str(record["id"])), self.installation_file)
+
     def layout(self, project_id: str) -> dict:
         record = self.registry.read_record(project_id)
-        path = runtime_path(record["root_path"]) / ".paos" / "ui" / "board.json"
+        path = self._ui_board_path(record)
         if not path.is_file():
             return {"ok": True, "project": record["id"],
                     "layout": {"nodes": {}, "viewport": {"x": 0, "y": 0, "zoom": 1}}}
@@ -289,8 +294,7 @@ class Board:
     def save_layout(self, project_id: str, value) -> dict:
         record = self.registry.read_record(project_id)
         layout = self._clean_layout(value)
-        root = runtime_path(record["root_path"])
-        path = root / ".paos" / "ui" / "board.json"
+        path = self._ui_board_path(record)
         path.parent.mkdir(parents=True, exist_ok=True)
         temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
         try:

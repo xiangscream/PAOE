@@ -712,7 +712,7 @@ def cmd_status():
     ref = _resolve_home()
     read_home_state, runtime_contact = _load_read_services()
     read_state = read_home_state(ref)
-    runtime = runtime_contact(_contact_store_root(ref), HOME_ID)
+    runtime = runtime_contact(_contact_store_root(ref), HOME_ID, installation_path=INSTALLATION_FILE)
     print(json.dumps({
         "schema": "paos-contact/v1",
         "action": "status",
@@ -811,7 +811,7 @@ def _cmd_notify_internal(ref, message_id: str):
 def cmd_prepare():
     ref = _resolve_home()
     _, runtime_contact = _load_read_services()
-    runtime = runtime_contact(_contact_store_root(ref), HOME_ID)
+    runtime = runtime_contact(_contact_store_root(ref), HOME_ID, installation_path=INSTALLATION_FILE)
     receiver = runtime.get("receiver") if isinstance(runtime, dict) else None
     state = "already_prepared" if isinstance(receiver, dict) and receiver.get("prepared") is True else "manual_native_owner_required"
     print(json.dumps({
@@ -937,7 +937,7 @@ def _contact_template_v2(text: str) -> str:
     status = """def cmd_status(full=False):
     ref = _resolve_home()
     read_home_state, runtime_contact = _load_read_services()
-    runtime = runtime_contact(_contact_store_root(ref), HOME_ID)
+    runtime = runtime_contact(_contact_store_root(ref), HOME_ID, installation_path=INSTALLATION_FILE)
     payload = {
         "schema": "paos-contact/v1",
         "action": "status",
