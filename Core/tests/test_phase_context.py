@@ -66,3 +66,10 @@ class ContextReadTests(unittest.TestCase):
         self.assertTrue(got["ok"], got["missing"])
         self.assertEqual({x["kind"] for x in got["documents"]},
                          {"guide","entry","current","background","input"})
+
+    def test_hook_follows_the_single_current_task_anchor(self):
+        from paos_todo import update_todo_current
+        update_todo_current(self.home/"TODO.md", {"context_refs":["task:T1"]})
+        got=read_context(self.ref, staff_number="S001")
+        self.assertEqual(got["task_id"],"T1")
+        self.assertTrue(any(d["kind"]=="task" and "Read first message" in d["body"] for d in got["documents"]))

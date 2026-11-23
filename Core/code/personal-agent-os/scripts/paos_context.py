@@ -78,6 +78,11 @@ def read_context(home, *, staff_number, reason="resume", task_id="", sources=())
             missing.append({"kind": "current", "path": str(todo_path), "reason": exc.code})
         else:
             related = list(todo["current"].get("context_refs", []))
+            if not task_id:
+                anchors = [r[5:] for r in related if r.startswith("task:")]
+                if len(anchors) == 1:
+                    task_id = anchors[0]
+                    result["task_id"] = task_id
             if task_id:
                 task = next((t for t in todo["tasks"] if t["id"] == task_id), None)
                 if not task:
