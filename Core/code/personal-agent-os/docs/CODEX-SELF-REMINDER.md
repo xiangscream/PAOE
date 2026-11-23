@@ -72,7 +72,7 @@ agent send的runtime_wake_performed只聚合本次调用：有确证受理成员
 
 ## SessionStart接线
 
-用户级宿主事件定义供已登记的Codex Home使用，不含逐Agent参数。`scripts/codex_receiver_session_start.py`处理SessionStart的startup/resume及UserPromptSubmit：两类事件的session_id都必须等于宿主原有CODEX_THREAD_ID，并继承本人CODEX_APP_TOOLS_PIPE_PATH。它沿既有installation和`ProjectRegistry.read`读取五字段登记的Home适配视图及准确root的Contact，以及安装描述rooter_home的Rooter Contact；Rooter沿公开合同使用`rooter-001`身份和既有rooter_home校验，目录名可以不同，不创建Project Session，也不要求存在Project登记目录。旧schema、缺失或空root的坏项目登记明确失败，不把当前目录当root。当前Thread须在Project与Rooter之间唯一匹配一个已登记且存在的Home；使用该Contact原有receiver_runtime_file、stop_file和windows_python做一次隐藏prepare。环境缺失、未登记、歧义、Home缺失或STOP存在均明确停止，不建身份、不改Contact、不借凭据。
+用户级宿主事件定义供已登记的Codex Home使用，不含逐Agent参数。`scripts/codex_receiver_session_start.py`处理SessionStart的startup/resume/compact及UserPromptSubmit：两类事件的session_id都必须等于宿主原有CODEX_THREAD_ID，并继承本人CODEX_APP_TOOLS_PIPE_PATH。它沿既有installation和`ProjectRegistry.read`读取五字段登记的Home适配视图及准确root的Contact，以及安装描述rooter_home的Rooter Contact；Rooter沿公开合同使用`rooter-001`身份和既有rooter_home校验，目录名可以不同，不创建Project Session，也不要求存在Project登记目录。旧schema、缺失或空root的坏项目登记明确失败，不把当前目录当root。当前Thread须在Project与Rooter之间唯一匹配一个已登记且存在的Home；使用该Contact原有receiver_runtime_file、stop_file和windows_python做一次隐藏prepare。环境缺失、未登记、歧义、Home缺失或STOP存在均明确停止，不建身份、不改Contact、不借凭据。
 
 UserPromptSubmit用于本人真实输入前的正常准备，保证后续自然回合也有准备时点；不读取、记录或转发事件中的prompt。健康实例复用，失效实例仍由原锁内的正常prepare判定与归档。脚本支持该事件不等于本机已经安装对应定义；Rooter须在宿主受支持设置中把同一已安装命令接入UserPromptSubmit，并对当前精确定义完成正常审阅和真实触发读回。没有新增轮询、重投、Harness启动或模型调用。
 
@@ -90,11 +90,15 @@ An installed hook must be checked on its own host; source files and prior adopti
 
 官方支持上述SessionStart事件，非managed新定义必须review/trust，信任与当前定义关联：[官方Hooks说明](https://learn.chatgpt.com/docs/hooks)。本机2026-10-15只读配置已有SessionStart信任记录，不能将未见恢复归因于Human未配置；记录存在也不替代当前定义被宿主接受及事件实际执行的证据。需要审阅时通过受支持的产品入口（官方CLI为`/hooks`），不写信任缓存、不用bypass。真实Desktop startup/resume是否触发已安装Hook并继承本人环境，仍须原会话实际观察。
 
-恢复入口为原Owner从当前Desktop工具环境执行“目标侧启动”的 `--prepare-current`，以及宿主真实SessionStart startup/resume或UserPromptSubmit事件。事件定义须已安装、正常信任且继承本人环境；均须随后读正式wake status确认prepared/pid_alive，启动PID或文件存在不能代替就绪。人工模式不合成宿主事件；Hook从标准输入处理真实事件，安装定义由Rooter维护。
+恢复入口为原Owner从当前Desktop工具环境执行“目标侧启动”的 `--prepare-current`，以及宿主真实SessionStart startup/resume/compact或UserPromptSubmit事件。事件定义须已安装、正常信任且继承本人环境；均须随后读正式wake status确认prepared/pid_alive，启动PID或文件存在不能代替就绪。人工模式不合成宿主事件；Hook从标准输入处理真实事件，安装定义由Rooter维护。
 
 常驻观察应核具体工具Job的成员，以及创建工具结束、后继自然回合中的正式状态。嵌套Job可能仍有外层归属；不能仅因 `IsProcessInJob(..., NULL)` 为true就反复停止活实例。脱离工具Job不等于持续自愈，也不承诺Desktop退出、注销或重启后的可用性。历史缺exit的退出原因仍未知；自然正式来件的受理与业务消费另核，不盲发测试提醒。
 
-切回已加载聊天时，是否收到 SessionStart 由宿主决定。UserPromptSubmit 对应实际输入。如果 SessionStart 到达脚本而缺少 Desktop 环境，已登记的会话会在 `additionalContext` 收到本人的 `--resume` 入口。接收器生命周期日志的 `owner_hook_entered` 保存事件和环境可用性，不含 prompt、管道地址或凭据。退出原因取真实退出记录。
+切回已加载聊天时，是否收到 SessionStart 由宿主决定。UserPromptSubmit 对应实际输入。如果 SessionStart 到达脚本而缺少 Desktop 环境，已登记的会话会在 `additionalContext` 收到本人的 `--resume` 入口。接收器生命周期日志的 `owner_hook_entered` 保存事件、SessionStart 的 source 和环境可用性，不含 prompt、管道地址或凭据。退出原因取真实退出记录。
+
+压缩后同一根会话的 `SessionStart(source=compact)` 也进入本人接收准备，沿原 Thread、Contact 与 STOP 检查；健康实例复用，旧连接沿已有本人校验处理。安装时将该脚本的 SessionStart matcher 设为 `^(startup|resume|compact)$`，按宿主正常入口审阅变更；源码更新不会自动修改本机 Hook 或信任记录。`clear`、`fork` 仍不在该接收准备合同内。普通 Stop 不表示业务完成，本脚本不在 Stop 重启接收器。
+
+这只覆盖宿主已派发事件后的接收准备，不代表压缩后业务上下文已读或阶段交付已完成。云编排不执行本地 command Hook 时，继续用本人 ENTRY 的显式复工入口；原生支持范围见 [Hooks](https://learn.chatgpt.com/docs/hooks#hooks-with-cloud-orchestration)。
 
 ## 验证
 

@@ -1,6 +1,6 @@
 """Prepare the caller's *own* registered Codex receiver.
 
-Manual prepare, SessionStart and UserPromptSubmit use the same Home/Contact and STOP
+Manual prepare, SessionStart (including compact) and UserPromptSubmit use the same Home/Contact and STOP
 checks. Current thread identity comes from the host environment; this module
 refuses a caller-supplied target override or another Home's credentials.
 """
@@ -58,7 +58,7 @@ def registered_target(thread_id, descriptor):
 
 def _is_prepare_event(event):
     name = event.get("hook_event_name")
-    return name == "UserPromptSubmit" or name == "SessionStart" and event.get("source") in {"startup", "resume"}
+    return name == "UserPromptSubmit" or name == "SessionStart" and event.get("source") in {"startup", "resume", "compact"}
 
 
 def observe_hook_entry(event):
@@ -81,6 +81,7 @@ def observe_hook_entry(event):
         return home
     with runtime.with_name(runtime.name + ".lifecycle.jsonl").open("a", encoding="utf-8") as stream:
         record_lifecycle(stream, "owner_hook_entered", hook=event["hook_event_name"], parent_pid=os.getppid(),
+                         source=event.get("source") if event["hook_event_name"] == "SessionStart" else None,
                          owner_thread_matches=os.environ.get("CODEX_THREAD_ID") == thread,
                          desktop_connection_present=bool(os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")))
     return home

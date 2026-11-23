@@ -418,14 +418,31 @@ class SessionStartGuardTests(unittest.TestCase):
                 launch.assert_not_called()
                 self.environment = environment
 
-    def test_only_startup_resume_are_processed(self):
-        for source in ("compact", "clear", "fork"):
+    def test_startup_resume_compact_are_processed(self):
+        for source in ("clear", "fork"):
             result, launch = self.prepare({**self.event, "source": source})
             self.assertIn("unsupported_event", result)
             launch.assert_not_called()
-        result, launch = self.prepare({**self.event, "source": "startup"})
-        self.assertIn("receiver_prepare_started", result)
-        launch.assert_called_once()
+        for source in ("startup", "resume", "compact"):
+            with self.subTest(source=source):
+                result, launch = self.prepare({**self.event, "source": source})
+                self.assertIn("receiver_prepare_started", result)
+                launch.assert_called_once()
+
+    def test_compact_respects_owner_and_stop(self):
+        event = {**self.event, "source": "compact"}
+        result, launch = self.prepare({**event, "session_id": "another-thread"})
+        self.assertIn("event_thread_mismatch", result)
+        launch.assert_not_called()
+        stop = Path(self.target["stop_file"])
+        stop.write_text("Human STOP", encoding="utf-8")
+        contact = self.root / "3002/private-data/contact/native-targets.json"
+        before = contact.read_bytes()
+        result, launch = self.prepare(event)
+        self.assertIn("original_STOP_present", result)
+        launch.assert_not_called()
+        self.assertEqual(contact.read_bytes(), before)
+        self.assertEqual(stop.read_text(encoding="utf-8"), "Human STOP")
 
     def test_user_prompt_prepares_only_its_registered_owner(self):
         event = {"hook_event_name": "UserPromptSubmit", "session_id": "own-thread",
@@ -452,7 +469,8 @@ class SessionStartGuardTests(unittest.TestCase):
         contact = self.root / "3002/private-data/contact/native-targets.json"
         original = runtime.read_bytes(), contact.read_bytes()
         with patch.object(hook, "reusable_owned_runtime", return_value=456):
-            for event in (self.event, {"hook_event_name": "UserPromptSubmit", "session_id": "own-thread"}):
+            for event in (self.event, {**self.event, "source": "compact"},
+                          {"hook_event_name": "UserPromptSubmit", "session_id": "own-thread"}):
                 result, launch = self.prepare(event)
                 self.assertIn("receiver_prepare_reused: 3002-s031 PID 456", result)
                 launch.assert_not_called()
@@ -551,8 +569,25 @@ class SessionStartGuardTests(unittest.TestCase):
         observed = json.loads(runtime.with_name(runtime.name + '.lifecycle.jsonl').read_text('utf-8'))
         self.assertEqual(observed['event'], 'owner_hook_entered')
         self.assertEqual(observed['hook'], 'SessionStart')
+        self.assertEqual(observed['source'], 'resume')
         self.assertFalse(observed['owner_thread_matches'])
         self.assertFalse(observed['desktop_connection_present'])
+        self.assertFalse(runtime.exists())
+
+    def test_compact_hook_records_source_before_missing_environment_guard(self):
+        event = {**self.event, "source": "compact"}
+        runtime = Path(self.target["extension"]["receiver_runtime_file"])
+        runtime.parent.mkdir()
+        with patch.dict(os.environ, {"PAOS_INSTALLATION_FILE": self.descriptor["path"]}, clear=True), \
+             patch.object(hook, "load_installation_descriptor", return_value=self.descriptor):
+            home = hook.observe_hook_entry(event)
+            result = hook.prepare(event)
+        self.assertEqual(home["home_id"], "3002-s031")
+        self.assertIn("original_desktop_environment_missing", result)
+        observed = json.loads(runtime.with_name(runtime.name + ".lifecycle.jsonl").read_text("utf-8"))
+        self.assertEqual(observed["source"], "compact")
+        self.assertFalse(observed["owner_thread_matches"])
+        self.assertFalse(observed["desktop_connection_present"])
         self.assertFalse(runtime.exists())
 
     def test_manual_command_needs_original_environment_and_rejects_target_override(self):
