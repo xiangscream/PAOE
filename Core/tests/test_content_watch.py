@@ -227,6 +227,17 @@ class ContentWatchTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         self.assertFalse(json.loads(proc.stdout)["ok"])
 
+    @unittest.skipUnless(os.name == "nt", "Windows process lock")
+    def test_normal_cli_rejects_a_second_watcher_with_a_structured_result(self):
+        with single_watcher(self.data):
+            proc = subprocess.run(
+                [sys.executable, "-X", "utf8", "-B", str(SCRIPTS / "paos.py"),
+                 "--installation-file", str(self.install), "--json", "content", "watch"],
+                capture_output=True, text=True, encoding="utf8", timeout=10,
+            )
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(json.loads(proc.stdout)["error_code"], "content_watch_already_running")
+
     @unittest.skipUnless(os.name == "nt", "Windows junction boundary")
     def test_junction_does_not_import_unregistered_content(self):
         outside = self.root / "outside"

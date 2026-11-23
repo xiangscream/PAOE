@@ -5,22 +5,17 @@ roots (including EXM when registered), Workflow/Skill roots, and the explicitly
 registered tool catalog. It writes versions to the existing
 `Data/content/events.sqlite3`; it does not invoke models or refresh QMD itself.
 
-## Entry and integration
+## Run the observer
 
-The independently runnable candidate entry is:
+Use the selected installation's normal CLI:
 
 ```powershell
-python scripts/paos_content_watch_cli.py --installation-file C:/path/installation.json content watch
+paos --installation-file C:/path/installation.json --json content watch
 ```
 
-S010 integrates these two calls into the main `paos content watch` entry:
-
-1. `add_watch_parser(content_subparsers)` from `paos_content_watch_cli` registers
-   `watch` under the existing `content` subparser.
-2. Route `content/watch` to `execute_watch(args, installation, stop=stop_event)`
-   **before** `execute_phase` attempts to resolve a Home. The main process's
-   SIGINT/SIGBREAK/SIGTERM handlers set this Event. The dedicated CLI already
-   installs those handlers. Return nonzero when `result["ok"]` is false.
+The foreground observer reports `subscribed` and `ready` to stderr. Ctrl+C or a Windows
+console break requests a coordinated stop. The final JSON result is written to stdout.
+A second observer for the same Data directory exits with `content_watch_already_running`.
 
 No extra port, dependency, per-Project process, or production installation change
 is needed. Rooter owns login startup and deployment. `watch.lock` uses an OS byte

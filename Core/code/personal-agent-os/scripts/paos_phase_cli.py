@@ -2,6 +2,7 @@
 
 from paos_attention_service import resolve_home_by_registry
 from paos_content import consume, list_changes
+from paos_content_watch_cli import add_watch_parser, execute_watch
 from paos_context import read_context
 from paos_context_search import add_search_parser, collection_plan, search_context
 from paos_installation import effective_data_root, load_installation_descriptor
@@ -56,6 +57,7 @@ def add_phase_parsers(sub):
     content = sub.add_parser(
         "content", help="Read and consume versions of changed originals"
     ).add_subparsers(dest="content_command", required=True)
+    add_watch_parser(content)
     changes = content.add_parser("changes", help="Read changes after a sequence number")
     changes.add_argument("--after", type=int, default=0)
     changes.add_argument("--limit", type=int, default=50)
@@ -68,6 +70,8 @@ def add_phase_parsers(sub):
 def execute_phase(args, installation, identity, cat_client):
     descriptor = load_installation_descriptor(installation)
     data = effective_data_root(descriptor)
+    if args.command == "content" and args.content_command == "watch":
+        return execute_watch(args, installation)
     if args.command == "content" and args.content_command == "changes":
         return list_changes(data, args.after, args.limit)
     home = resolve_home_by_registry(args.home, installation_file=str(installation))

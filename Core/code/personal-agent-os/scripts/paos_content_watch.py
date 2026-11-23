@@ -102,6 +102,10 @@ class ContentScope:
                     yield file.resolve()
 
 
+class WatcherAlreadyRunning(RuntimeError):
+    pass
+
+
 @contextmanager
 def single_watcher(data):
     import msvcrt
@@ -115,7 +119,7 @@ def single_watcher(data):
         try:
             msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
         except OSError as exc:
-            raise RuntimeError("content watch already owns this installation") from exc
+            raise WatcherAlreadyRunning("content watch already owns this installation") from exc
         try:
             yield
         finally:
