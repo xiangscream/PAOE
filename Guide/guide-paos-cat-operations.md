@@ -331,9 +331,9 @@ Windows/WSL 共用安装描述，定位看 `paos install show`。已批准的候
 
 Library 源文件变化后用 `paos library catalog workflow --root <Workflow根>` 重建目录，保留使用记录。运行切换和回退见 [升级与采用](guide-upgrade-adoption.md)，安装异常见 [Rooter 安装](guide-rooter-installation.md)。
 
-## PAOE 0.1 共用动作速查（候选实参 / 拟议项分别标明）
+## PAOE 0.1 共用动作速查（已按候选实参核对，待正式发布采用）
 
-以下接口中标注“候选已实现/已验证候选”者已按 System Core 候选（`0e24d83`、`3eb2939`）与 CAT 候选（`825792d`）实际 `--help` 核对，待同批工程正式发布采用；标注“拟议”者待 S010 后续切片定稿后替换：
+以下接口均已按 System Core 候选（`0e24d83`、`3eb2939`、`b04531a`）与 CAT 候选（`825792d`）实际 `--help` 核对，待同批工程正式发布后采用：
 
 | 入口与状态 | 适用时机 | 命令与关键边界 |
 | --- | --- | --- |
@@ -344,7 +344,7 @@ Library 源文件变化后用 `paos library catalog workflow --root <Workflow根
 | `task accept`（候选已实现） | 约定验收人完成整项目标验收并关闭专用房 | `paos task accept <验收人Sxxx> --task <TaskID> --artifact <项目内成果文件> --basis <项目内验收依据文件> --remaining "<剩余事项去向>" [--room <room> --read-to <实际已读seq>] [--carry HOME/TASK=continuation] [--cat-url <URL>]`；收口当前明确指向该任务的工位责任，`--artifact`/`--basis` 均指向项目内已有文件；普通 Task 可省 `--room`，专用房须同时给 `--room` 与实际读到的 `--read-to`（首次关房由适配器核验）；`human_confirm` 策略须先由 Human 完成 `accept-goal`，再由负责人收口本人 Task |
 | `content changes / consume`（候选已实现） | EXM 整理者拉取变化清单并登记消费位置 | `paos content changes [--after <N>] [--limit <N>]`；`paos content consume <本人Sxxx> --through <N> --result-ref <整理结果路径>`；按同一原件版本合并去重，索引失败不回滚正文 |
 | `context search / collections`（已验证候选） | 新目标或方向调整，按项目/方法/经历三库筛选检索，或只读查看集合注册命令 | `paos context search <本人Sxxx> "<查询>" [--scope project\|methods\|experience]... [--project <项目ID>] [--mode lexical\|semantic\|hybrid] [--limit <N>]`（`--scope` 可重复）；`paos context collections <本人Sxxx> [--project <项目ID>]` 只读给出每一集合的注册命令。缺集合会清楚报告覆盖不足且已有结果仍可读，日期只用原件声明 |
-| `content watch`（拟议） | 整机单一本地内容观察进程 | 仍等独立源码；启动先接实时事件并对账补漏，仅管本地文件；飞书等云端原件走既有工具 `read / refresh` |
+| `content watch`（已验证候选） | 整机单一本地内容观察进程 | `paos --installation-file <安装描述> --json content watch`（不传 Home）；启动先接实时事件并对账补漏，前台收到 `ready` 后监听，`Ctrl+C` / Windows 控制台 break 协同停止，同安装第二实例明确失败；仅管本地文件（云端原件走既有工具 `read / refresh`），正式登录启用由 Rooter 负责 |
 
 ## 问题定位
 
