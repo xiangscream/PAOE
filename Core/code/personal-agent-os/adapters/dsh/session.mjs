@@ -22,6 +22,13 @@ function hasInput(messages, original) {
     isDeepStrictEqual(item.content, original.content))
 }
 
+function nativeCompaction(ctx, agent) {
+  const presets = ctx.get('agentPresets')
+  const preset = presets?.composedPreset(agent.ctx)
+  if (preset !== undefined) return { scope: preset, engine: presets.serviceFor(agent, 'compaction') }
+  return { scope: 'host', engine: ctx.get('compaction') }
+}
+
 export function registerContextHooks(ctx, sessions, core, { createUserMessage, isAgentLoopRequest }) {
   const states = new Map()
   for (const target of Object.values(sessions)) {
@@ -107,6 +114,15 @@ export function registerContextHooks(ctx, sessions, core, { createUserMessage, i
       if (messages.length && messages.every(automatic)) return { ...decision, messages: [] }
       return decision.messages.some(automatic)
         ? { ...decision, messages: decision.messages.filter(m => !automatic(m)) } : decision
+    }
+    if (newTurn || s.reason || !s.compactionReady) {
+      const { scope, engine } = nativeCompaction(ctx, agent)
+      s.compactionReady = Boolean(engine)
+      if (!engine) {
+        s.blocked = true
+        await observe(s, 'compaction_unavailable', { scope })
+        throw new Error('DSH native compaction is unavailable in ' + scope + ' for ' + s.target.home)
+      }
     }
     const direct = messages.filter(message => message.source?.kind === 'user')
     const fresh = direct.filter(message => !s.inputs.some(previous => previous.id === message.id))
@@ -194,7 +210,9 @@ export function registerContextHooks(ctx, sessions, core, { createUserMessage, i
     if (agent.status !== 'idle' || s.turn !== pending.turn || signal.aborted) return
     const contact = await core.contact(target, agent.session.id, signal)
     if (contact.stopped || signal.aborted || agent.status !== 'idle' || s.turn !== pending.turn) return
-    const result = await ctx.compaction.compactNow(agent, signal)
+    const { scope, engine } = nativeCompaction(ctx, agent)
+    if (!engine) { await observe(s, 'compaction_unavailable', { scope }); return }
+    const result = await engine.compactNow(agent, signal)
     if (!result) { await observe(s, 'no_compactable_history'); return }
     await reload(s, 'compact', signal)
     if (s.frame.source.task !== pending.task || signal.aborted || agent.status !== 'idle' ||

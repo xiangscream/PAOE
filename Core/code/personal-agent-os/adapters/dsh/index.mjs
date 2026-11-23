@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { PaosCore } from './paos-core.mjs'
 import { registerContextHooks } from './session.mjs'
 
-export const inject = ['agents', 'llm', 'tokenMeter', 'compaction']
+export const inject = ['agents', 'llm', 'tokenMeter']
 
 export async function apply(ctx, config = {}) {
   if (!Object.keys(config.sessions ?? {}).length) return

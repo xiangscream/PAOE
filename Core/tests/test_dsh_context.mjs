@@ -17,6 +17,7 @@ function harness() {
   const agent = { session: { id: 'own-session', deriveMessages: () => surface }, status: 'running',
     followup: message => followups.push(message), steer: message => steering.push(message) }
   const ctx = {
+    get: key => ctx[key],
     on: (event, listener) => hooks.set(event, listener),
     effect: init => { fixture.dispose = init() },
     logger: { warn: (...args) => warnings.push(args) },
@@ -71,7 +72,7 @@ function harness() {
     const stream = hooks.get('llm/stream')(options, async function* () { fixture.nativeCalls++; yield 'model' })
     return Array.fromAsync(stream)
   }
-  return { fixture, hooks, agent, signal, surface, direct, observed, stops, followups, steering, warnings, enter, request }
+  return { ctx, fixture, hooks, agent, signal, surface, direct, observed, stops, followups, steering, warnings, enter, request }
 }
 
 test('keeps the complete original and reuses a single frame on successive steps', async () => {
@@ -135,6 +136,35 @@ test('recovery only runs at idle once and retains the same task and model select
   h.hooks.get('agent/status')({ agent: h.agent, status: 'idle' })
   await nextTick()
   assert.equal(h.fixture.compactions, 1)
+})
+
+test('a Web agent uses its retained preset compactor, independently of the Host service', async () => {
+  const h = harness()
+  const engine = h.ctx.compaction
+  delete h.ctx.compaction
+  h.ctx.agentPresets = { composedPreset: () => 'standard', serviceFor: (agent, name) => {
+    assert.equal(agent, h.agent)
+    assert.equal(name, 'compaction')
+    return engine
+  } }
+  await h.enter([h.direct])
+  h.fixture.total = 150
+  await assert.rejects(h.request(), /after idle/)
+  h.agent.status = 'idle'
+  h.hooks.get('agent/status')({ agent: h.agent, status: 'idle' })
+  await nextTick()
+  assert.equal(h.fixture.compactions, 1)
+  assert.equal(h.followups.length, 1)
+})
+
+test('a preset without native compaction reports its own scope before the provider runs', async () => {
+  const h = harness()
+  h.ctx.agentPresets = { composedPreset: () => 'minimal-custom', serviceFor: () => undefined }
+  await assert.rejects(h.enter([h.direct]), /compaction is unavailable in minimal-custom for S841/)
+  assert.equal(h.observed.at(-1).action, 'compaction_unavailable')
+  assert.equal(h.observed.at(-1).scope, 'minimal-custom')
+  assert.equal(h.fixture.compactions, 0)
+  assert.equal(h.fixture.nativeCalls, 0)
 })
 
 test('an interrupted or oversized current task never schedules a new turn', async () => {
