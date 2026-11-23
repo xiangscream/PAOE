@@ -63,25 +63,38 @@ def collection_plan(home, installation, descriptor, project):
             "collections": rows, "refresh": [["update"], ["embed"]], "writes": []}
 
 
-def query_qmd(launcher, collection, query, mode, limit):
+def _run_qmd(launcher, arguments):
     if not launcher.is_file():
         raise QmdUnavailable(f"登记安装缺少 QMD 入口：{launcher}")
     shell = shutil.which("pwsh") or shutil.which("powershell")
     if not shell:
         raise QmdUnavailable("当前安装没有运行 QMD 入口所需的 PowerShell")
-    # QMD's typed clauses also keep leading dashes in a search term from becoming CLI options.
-    lanes = {"lexical": ("lex",), "semantic": ("vec",), "hybrid": ("lex", "vec")}
-    expression = "\n".join(f"{lane}: {query}" for lane in lanes[mode])
-    args = ["query", expression, "--no-rerank"]
     result = subprocess.run(
-        [shell, "-NoProfile", "-NonInteractive", "-File", str(launcher), *args, "-c", collection,
-         "-n", str(limit), "--format", "json", "--full-path"],
+        [shell, "-NoProfile", "-NonInteractive", "-File", str(launcher), *arguments],
         capture_output=True, text=True, encoding="utf-8", check=False,
     )
     if result.returncode:
         raise QmdUnavailable((result.stderr or result.stdout).strip() or f"QMD 退出码 {result.returncode}")
+    return result.stdout.lstrip("\ufeff")
+
+
+def qmd_collection_root(launcher, name):
+    info = _run_qmd(launcher, ["collection", "show", name])
+    for line in info.splitlines():
+        key, sep, value = line.strip().partition(":")
+        if key == "Path" and sep and Path(value.strip()).is_absolute():
+            return Path(value.strip()).resolve()
+    raise QmdUnavailable(f"QMD 未给出集合 {name} 的绝对根目录")
+
+
+def query_qmd(launcher, collection, query, mode, limit):
+    # QMD's typed clauses also keep leading dashes in a search term from becoming CLI options.
+    lanes = {"lexical": ("lex",), "semantic": ("vec",), "hybrid": ("lex", "vec")}
+    expression = "\n".join(f"{lane}: {query}" for lane in lanes[mode])
+    raw = _run_qmd(launcher, ["query", expression, "--no-rerank", "-c", collection,
+                              "-n", str(limit), "--format", "json", "--full-path"])
     try:
-        rows = json.loads(result.stdout.lstrip("\ufeff"))
+        rows = json.loads(raw)
     except json.JSONDecodeError as error:
         raise QmdUnavailable("QMD 未返回可读的 JSON 结果") from error
     if not isinstance(rows, list):
@@ -99,10 +112,11 @@ def _original(locator, expected):
     if not path.is_absolute():
         raise QmdUnavailable(f"索引没有返回绝对原件位置：{locator}")
     path = path.resolve()
-    if expected is not None:
-        root = Path(posix_windows_drive_locator(str(expected))).resolve()
-        if not (path == root or (root.is_dir() and path.is_relative_to(root))):
-            raise QmdUnavailable(f"集合原件在当前安装登记范围之外：{path}")
+    if expected is None:
+        raise QmdUnavailable("无法核对该集合的原件根目录")
+    root = Path(posix_windows_drive_locator(str(expected))).resolve()
+    if not (path == root or (root.is_dir() and path.is_relative_to(root))):
+        raise QmdUnavailable(f"集合原件在当前安装登记范围之外：{path}")
     try:
         with path.open(encoding="utf-8-sig") as stream:
             first = stream.readline()
@@ -123,7 +137,7 @@ def _qmd_hit(row, scope, collection, expected):
         raise QmdUnavailable(f"索引返回了其他集合的原件：{locator}")
     metadata, availability = _original(locator, expected)
     status = metadata.get("status")
-    if not status and expected is not None and availability == "local":
+    if not status and availability == "local":
         root = Path(posix_windows_drive_locator(str(expected))).resolve()
         relative = Path(locator).resolve().relative_to(root)
         if relative.parts and relative.parts[0].casefold() == "archive":
@@ -179,6 +193,8 @@ def search_context(args, home, installation, descriptor):
     for scope, name, root, _mask in collections:
         try:
             rows = query_qmd(launcher, name, query, args.mode, args.limit)
+            if root is None and any(not row["file"].startswith("qmd://") for row in rows):
+                root = qmd_collection_root(launcher, name)
             hits = [_qmd_hit(row, scope, name, root) for row in rows]
         except QmdUnavailable as error:
             coverage.append({"source": name, "scope": scope, "state": "unavailable", "reason": str(error)})

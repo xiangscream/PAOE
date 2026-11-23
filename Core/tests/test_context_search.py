@@ -76,3 +76,25 @@ class OriginalSearchTests(unittest.TestCase):
         answer = self.search({})
         self.assertFalse(answer["ok"])
         self.assertEqual(answer["coverage"][0]["source"], "method-catalog")
+
+    def test_experience_archive_is_relative_to_its_registered_collection(self):
+        self.args.scope = ["experience"]
+        root = self.project.parent / "Archive" / "Experience"
+        archived = root / "Archive" / "prior.md"
+        active = root / "Topics" / "active.md"
+        for file in (archived, active):
+            file.parent.mkdir(parents=True)
+            file.write_text("# A source", encoding="utf-8")
+        rows = [{"file": str(archived)}, {"file": str(active)},
+                {"file": "qmd://exm/Archive/moved.md"}]
+        with patch("paos_context_search._run_qmd", return_value=f"Collection: exm\n  Path: {root}\n"):
+            result = self.search({"exm": rows})
+        self.assertTrue(result["ok"])
+        self.assertEqual([v["status"] for v in result["results"]], ["historical", None, None])
+        self.assertEqual(result["results"][-1]["availability"], "index_only")
+        active.write_text("---\nstatus: adopted\n---\n# Source", encoding="utf-8")
+        with patch("paos_context_search.qmd_collection_root", return_value=root):
+            result = self.search({"exm": [{"file": str(active)}]})
+            self.assertEqual(result["results"][0]["status"], "adopted")
+            invalid = self.search({"exm": [{"file": str(self.project / "other.md")}]})
+            self.assertFalse(invalid["ok"])
