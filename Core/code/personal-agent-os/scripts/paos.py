@@ -133,6 +133,7 @@ from paos_contact import (  # noqa: E402
     runtime_contact,
 )
 from paos_cat_cli import add_cat_parser, execute_cat  # noqa: E402
+from paos_context import read_context  # noqa: E402
 PEERS_SCHEMA = "paos-peers/v2"
 
 BODY_HELP = (
@@ -882,12 +883,7 @@ def _inject_from_contact_store(
             "next_action": "尊重原STOP；只有原授权主体可解除，不自动重投。",
             "reason": "STOP file present; owner explicitly paused",
         }
-    message = (
-        f"mail message_id {message_id} 已由 {sender_id} 持久投递到 "
-        f"{agent_id} 工位 mailbox；主题为 {subject}。请实读该 durable mail，"
-        "先走 Current 后原输入合同，再由本人决定下一步；本提醒只是一个"
-        "原生跟进，不做业务解析。"
-    )
+    message = f"{sender_id} 发来新消息：{subject}\n请读原信，接着处理。\n（原信：{message_id}）"
     try:
         receipt = native_inject(target=target, message=message)
     except InjectionUncertain as problem:
@@ -3208,6 +3204,13 @@ def execute(
     if args.command == "orient":
         return execute_orient(args, registry, resolved_installation_path)
 
+    if args.command == "context":
+        home = resolve_home_by_registry(args.home, installation_file=str(resolved_installation_path))
+        number = (_resolve_agent_identity(args.home, installation_path=resolved_installation_path)
+                  .get("staff_number") or args.home)
+        return read_context(home, staff_number=number, reason=args.reason,
+                            task_id=args.task, sources=args.source)
+
     if args.command == "status":
         return execute_status(args, registry, resolved_installation_path)
 
@@ -3312,6 +3315,12 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     sub = p.add_subparsers(dest="command", required=True)
+    context = sub.add_parser("context", help="Read original phase inputs from the registered Home")
+    ctx = context.add_subparsers(dest="context_command", required=True).add_parser("read")
+    ctx.add_argument("home")
+    ctx.add_argument("--task", default="", help="Include this existing Task and its inputs")
+    ctx.add_argument("--reason", choices=["startup", "resume", "compact", "stage", "request"], default="resume")
+    ctx.add_argument("--source", action="append", default=[], help="Required local text input (repeatable)")
     add_cat_parser(sub)
 
     sub.add_parser("health", help="Check local installation (not Runtime availability)")
