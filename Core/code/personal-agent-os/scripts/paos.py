@@ -133,7 +133,9 @@ from paos_contact import (  # noqa: E402
     runtime_contact,
 )
 from paos_cat_cli import add_cat_parser, execute_cat  # noqa: E402
-from paos_context import read_context  # noqa: E402
+from paos_phase_cli import add_phase_parsers, execute_phase  # noqa: E402
+from paos_todo import TodoProblem
+from sqlite3 import Error as SqliteError
 PEERS_SCHEMA = "paos-peers/v2"
 
 BODY_HELP = (
@@ -3204,12 +3206,8 @@ def execute(
     if args.command == "orient":
         return execute_orient(args, registry, resolved_installation_path)
 
-    if args.command == "context":
-        home = resolve_home_by_registry(args.home, installation_file=str(resolved_installation_path))
-        number = (_resolve_agent_identity(args.home, installation_path=resolved_installation_path)
-                  .get("staff_number") or args.home)
-        return read_context(home, staff_number=number, reason=args.reason,
-                            task_id=args.task, sources=args.source)
+    if args.command in {"context", "stage", "content"}:
+        return execute_phase(args, resolved_installation_path, _resolve_agent_identity, RestClient)
 
     if args.command == "status":
         return execute_status(args, registry, resolved_installation_path)
@@ -3315,12 +3313,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     sub = p.add_subparsers(dest="command", required=True)
-    context = sub.add_parser("context", help="Read original phase inputs from the registered Home")
-    ctx = context.add_subparsers(dest="context_command", required=True).add_parser("read")
-    ctx.add_argument("home")
-    ctx.add_argument("--task", default="", help="Include this existing Task and its inputs")
-    ctx.add_argument("--reason", choices=["startup", "resume", "compact", "stage", "request"], default="resume")
-    ctx.add_argument("--source", action="append", default=[], help="Required local text input (repeatable)")
+    add_phase_parsers(sub)
     add_cat_parser(sub)
 
     sub.add_parser("health", help="Check local installation (not Runtime availability)")
@@ -4172,7 +4165,8 @@ def main(argv: list[str] | None = None) -> int:
         print(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=2))
         return 1 if isinstance(result, dict) and result.get("ok") is False else 0
     except (CliError, RegistryProblem, InstallationProblem, LibraryProblem, NumbersProblem, WorkstationProblem,
-            HomeProblem, MailProblem, NoticeProblem, AttentionServiceProblem, OSError, ValueError) as exc:
+            HomeProblem, MailProblem, NoticeProblem, AttentionServiceProblem, TodoProblem,
+            SqliteError, OSError, ValueError) as exc:
         error = exc if isinstance(exc, CliError) else CliError(str(exc),
             error_code=getattr(exc, "code", "local_operation_failed"),
             details=getattr(exc, "details", {}))
