@@ -11,11 +11,13 @@ const loop = createRequire(host.resolve('@deepseek-ai/dsh-agent-loop'))
 const sdk = await import(pathToFileURL(loop.resolve('@deepseek-ai/dsh-llm')).href)
 const hooks = new Map(), surface = []
 const ctx = {
+  get(name) { return this[name] },
   on: (key, fn) => hooks.set(key, fn),
   effect: fn => fn(),
   logger: { warn: (...args) => { throw new Error(args.join(' ')) } },
   llm: { resolveModelInfo: async () => ({ context: { contextWindow: 32000 } }) },
   tokenMeter: { measure: () => ({ totalTokens: 100, nodes: surface.map(() => ({ tokens: 10 })) }) },
+  compaction: { compactNow() { assert.fail('The under-capacity pair must not compact') } },
 }
 const agent = { session: { id: 'fixture-dsh-session', deriveMessages: () => surface }, status: 'running' }
 const signal = new AbortController().signal

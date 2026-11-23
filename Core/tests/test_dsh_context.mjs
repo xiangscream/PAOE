@@ -167,6 +167,14 @@ test('a preset without native compaction reports its own scope before the provid
   assert.equal(h.fixture.nativeCalls, 0)
 })
 
+test('a headless host missing the compaction capability stops before the provider runs', async () => {
+  const h = harness()
+  delete h.ctx.compaction
+  await assert.rejects(h.enter([h.direct]), /compaction is unavailable in host for S841/)
+  assert.equal(h.observed.at(-1).action, 'compaction_unavailable')
+  assert.equal(h.fixture.nativeCalls, 0)
+})
+
 test('an interrupted or oversized current task never schedules a new turn', async () => {
   for (const state of ['interrupted', 'selected-too-large', 'stopped']) {
     const h = harness()
