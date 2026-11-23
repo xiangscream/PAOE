@@ -15,6 +15,7 @@ from types import SimpleNamespace
 SCRIPTS = Path(__file__).resolve().parents[1] / "code/personal-agent-os/scripts"
 sys.path.insert(0, str(SCRIPTS))
 import paos_codex_hook as hook
+from paos_data_paths import contact_store_path
 from paos_installation import write_installation_descriptor
 from paos_registry import ProjectRegistry
 from paos_todo import render_todo
@@ -48,7 +49,7 @@ class CodexContextHookTests(unittest.TestCase):
         self.runtime.parent.mkdir()
         target = {'runtime':'codex', 'session_id':'own-session', 'stop_file':str(self.stop),
             'extension':{'receiver_runtime_file':str(self.runtime), 'windows_python':sys.executable}}
-        self.contact = self.project/'private-data/contact/native-targets.json'
+        self.contact = contact_store_path(self.install)
         self.contact.parent.mkdir(parents=True)
         self.contact.write_text(json.dumps({'S010':target}), encoding='utf-8')
         self.environment = {k:v for k,v in os.environ.items() if k not in
