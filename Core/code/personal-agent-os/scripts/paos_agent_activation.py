@@ -233,6 +233,7 @@ def send_agent_mail(
     sender_kind: str = "human",
     sender_id: str = "",
     message_id: str = "",
+    installation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Persist durable Workstation Mail first, then activate its Agents.
 
@@ -253,6 +254,7 @@ def send_agent_mail(
             sender_kind=sender_kind,
             sender_id=sender_id,
             message_id=message_id,
+            installation_path=installation_path,
         )
     except MailProblem as problem:
         raise AgentActivationProblem(
@@ -266,6 +268,7 @@ def send_agent_mail(
         root=root,
         project_id=project_id,
         message_id=str(persisted["message_id"]),
+        installation_path=installation_path,
     )
     return {
         "schema": AGENT_MESSAGE_SCHEMA,

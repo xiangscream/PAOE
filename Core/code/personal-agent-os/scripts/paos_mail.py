@@ -256,9 +256,10 @@ def _dispatch_path(root: Path, message_id: str, *,
                    installation_path: str | Path | None = None,
                    project_id: str = "") -> Path:
     if installation_path is not None:
-        from paos_data_paths import mail_dispatch_dir, project_scope
+        from paos_data_paths import mail_dispatch_dir, project_scope, rooter_scope, scope_for_root
         return mail_dispatch_dir(
-            project_scope(project_id), installation_path) / f"{message_id}.json"
+            (rooter_scope() if project_id == "rooter" else project_scope(project_id))
+            if project_id else scope_for_root(root, installation_path), installation_path) / f"{message_id}.json"
     return root / ".paos" / "mail" / "dispatch" / f"{message_id}.json"
 
 
@@ -812,9 +813,11 @@ def dispatch_status(
     }
 
 
-def expected_mail_sha(root: Path, message_id: str, recipient_id: str) -> str:
+def expected_mail_sha(root: Path, message_id: str, recipient_id: str, *,
+                      installation_path=None, project_id="") -> str:
     """-existing Mail 合同：per-recipient 原件 sha256（dispatch 唯一事实源）"""
-    dispatch = _load_dispatch(_dispatch_path(root, _validate_message_id(message_id)))
+    dispatch = _load_dispatch(_dispatch_path(root, _validate_message_id(message_id),
+        installation_path=installation_path, project_id=project_id))
     entry = (dispatch.get("expected_files") or {}).get(str(recipient_id)) or {}
     return str(entry.get("sha256") or "")
 def parse_mail_frontmatter(text: str) -> dict[str, Any]:

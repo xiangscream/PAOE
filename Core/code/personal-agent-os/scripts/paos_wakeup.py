@@ -137,7 +137,7 @@ def bind_wakeup(
         target.setdefault("project_id", project_id)
     if runtime_id:
         target.setdefault("runtime_id", runtime_id)
-    targets = load_native_targets(root) or {}
+    targets = load_native_targets(root, installation_path=installation_path) or {}
     if target["runtime"] == "codex":
         previous = targets.get(agent_id) or {}
         extension = dict(previous.get("extension") or {}) if previous.get("session_id") == native_session_id else {}
@@ -333,7 +333,7 @@ def unbind_wakeup(root: Path, agent_id: str, *, force: bool = False,
     """移除 Contact native-target 配置项（对历史 binding 文件不动）。"""
     root = Path(root)
     agent_id = _validate_id(agent_id, label="agent_id")
-    targets = load_native_targets(root) or {}
+    targets = load_native_targets(root, installation_path=installation_path) or {}
     if agent_id not in targets:
         return {
             "schema": WAKE_ACTION_SCHEMA,

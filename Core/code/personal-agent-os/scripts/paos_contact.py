@@ -714,6 +714,7 @@ def build_team_rows(
     *,
     numbers_map: dict[str, str] | None = None,
     agent_ids: set[str] | None = None,
+    installation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """TEAM rows over fixed workstations; optional agent_ids narrows Home reads."""
     root = Path(posix_windows_drive_locator(str(data_root))).expanduser()
@@ -751,7 +752,7 @@ def build_team_rows(
                 "membership_basis": "fixed_workstation",
                 "session_status": (session or {}).get("status") or "no_active_session",
                 "workstation_todo": read_team_todo(root, agent_id),
-                "runtime_contact": runtime_contact(root, agent_id),
+                "runtime_contact": runtime_contact(root, agent_id, installation_path=installation_path),
                 "home_read": _read_project_home_state(project, root, agent_id),
             }
             agents.append(entry)
@@ -857,6 +858,7 @@ def contact_entry(
     agent_id: str,
     session: dict[str, Any],
     numbers_map: dict[str, str] | None = None,
+    installation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """One peers row from the live active session + workstation facts."""
     entry: dict[str, Any] = {
@@ -867,7 +869,7 @@ def contact_entry(
         "membership_basis": "active_session",
         "session_status": session.get("status"),
         "workstation_todo": read_team_todo(root, agent_id),
-        "runtime_contact": runtime_contact(root, agent_id),
+        "runtime_contact": runtime_contact(root, agent_id, installation_path=installation_path),
     }
     return entry
 

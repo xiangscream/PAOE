@@ -32,14 +32,16 @@ def registered_target(thread_id, descriptor):
         registry = None  # An installation Rooter does not require a Project.
     matches = []
     projects = ProjectRegistry(Path(descriptor["path"])) if registry else None
-    for project_file in sorted(registry.glob("*.json")) if registry else ():
-        project = projects.read(project_file.stem)
+    project_views = [projects.read(p.stem) for p in sorted(registry.glob("*.json"))] if registry else []
+    targets = load_native_targets(Path(descriptor["source_root"]), installation_path=descriptor["path"]) or {}
+    for project in project_views:
         root_locator = project.get("root_path")
         if not root_locator:
             continue  # Unhoused projects have no Project Home or Contact root.
         root = Path(posix_windows_drive_locator(root_locator))
-        targets = load_native_targets(root) or {}
         for agent_id, target in targets.items():
+            if agent_id not in project.get("homes", []):
+                continue
             if target.get("runtime") == "codex" and target.get("session_id") == thread_id:
                 home = project_agent_home(project=project, agent_id=agent_id)
                 matches.append((home, target))
@@ -47,7 +49,7 @@ def registered_target(thread_id, descriptor):
     if rooter_locator:
         root = Path(posix_windows_drive_locator(rooter_locator)).expanduser()
         # Same Home id/root contract as the public Rooter Contact route.
-        target = (load_native_targets(root) or {}).get("rooter-001")
+        target = targets.get("rooter-001")
         if target and target.get("runtime") == "codex" and target.get("session_id") == thread_id:
             home = rooter_home(home_path=root, home_id="rooter-001")
             matches.append((home, target))

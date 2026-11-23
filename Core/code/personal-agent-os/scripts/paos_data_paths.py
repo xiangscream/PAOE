@@ -49,6 +49,26 @@ def rooter_scope(home_id: str = "rooter-001") -> str:
     return scope
 
 
+def scope_for_root(root: Path, installation_path: str | Path) -> str:
+    """Resolve a legacy caller's sender root through the installation registry."""
+    from paos_registry import ProjectRegistry
+    from paos_workstation import posix_windows_drive_locator
+    descriptor = _descriptor(installation_path)
+    root = Path(root).resolve()
+    matches = []
+    if descriptor.get("rooter_home") and root == Path(posix_windows_drive_locator(descriptor["rooter_home"])).resolve():
+        matches.append(rooter_scope())
+    registry = ProjectRegistry(Path(installation_path))
+    directory = effective_data_root(descriptor) / "project-registry/projects"
+    for file in directory.glob('*.json'):
+        record = registry.read_record(file.stem)
+        if root == Path(posix_windows_drive_locator(record['root_path'])).resolve():
+            matches.append(project_scope(record['id']))
+    if len(matches) != 1:
+        raise ValueError('Sender root must match exactly one registered scope')
+    return matches[0]
+
+
 def mail_dispatch_dir(scope: str,
                       installation_path: str | Path | None = None) -> Path:
     if not SCOPE_RE.fullmatch(str(scope or "")):

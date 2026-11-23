@@ -2417,6 +2417,7 @@ def request_mail_activation(
     message_id: str,
     agents: Iterable[str] | None = None,
     activation_request_id: str = "",
+    installation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Persist one activation intent for an existing durable Mail source (durable only; target Runtime wakes via an independent legitimate caller trigger)."""
     root = _runtime_root(root)
@@ -2427,7 +2428,7 @@ def request_mail_activation(
             "Project 缺少 id。",
         )
     try:
-        status = dispatch_status(root, message_id)
+        status = dispatch_status(root, message_id, installation_path=installation_path, project_id=project_id)
     except MailProblem as problem:
         raise _map_problem(problem) from problem
     if str(status.get("project_id") or "") != project_id:
@@ -2527,7 +2528,8 @@ def request_mail_activation(
             )
         # 内容级核验沿既有 Mail 合同（dispatch expected sha 唯一事实，二 ID 不足以证原件）：不一致=源被改，诚实拒绝。
         actual_sha = _sha256_text(mail_text)
-        expected_sha = expected_mail_sha(root, message_id, agent_id)
+        expected_sha = expected_mail_sha(root, message_id, agent_id,
+            installation_path=installation_path, project_id=project_id)
         if expected_sha and actual_sha != expected_sha:
             raise AttentionServiceProblem(
                 "attention_source_mail_content_conflict",
