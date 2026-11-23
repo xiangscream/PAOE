@@ -91,6 +91,7 @@ def activate_agent(
     wake_prompt: str = DEFAULT_WAKE_PROMPT,
     attempt_id: str = "",
     source_verified: bool = False,
+    installation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Request continuation for one stable Agent identity.
 
@@ -119,7 +120,7 @@ def activate_agent(
             },
         )
 
-    targets = load_native_targets(root)
+    targets = load_native_targets(root, installation_path=installation_path)
     target = (targets or {}).get(agent_id) if isinstance(targets, dict) else None
     if not isinstance(target, dict) or not str(target.get("session_id") or "").strip():
         return {
@@ -288,6 +289,7 @@ def activate_mail_dispatch(
     project_id: str,
     message_id: str,
     agents: Iterable[str] | None = None,
+    installation_path: str | Path | None = None,
     wake_prompt: str = "检查 Workstation mailbox，并从当前工位继续。",
 ) -> dict[str, Any]:
     """Activate frozen recipients of one already-persisted Workstation Mail.
@@ -300,7 +302,9 @@ def activate_mail_dispatch(
     message_id = _clean_id(message_id, "message_id")
 
     try:
-        mail = dispatch_status(root, message_id)
+        mail = dispatch_status(
+            root, message_id, installation_path=installation_path,
+            project_id=project_id)
     except MailProblem as problem:
         raise AgentActivationProblem(
             problem.code,
