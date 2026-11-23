@@ -3,6 +3,7 @@
 from paos_attention_service import resolve_home_by_registry
 from paos_content import consume, list_changes
 from paos_context import read_context
+from paos_context_search import add_search_parser, collection_plan, search_context
 from paos_installation import effective_data_root, load_installation_descriptor
 from paos_phase_stop import on_stop
 from paos_stage import deliver
@@ -14,6 +15,7 @@ def add_phase_parsers(sub):
     ctx = sub.add_parser(
         "context", help="Read phase inputs or end native participation"
     ).add_subparsers(dest="context_command", required=True)
+    add_search_parser(ctx)
     read = ctx.add_parser("read", help="Read original phase inputs from the registered Home")
     read.add_argument("home")
     read.add_argument("--task", default="")
@@ -62,10 +64,15 @@ def add_phase_parsers(sub):
 
 
 def execute_phase(args, installation, identity, cat_client):
-    data = effective_data_root(load_installation_descriptor(installation))
+    descriptor = load_installation_descriptor(installation)
+    data = effective_data_root(descriptor)
     if args.command == "content" and args.content_command == "changes":
         return list_changes(data, args.after, args.limit)
     home = resolve_home_by_registry(args.home, installation_file=str(installation))
+    if args.command == "context" and args.context_command == "collections":
+        return collection_plan(home, installation, descriptor, args.project)
+    if args.command == "context" and args.context_command == "search":
+        return search_context(args, home, installation, descriptor)
     if args.command == "content":
         return consume(data, home, args.through, args.result_ref)
     staff = identity(args.home, installation_path=installation).get("staff_number") or args.home
