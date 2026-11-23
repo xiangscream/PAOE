@@ -192,9 +192,11 @@ async function settle(ctx, core, state, sessionID, turn, signal) {
   if (presenceOnly && !core.config.catUrl) return
   // The context snapshot also detects a newer execution before the event consumer sees it.
   const history = await ctx.session.context({ sessionID })
-  const terminal = history.at(-1)
-  if (!current(state, turn, signal) || history.findLast(message => message.type === 'user')?.id !== input ||
-      terminal?.type !== 'idle' || terminal.outcome !== turn.outcome) return
+  if (!current(state, turn, signal) || history.findLast(message => message.type === 'user')?.id !== input) return
+  if (!presenceOnly) {
+    const terminal = history.at(-1)
+    if (terminal?.type !== 'idle' || terminal.outcome !== turn.outcome) return
+  }
   const flags = turn.outcome === 'interrupted' ? ['--interrupted']
     : presenceOnly ? ['--presence-only'] : turn.reentry ? ['--reentry'] : []
   const decision = await core.stop(state.target, id + ':' + sessionID + ':' + input, task, flags, signal)

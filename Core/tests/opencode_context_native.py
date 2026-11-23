@@ -299,6 +299,40 @@ def check_stopped_presence(host, sid, provider, stop, todo):
     return observations
 
 
+def failure_probe(root, candidate):
+    """Expose the review's user-tail snapshot while retaining the native event and wait."""
+    probe = root / "failure-probe"
+    evidence = root / "failure-probe.jsonl"
+    save(probe / "package.json", {"name": "failure-probe", "version": "0.0.1", "type": "module",
+                                 "exports": {".": "./index.js"}})
+    (probe / "index.js").write_text(f"""
+import {{ appendFile }} from 'node:fs/promises'
+import plugin from {json.dumps((candidate / 'index.mjs').as_uri())}
+const record = row => appendFile({json.dumps(str(evidence))}, JSON.stringify(row) + '\\n')
+export default {{ ...plugin, setup: ctx => plugin.setup({{
+  ...ctx,
+  event: {{ ...ctx.event, async *subscribe(options) {{
+    for await (const event of ctx.event.subscribe(options)) {{
+      if (event.type === 'session.execution.failed') {{
+        await record({{ event: event.type, session: event.data.sessionID }})
+      }}
+      yield event
+    }}
+  }} }},
+  session: {{ ...ctx.session, async context(params) {{
+    const history = await ctx.session.context(params)
+    const user = history.findLastIndex(message => message.type === 'user')
+    if (history[user]?.text !== 'MISSING_REQUIRED_USER_TAIL') return history
+    const visible = history.slice(0, user + 1)
+    await record({{ input: history[user].id, session: params.sessionID,
+      native_tail: history.at(-1).type, probe_tail: visible.at(-1).type }})
+    return visible
+  }} }},
+}}) }}
+""", encoding="utf-8")
+    return probe, evidence
+
+
 def check(exe, expected, root, provider, core_source=None):
     provider.observed = []
     provider.change_original = False
@@ -323,7 +357,10 @@ def check(exe, expected, root, provider, core_source=None):
         }
       })
     }}""", encoding="utf-8")
-    host.settings["plugins"] = [{"package": (SOURCE / "adapters/opencode").as_posix(),
+    adapter = SOURCE / "adapters/opencode"
+    if core_source is not None:
+        adapter, failure_evidence = failure_probe(root, adapter)
+    host.settings["plugins"] = [{"package": adapter.as_posix(),
         "options": {"installation": str(installation), "python": sys.executable,
                     "sessions": {sid: {"project": "3002", "home": "S001",
                                        "requiredSources": ["input.md"], "recoverCapacity": True}}}},
@@ -345,8 +382,11 @@ def check(exe, expected, root, provider, core_source=None):
         assert any(row["action"] == "request_checked" and row.get("input") == later_input and
                    row["checkpoint"] == "OpenCode context" for row in journal_rows())
         original.write_text("REQUIRED_ORIGINAL_CHANGED", encoding="utf-8")
+        presence_before = len(provider.cat_updates)
         host.submit(sid, "SOURCE_CHANGED_FIXTURE")
         assert provider.observed[-1]["original_2"] and not provider.observed[-1]["original_1"]
+        if core_source is not None:
+            wait_for(lambda: provider.cat_updates[presence_before:], bool, "changed source turn ends")
         original.unlink()
         count = len(provider.observed)
         presence_before = len(provider.cat_updates)
@@ -356,7 +396,26 @@ def check(exe, expected, root, provider, core_source=None):
         if core_source is not None:
             wait_for(lambda: provider.cat_updates, lambda updates: len(updates) > presence_before,
                      "failed request marks the selected Home offline")
-            assert provider.cat_updates[-1] == {"presence": "offline"}
+            assert provider.cat_updates[presence_before:] == [{"presence": "offline"}]
+            presence_before = len(provider.cat_updates)
+            failed_input = host.submit(sid, "MISSING_REQUIRED_USER_TAIL")
+            assert journal_rows()[-1]["action"] == "originals_unavailable"
+            wait_for(lambda: provider.cat_updates[presence_before:], bool,
+                     "native failure with user-tail snapshot marks the selected Home offline")
+            assert provider.cat_updates[presence_before:] == [{"presence": "offline"}]
+            assert len(provider.observed) == count, "failed inputs must make zero model requests"
+            observations = [json.loads(line) for line in failure_evidence.read_text(encoding="utf-8").splitlines()]
+            assert observations[-2] == {"event": "session.execution.failed", "session": sid}
+            failure_presence = observations[-1]
+            assert failure_presence["input"] == failed_input and failure_presence["session"] == sid
+            assert failure_presence["probe_tail"] == "user"
+            messages = host.transcript(sid)
+            failure_presence.update(event=observations[-2]["event"], offline=1, model_requests=0,
+                                    message_endpoint_first=messages[0]["type"],
+                                    message_endpoint_last=messages[-1]["type"],
+                                    message_endpoint_last_is_failed_input=messages[-1]["id"] == failed_input)
+        else:
+            failure_presence = {}
         original.write_text("REQUIRED_ORIGINAL_CHANGED", encoding="utf-8")
 
         provider.change_original = True
@@ -411,6 +470,7 @@ def check(exe, expected, root, provider, core_source=None):
             "later_hook_changes_wire_after_own_checkpoint": True,
             "paired_core_presence": core_source is not None,
             "stopped_presence": stopped_presence,
+            "failure_presence": failure_presence,
             "wire": provider.observed, "journal": journal_rows()}
 
 
