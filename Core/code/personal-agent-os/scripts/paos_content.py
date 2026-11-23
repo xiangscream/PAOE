@@ -1,4 +1,5 @@
 """Local originals and versioned changes shared by delivery and the content watcher."""
+
 from __future__ import annotations
 
 import hashlib
@@ -59,10 +60,14 @@ def changes_db(data: Path):
 
 
 def record_version(db, locator, version, kind, origin):
-    db.execute("""INSERT INTO changes(locator,version,kind,origin) VALUES(?,?,?,?)
-                  ON CONFLICT(locator,version) DO NOTHING""", (locator, version, kind, origin))
-    return db.execute("SELECT seq FROM changes WHERE locator=? AND version=?",
-                      (locator, version)).fetchone()[0]
+    db.execute(
+        """INSERT INTO changes(locator,version,kind,origin) VALUES(?,?,?,?)
+                  ON CONFLICT(locator,version) DO NOTHING""",
+        (locator, version, kind, origin),
+    )
+    return db.execute(
+        "SELECT seq FROM changes WHERE locator=? AND version=?", (locator, version)
+    ).fetchone()[0]
 
 
 def list_changes(data, after, limit):
@@ -73,8 +78,12 @@ def list_changes(data, after, limit):
         return {"ok": True, "changes": [], "cursor": after}
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
         db.row_factory = sqlite3.Row
-        rows = [dict(r) for r in db.execute("SELECT * FROM changes WHERE seq>? ORDER BY seq LIMIT ?",
-                                            (after, limit))]
+        rows = [
+            dict(r)
+            for r in db.execute(
+                "SELECT * FROM changes WHERE seq>? ORDER BY seq LIMIT ?", (after, limit)
+            )
+        ]
     return {"ok": True, "changes": rows, "cursor": rows[-1]["seq"] if rows else after}
 
 
@@ -84,12 +93,15 @@ def consume(data, home, through, result_ref):
     with changes_db(data) as db:
         if not db.execute("SELECT 1 FROM changes WHERE seq=?", (through,)).fetchone():
             raise ValueError("through 必须指向实际存在的变化")
-        prior = db.execute("SELECT through_seq,result_ref FROM consumers WHERE home=?",
-                           (home["home_id"],)).fetchone()
+        prior = db.execute(
+            "SELECT through_seq,result_ref FROM consumers WHERE home=?", (home["home_id"],)
+        ).fetchone()
         if prior and (through < prior[0] or through == prior[0] and str(output) != prior[1]):
             raise ValueError("消费游标已前进或同一游标的成果不一致")
-        db.execute("INSERT OR REPLACE INTO consumers(home,through_seq,result_ref) VALUES(?,?,?)",
-                   (home["home_id"], through, str(output)))
+        db.execute(
+            "INSERT OR REPLACE INTO consumers(home,through_seq,result_ref) VALUES(?,?,?)",
+            (home["home_id"], through, str(output)),
+        )
     return {"ok": True, "home_id": home["home_id"], "cursor": through, "result_ref": str(output)}
 
 

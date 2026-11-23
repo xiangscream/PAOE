@@ -1,4 +1,5 @@
 """Project one native stop onto room presence; business completion remains explicit."""
+
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
@@ -14,12 +15,25 @@ def on_stop(data, home, *, staff, event, task_id, interrupted, reentry, waiting_
         rooms = client.request("GET", "/api/rooms?" + urlencode({"home_id": staff}))["rooms"]
         for room in rooms:
             if room["status"] != "closed" and room.get("presence") == "online":
-                client.request("POST", "/api/rooms/" + quote(room["id"], safe="") + "/members/"
-                               + quote(staff, safe="") + "/progress", {"presence":"offline"})
+                client.request(
+                    "POST",
+                    "/api/rooms/"
+                    + quote(room["id"], safe="")
+                    + "/members/"
+                    + quote(staff, safe="")
+                    + "/progress",
+                    {"presence": "offline"},
+                )
                 offline.append(room["id"])
-    answer = {"ok":True, "schema":"paoe-context-stop/v1", "event":event,
-              "rooms_offline":offline, "presence_checked":client is not None,
-              "action":"stop", "reason":"no_current_task"}
+    answer = {
+        "ok": True,
+        "schema": "paoe-context-stop/v1",
+        "event": event,
+        "rooms_offline": offline,
+        "presence_checked": client is not None,
+        "action": "stop",
+        "reason": "no_current_task",
+    }
     if interrupted or reentry or waiting_human:
         answer["reason"] = "interrupted" if interrupted else "reentry" if reentry else "waiting_human"
         return answer
@@ -35,11 +49,16 @@ def on_stop(data, home, *, staff, event, task_id, interrupted, reentry, waiting_
         answer["reason"] = "waiting"
         return answer
     with changes_db(data) as db:
-        inserted = db.execute("INSERT OR IGNORE INTO stop_events(home,event) VALUES(?,?)",
-                              (home["home_id"], event)).rowcount
+        inserted = db.execute(
+            "INSERT OR IGNORE INTO stop_events(home,event) VALUES(?,?)", (home["home_id"], event)
+        ).rowcount
     if inserted:
-        answer.update(action="continue", reason="unfinished_current", task_id=task_id,
-                      next_action=current["next_action"])
+        answer.update(
+            action="continue",
+            reason="unfinished_current",
+            task_id=task_id,
+            next_action=current["next_action"],
+        )
     else:
         answer["reason"] = "already_observed"
     return answer

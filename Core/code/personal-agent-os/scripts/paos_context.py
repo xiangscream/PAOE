@@ -1,4 +1,5 @@
 """Read phase inputs from the registered Home. This command has no writers."""
+
 from __future__ import annotations
 
 import os
@@ -16,8 +17,10 @@ def _section(text, header):
     start = next((i for i, line in enumerate(lines) if line.rstrip() == header), None)
     if start is None:
         return ""
-    end = next((i for i in range(start + 1, len(lines))
-                if re.match(r"^#{1," + str(level) + r"}\s", lines[i])), len(lines))
+    end = next(
+        (i for i in range(start + 1, len(lines)) if re.match(r"^#{1," + str(level) + r"}\s", lines[i])),
+        len(lines),
+    )
     return "".join(lines[start:end]).rstrip()
 
 
@@ -34,9 +37,16 @@ def read_context(home, *, staff_number, reason="resume", task_id="", sources=())
     project = Path(home["project_root"]) if home["project_root"] else home_path
     rooter = home["home_kind"] == "rooter"
     documents, missing, references, omitted = [], [], [], []
-    result = {"schema": "paoe-context/v1", "home_id": home["home_id"],
-              "task_id": task_id, "reason": reason, "documents": documents,
-              "missing": missing, "references": references, "omitted": omitted}
+    result = {
+        "schema": "paoe-context/v1",
+        "home_id": home["home_id"],
+        "task_id": task_id,
+        "reason": reason,
+        "documents": documents,
+        "missing": missing,
+        "references": references,
+        "omitted": omitted,
+    }
     seen = set()
 
     def read(kind, path, *, transform=None, optional=False):
@@ -57,8 +67,14 @@ def read_context(home, *, staff_number, reason="resume", task_id="", sources=())
             issues.append({"kind": kind, "path": str(path), "reason": "text_missing"})
         elif (kind, str(path)) not in seen:
             seen.add((kind, str(path)))
-            documents.append({"kind": kind, "path": str(path), "body": body,
-                              "version": f"{stat.st_mtime_ns}:{stat.st_size}"})
+            documents.append(
+                {
+                    "kind": kind,
+                    "path": str(path),
+                    "body": body,
+                    "version": f"{stat.st_mtime_ns}:{stat.st_size}",
+                }
+            )
         return text
 
     guide = read("guide", project / "AGENTS.md")
@@ -68,8 +84,13 @@ def read_context(home, *, staff_number, reason="resume", task_id="", sources=())
         read("project", project / "INDEX.md")
     read("entry", home_path / "ENTRY.md")
     todo_path = home_path / "TODO.md"
-    todo_text = read("current", todo_path, transform=lambda t: "\n\n".join(
-        part for part in (_section(t, "# Pinned"), _section(t, "# Current")) if part))
+    todo_text = read(
+        "current",
+        todo_path,
+        transform=lambda t: "\n\n".join(
+            part for part in (_section(t, "# Pinned"), _section(t, "# Current")) if part
+        ),
+    )
     related = []
     if todo_text:
         try:
@@ -89,12 +110,22 @@ def read_context(home, *, staff_number, reason="resume", task_id="", sources=())
                     missing.append({"kind": "task", "path": str(todo_path), "reason": "task_missing"})
                 else:
                     rows = _section(todo_text, "# Tasks").splitlines(keepends=True)[1:]
-                    start = next(i for i, row in enumerate(rows) if re.match(
-                        r"^- \[[ /?x-]\] \*\*" + re.escape(task_id) + r"\*\* · ", row))
-                    end = next((i for i in range(start + 1, len(rows)) if rows[i].startswith("- [")), len(rows))
-                    documents.append({"kind": "task", "path": str(todo_path),
-                                      "version": next(d["version"] for d in documents if d["kind"] == "current"),
-                                      "body": "".join(rows[start:end]).strip()})
+                    start = next(
+                        i
+                        for i, row in enumerate(rows)
+                        if re.match(r"^- \[[ /?x-]\] \*\*" + re.escape(task_id) + r"\*\* · ", row)
+                    )
+                    end = next(
+                        (i for i in range(start + 1, len(rows)) if rows[i].startswith("- [")), len(rows)
+                    )
+                    documents.append(
+                        {
+                            "kind": "task",
+                            "path": str(todo_path),
+                            "version": next(d["version"] for d in documents if d["kind"] == "current"),
+                            "body": "".join(rows[start:end]).strip(),
+                        }
+                    )
                     related += task["source_refs"]
     background = re.search(r"\[共同背景\]\((?:<([^>]+)>|([^)]+))\)", guide)
     if background:
@@ -105,27 +136,38 @@ def read_context(home, *, staff_number, reason="resume", task_id="", sources=())
         else:
             read("background", path)
     else:
-        missing.append({"kind": "background", "path": str(project / "AGENTS.md"),
-                        "reason": "background_locator_missing"})
+        missing.append(
+            {
+                "kind": "background",
+                "path": str(project / "AGENTS.md"),
+                "reason": "background_locator_missing",
+            }
+        )
 
     # Explicit inputs are required. Other external links remain references.
     for locator in dict.fromkeys([*sources, *related]):
         if locator.startswith("mail:"):
             mid = locator.removeprefix("mail:").removesuffix(".md")
-            path = home_path / "mailbox" / (mid + ".md") if re.fullmatch(r"[A-Za-z0-9._-]+", mid) else None
-        elif re.match(r"^[a-z]+(?:-[a-z]+)*:", locator, re.I) and not re.match(r"^[a-z]:[/\\]", locator, re.I):
+            path = (
+                home_path / "mailbox" / (mid + ".md") if re.fullmatch(r"[A-Za-z0-9._-]+", mid) else None
+            )
+        elif re.match(r"^[a-z]+(?:-[a-z]+)*:", locator, re.I) and not re.match(
+            r"^[a-z]:[/\\]", locator, re.I
+        ):
             path = None
         else:
             path = local_source(project, locator)
         if path is None:
             references.append(locator)
             (missing if locator in sources else omitted).append(
-                {"kind": "input", "path": locator, "reason": "requires_original_reader"})
+                {"kind": "input", "path": locator, "reason": "requires_original_reader"}
+            )
             continue
         if path.suffix.lower() not in {".md", ".txt"} or path.is_dir():
             references.append(locator)
             (missing if locator in sources else omitted).append(
-                {"kind": "input", "path": locator, "reason": "text_original_required"})
+                {"kind": "input", "path": locator, "reason": "text_original_required"}
+            )
             continue
         read("input", path, optional=locator not in sources)
     result["ok"] = not missing

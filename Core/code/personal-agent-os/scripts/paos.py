@@ -134,6 +134,7 @@ from paos_contact import (  # noqa: E402
 )
 from paos_cat_cli import add_cat_parser, execute_cat  # noqa: E402
 from paos_phase_cli import add_phase_parsers, execute_phase  # noqa: E402
+from paos_team_plan_cli import add_team_parsers, execute_team_actions
 from paos_todo import TodoProblem
 from sqlite3 import Error as SqliteError
 PEERS_SCHEMA = "paos-peers/v2"
@@ -3208,6 +3209,8 @@ def execute(
 
     if args.command in {"context", "stage", "content"}:
         return execute_phase(args, resolved_installation_path, _resolve_agent_identity, RestClient)
+    if args.command in {"team-plan", "task"}:
+        return execute_team_actions(args, resolved_installation_path, _resolve_agent_identity, RestClient,text_arg)
 
     if args.command == "status":
         return execute_status(args, registry, resolved_installation_path)
@@ -3314,6 +3317,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="command", required=True)
     add_phase_parsers(sub)
+    add_team_parsers(sub)
     add_cat_parser(sub)
 
     sub.add_parser("health", help="Check local installation (not Runtime availability)")
