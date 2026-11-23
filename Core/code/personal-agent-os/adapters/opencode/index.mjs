@@ -3,11 +3,12 @@ import { join } from 'node:path'
 import { PaosCore } from '../dsh/paos-core.mjs'
 
 const id = 'paoe.context'
-const eventTypes = [
-  'session.compaction.started', 'session.compaction.ended', 'session.execution.failed',
-  'session.execution.interrupted', 'session.execution.succeeded',
-]
+const started = 'session.execution.started'
 const interrupted = 'session.execution.interrupted'
+const eventTypes = [
+  'session.compaction.started', 'session.compaction.ended', started, interrupted,
+  'session.execution.failed', 'session.execution.succeeded',
+]
 
 async function contact(core, target, sessionID, signal) {
   const row = await core.cli(['wake', 'status', target.project, target.home], signal)
@@ -63,6 +64,7 @@ async function install(ctx, options) {
     const { sessionID } = request
     const state = selected.get(sessionID)
     if (!state) return
+    state.ending?.abort()
     state.primary = false
     state.engaged = false
     const input = request.messages.findLast(message => message.role === 'user')
@@ -73,11 +75,11 @@ async function install(ctx, options) {
     if (freshInput || !state.binding || state.reason) {
       state.binding = await contact(core, state.target, sessionID, signal)
     }
+    state.engaged = true
     if (await core.stopped(state.binding.stop_file)) {
       if (automatic) throw new Error('PAOE STOP prevents an automatic continuation')
       return
     }
-    state.engaged = true
     try {
       if (state.reason || !state.frame || await changed(core, state, signal)) {
         state.frame = await readFrame(core, state, signal)
@@ -114,23 +116,26 @@ async function install(ctx, options) {
       if (!eventTypes.includes(type)) continue
       const state = selected.get(data.sessionID)
       if (!state) continue
+      if (type === interrupted) state.epoch = (state.epoch ?? 0) + 1
       if (type === 'session.compaction.ended') {
         state.reason = 'compact'
       } else if (type === 'session.compaction.started') {
         state.compactedInput = state.inputID
+      } else if (type === started) {
+        state.ending?.abort()
       } else if (state.engaged) {
         const { sessionID } = data
-        const turn = { input: state.inputID, task: state.frame?.task, epoch: state.epoch, checked: state.primary }
+        const turn = {
+          input: state.inputID, task: state.frame?.task, epoch: state.epoch,
+          checked: state.primary, reentry: state.automatic?.id === state.inputID,
+          outcome: type.slice('session.execution.'.length),
+        }
         state.engaged = false
         // Do not wait from the context hook or block the stream observing interruptions.
-        const action = type === 'session.execution.failed'
-          ? failed(ctx, core, state, sessionID, turn, signal, write, data.error)
-          : correction(ctx, core, state, sessionID, turn, signal, type)
-        void action.catch(error => {
+        void endTurn(ctx, core, state, sessionID, turn, signal, write, data.error).catch(error => {
           if (!signal.aborted) console.error('PAOE OpenCode:', error.message)
         })
       }
-      if (type === interrupted) state.epoch = (state.epoch ?? 0) + 1
     }
   }
   void listen().catch(error => {
@@ -158,38 +163,44 @@ function current(state, turn, signal) {
   return !signal.aborted && state.inputID === turn.input && state.epoch === turn.epoch
 }
 
-async function correction(ctx, core, state, sessionID, turn, signal, event) {
-  const { task, input } = turn
-  if (!task || !input) return
-  const flags = event === interrupted ? ['--interrupted'] : (state.automatic?.id === input ? ['--reentry'] : [])
-  await ctx.session.wait({ sessionID })
-  if (signal.aborted || await core.stopped(state.binding.stop_file)) return
-  const latest = await contact(core, state.target, sessionID, signal)
-  if (latest.stop_present || (event !== interrupted && !current(state, turn, signal))) return
-  // The context snapshot also detects a newer execution before the event consumer sees it.
-  const history = await ctx.session.context({ sessionID })
-  if (history.findLast(message => message.type === 'user')?.id !== input ||
-      await core.stopped(latest.stop_file)) return
-  const decision = await core.stop(state.target, id + ':' + sessionID + ':' + input, task, flags, signal)
-  if (flags.length || decision.action !== 'continue' || !current(state, turn, signal) ||
-      await core.stopped(latest.stop_file)) return
-  await proceed(ctx, core, latest.stop_file, sessionID, task, decision.next_action, signal)
+async function endTurn(ctx, core, state, sessionID, turn, lifetime, write, error) {
+  const ending = new AbortController()
+  state.ending = ending
+  // A new native execution can begin while Core is reading CAT before writing presence.
+  const signal = AbortSignal.any([lifetime, ending.signal])
+  try {
+    await settle(ctx, core, state, sessionID, turn, signal)
+  } catch (error) {
+    if (!signal.aborted || error.name !== 'AbortError') throw error
+  } finally {
+    if (state.ending === ending) state.ending = undefined
+  }
+  if (current(state, turn, signal) && turn.outcome === 'failed' && turn.checked && capacityRefusal(error)) {
+    // Recovery starts a separate, deliberate native compaction execution.
+    await recover(ctx, core, state, sessionID, turn, lifetime, write)
+  }
 }
 
-async function failed(ctx, core, state, sessionID, turn, signal, write, error) {
-  if (core.config.catUrl && turn.input) {
-    await ctx.session.wait({ sessionID })
-    if (current(state, turn, signal)) {
-      const history = await ctx.session.context({ sessionID })
-      if (history.findLast(message => message.type === 'user')?.id === turn.input &&
-          history.at(-1)?.outcome === 'failed') {
-        await core.stop(state.target, id + ':' + sessionID + ':' + turn.input, turn.task, ['--presence-only'], signal)
-      }
-    }
-  }
-  if (turn.checked && capacityRefusal(error)) {
-    await recover(ctx, core, state, sessionID, turn, signal, write)
-  }
+async function settle(ctx, core, state, sessionID, turn, signal) {
+  const { task, input } = turn
+  if (!input) return
+  await ctx.session.wait({ sessionID })
+  if (!current(state, turn, signal)) return
+  const binding = await contact(core, state.target, sessionID, signal)
+  const stopped = binding.stop_present || await core.stopped(binding.stop_file)
+  const presenceOnly = stopped || !task || !turn.checked || turn.outcome === 'failed'
+  if (presenceOnly && !core.config.catUrl) return
+  // The context snapshot also detects a newer execution before the event consumer sees it.
+  const history = await ctx.session.context({ sessionID })
+  const terminal = history.at(-1)
+  if (!current(state, turn, signal) || history.findLast(message => message.type === 'user')?.id !== input ||
+      terminal?.type !== 'idle' || terminal.outcome !== turn.outcome) return
+  const flags = turn.outcome === 'interrupted' ? ['--interrupted']
+    : presenceOnly ? ['--presence-only'] : turn.reentry ? ['--reentry'] : []
+  const decision = await core.stop(state.target, id + ':' + sessionID + ':' + input, task, flags, signal)
+  if (flags.length || decision.action !== 'continue' || !current(state, turn, signal) ||
+      await core.stopped(binding.stop_file)) return
+  await proceed(ctx, core, binding.stop_file, sessionID, task, decision.next_action, signal)
 }
 
 function capacityRefusal(error) {

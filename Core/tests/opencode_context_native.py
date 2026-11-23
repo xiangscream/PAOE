@@ -76,7 +76,17 @@ class LocalModel(BaseHTTPRequestHandler):
 
     def do_GET(self):
         assert self.path == "/api/rooms?home_id=S001", self.path
-        self.reply(200, "application/json", b'{"rooms":[{"id":"room-fixture","status":"active","presence":"online"}]}')
+        pause = self.server.cat_pause
+        if pause:
+            self.server.cat_pause = None
+            entered, release = pause
+            entered.set()
+            assert release.wait(10), "test did not release CAT room lookup"
+        try:
+            self.reply(200, "application/json", b'{"rooms":[{"id":"room-fixture","status":"active","presence":"online"}]}')
+        except (BrokenPipeError, ConnectionResetError):
+            if pause is None:
+                raise
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -95,6 +105,12 @@ class LocalModel(BaseHTTPRequestHandler):
                     "original_2": "REQUIRED_ORIGINAL_CHANGED" in wire,
                     "original_3": "REQUIRED_ORIGINAL_AFTER_COMPACT" in wire}
         self.server.observed.append(observed)
+        if "STOP_DURING_MODEL_FIXTURE" in tail:
+            self.server.stop_during_model.write_text("STOP", encoding="utf-8")
+        if "NEW_ACTIVE_TURN_FIXTURE" in tail:
+            entered, release = self.server.model_pause
+            entered.set()
+            assert release.wait(10), "test did not release the newer native turn"
         if refused:
             error = {"error": {"message": "This model maximum context length exceeded.",
                                "type": "invalid_request_error", "code": "context_length_exceeded"}}
@@ -187,11 +203,15 @@ class IsolatedHost:
     def transcript(self, sid):
         return self.call("GET", f"/api/session/{sid}/message")["data"]
 
-    def submit(self, sid, text):
-        before = {item["id"] for item in self.transcript(sid)}
+    def admit(self, sid, text):
         mid = "msg_" + secrets.token_hex(16)
         receipt = self.call("POST", f"/api/session/{sid}/prompt", {"id": mid, "text": text})["data"]
         assert receipt["id"] == mid and receipt["sessionID"] == sid, receipt
+        return mid
+
+    def submit(self, sid, text):
+        before = {item["id"] for item in self.transcript(sid)}
+        mid = self.admit(sid, text)
         wait_for(lambda: self.transcript(sid), lambda rows: any(
             row["type"] == "idle" and row["id"] not in before for row in rows), "native idle")
         return mid
@@ -235,11 +255,56 @@ def prepare_core(root, sid, core_source):
     return installation, original, stop, todo, data / "runtime/opencode-context/S001/events.jsonl"
 
 
+def check_stopped_presence(host, sid, provider, stop, todo):
+    observations = {}
+
+    def ends_offline(prompt, label):
+        count, before = len(provider.observed), len(provider.cat_updates)
+        host.submit(sid, prompt)
+        wait_for(lambda: provider.cat_updates[before:], bool, label)
+        assert provider.cat_updates[before:] == [{"presence": "offline"}], label
+        assert len(provider.observed) == count + 1, f"{label}: unexpected continuation"
+        observations[label] = {"offline": 1, "automatic_continuations": 0}
+
+    with host.serve():
+        stop.write_text("STOP", encoding="utf-8")
+        ends_offline("STOP_AT_ENTRY_FIXTURE", "stop_at_entry")
+        stop.unlink()
+        provider.stop_during_model = stop
+        ends_offline("STOP_DURING_MODEL_FIXTURE", "stop_during_model")
+        stop.unlink()
+        update_todo_current(todo, {"context_refs": []})
+        ends_offline("NO_CURRENT_TASK_FIXTURE", "no_current_task")
+
+        update_todo_current(todo, {"context_refs": ["task:T-002"], "waiting": "Hold for fixture"})
+        cat_entered, cat_release, new_entered, new_release = (threading.Event() for _ in range(4))
+        provider.cat_pause = (cat_entered, cat_release)
+        provider.model_pause = (new_entered, new_release)
+        count, before = len(provider.observed), len(provider.cat_updates)
+        try:
+            host.submit(sid, "ENDING_TURN_FIXTURE")
+            assert cat_entered.wait(5), "old turn did not reach CAT room lookup"
+            host.admit(sid, "NEW_ACTIVE_TURN_FIXTURE")
+            assert new_entered.wait(5), "newer turn did not reach the model"
+            cat_release.set()
+            assert not new_release.wait(.75)
+            assert len(provider.cat_updates) == before, "old turn marked the newer active turn offline"
+        finally:
+            cat_release.set()
+            new_release.set()
+        wait_for(lambda: provider.cat_updates[before:], bool, "newer turn's own offline update")
+        assert provider.cat_updates[before:] == [{"presence": "offline"}]
+        assert len(provider.observed) == count + 2, "unexpected continuation during handoff"
+        observations["superseded_turn"] = {"offline_while_new_turn_active": 0, "offline_after_new_turn": 1}
+    return observations
+
+
 def check(exe, expected, root, provider, core_source=None):
     provider.observed = []
     provider.change_original = False
     provider.stop_during_compaction = None
     provider.cat_updates = []
+    provider.cat_pause = None
     host = IsolatedHost(root, exe, provider.server_port)
     with host.serve() as version:
         assert version == expected
@@ -338,12 +403,14 @@ def check(exe, expected, root, provider, core_source=None):
                  len([r for r in rows if r["type"] == "user" and
                       r.get("text") == "STOP_CORRECTION_FIXTURE"]) == 1, "correction finished")
         assert len(provider.observed) == count + 2
+    stopped_presence = check_stopped_presence(host, sid, provider, stop, todo) if core_source is not None else {}
     return {"version": version, "session": sid, "other_session": other, "selected": True,
             "native_model": "fixture-local/fixture", "missing_before_transport": True,
             "provider_capacity_refusal_then_compact": True, "durable_same_task_once": True,
             "new_original_after_compaction": True, "stop_preserved": True, "single_stop_correction": True,
             "later_hook_changes_wire_after_own_checkpoint": True,
             "paired_core_presence": core_source is not None,
+            "stopped_presence": stopped_presence,
             "wire": provider.observed, "journal": journal_rows()}
 
 
