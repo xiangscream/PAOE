@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import uuid
 from pathlib import Path
 from urllib.parse import quote
 
@@ -100,6 +102,37 @@ def read_action(data, ident):
     return proof
 
 
+def publish_receipt(path, receipt):
+    """Create a fully written immutable action record without replacing concurrent evidence."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+    try:
+        temp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.link(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def record_owner_acceptance(data, room, team, acceptance):
+    subject = {
+        "room": room,
+        "owner": team["plan"]["owner"],
+        "version": team["plan"]["version"],
+        "revision": team["revision"],
+        "roles_receipt": team["roles_receipt"],
+        "acceptance": acceptance,
+    }
+    ident = "oa-" + hashlib.sha256(pack(subject).encode("utf-8")).hexdigest()[:32]
+    record = {"id": ident, "action": "owner-accept", "subject": subject}
+    path = data / "owner-acceptances" / (ident + ".json")
+    try:
+        publish_receipt(path, record)
+    except FileExistsError:
+        if json.loads(path.read_text(encoding="utf-8")) != record:
+            raise ValueError("验收回执与已有记录不符")
+    return ident
+
+
 def team_path(room):
     return "/api/rooms/" + quote(room, safe="") + "/team"
 
@@ -155,30 +188,76 @@ def enroll(home, staff, room, task_id, client, resolve_home):
     return {"ok": True, "room": room, "task_id": task["id"], "role": role, "claimed": True}
 
 
-def role_projection(team, room, resolve_home):
-    cards = {}
-    for staff in team["plan"]["members"]:
+def linked_tasks(members, room, resolve_home):
+    for staff in members:
         home = resolve_home(staff)
         todo = read_todo(Path(home["home_path"]) / "TODO.md")
         task = next((t for t in todo["tasks"] if ROLE + room in t["source_refs"]), None)
-        cards[staff] = {
-            "role": team["roles"].get(staff),
-            "task": task,
-            "current": todo["current"]
+        current = (
+            todo["current"]
             if task and "task:" + task["id"] in todo["current"]["context_refs"]
-            else None,
-        }
+            else None
+        )
+        yield staff, task, current
+
+
+def role_projection(team, room, resolve_home):
+    cards = {
+        staff: {"role": team["roles"].get(staff), "task": task, "current": current}
+        for staff, task, current in linked_tasks(team["plan"]["members"], room, resolve_home)
+    }
     return {"ok": True, "room": room, "team": team, "cards": cards}
 
 
-def check_registered_handoffs(team, room, resolve_home, carried):
-    for staff, card in role_projection(team, room, resolve_home)["cards"].items():
-        task = card["task"]
-        current = card["current"] or {}
+def check_registered_handoffs(members, room, resolve_home, carried):
+    for staff, task, current in linked_tasks(members, room, resolve_home):
+        current = current or {}
         if task and (task["waiting"] or current.get("waiting") or current.get("inflight")):
             target = staff + "/" + task["id"]
             if not str(carried.get(target) or "").strip():
                 raise ValueError("该目标仍登记在途或等待，请给出实际去向：" + target)
+
+
+def check_goal_originals(home, owner, doc, task, evidence):
+    root = Path(home["project_root"] or home["home_path"])
+    for key in ("artifact", "basis"):
+        scoped_file(root, evidence[key])
+    if not str(evidence.get("remaining") or "").strip():
+        raise ValueError("请说明剩余事项的去向")
+    carried = evidence.get("carried", {})
+    if not isinstance(carried, dict) or not all(
+        isinstance(v, str) and v.strip() for v in carried.values()
+    ):
+        raise ValueError("剩余责任需要员工/任务及接续入口")
+    current = doc["current"] if "task:" + task["id"] in doc["current"]["context_refs"] else {}
+    if task["waiting"] or current.get("waiting") or current.get("inflight"):
+        if owner + "/" + task["id"] not in carried:
+            raise ValueError("本目标还有已登记的等待或在途事项，请先记录其实际去向")
+
+
+def read_owner_acceptance(data, ident, resolve_home):
+    """CAT re-reads the registered owner's goal and deliverables before closing its room."""
+    if not re.fullmatch(r"oa-[0-9a-f]{32}", ident):
+        raise ValueError("验收回执 ID 无效")
+    record = json.loads((data / "owner-acceptances" / (ident + ".json")).read_text(encoding="utf-8"))
+    if record.get("id") != ident or record.get("action") != "owner-accept":
+        raise ValueError("验收回执与原操作不符")
+    subject = record["subject"]
+    evidence = subject["acceptance"]
+    home = resolve_home(subject["owner"])
+    _, _, doc, task = task_snapshot(home, evidence["task"])
+    plan = plan_view(home, subject["owner"], task)["plan"]
+    if (
+        plan["version"] != subject["version"]
+        or plan["close_policy"] != "owner"
+        or task["state"] == "cancelled"
+    ):
+        raise ValueError("验收目标或约定验收人已变化")
+    check_goal_originals(home, subject["owner"], doc, task, evidence)
+    check_registered_handoffs(
+        plan["members"], subject["room"], resolve_home, evidence.get("carried", {})
+    )
+    return record
 
 
 def decision_subject(action, payload, resolve_home, client):
@@ -204,7 +283,7 @@ def decision_subject(action, payload, resolve_home, client):
     room = payload["room"]
     team = client.request("GET", team_path(room))["team"]
     current = resolve_home(team["plan"]["owner"])
-    _, _, _, owner_task = task_snapshot(current, team["plan"]["task"])
+    _, _, owner_doc, owner_task = task_snapshot(current, team["plan"]["task"])
     if (
         plan_view(current, team["plan"]["owner"], owner_task)["plan"]["version"]
         != team["plan"]["version"]
@@ -234,16 +313,9 @@ def decision_subject(action, payload, resolve_home, client):
         }, pack(values)
     if team["plan"]["close_policy"] != "human_confirm" or payload.get("task") != team["plan"]["task"]:
         raise ValueError("正式验收人与原计划不匹配")
-    for key in ("artifact", "basis"):
-        scoped_file(Path(current["project_root"] or current["home_path"]), payload[key])
-    if not str(payload.get("remaining") or "").strip():
-        raise ValueError("请说明剩余事项的去向")
+    check_goal_originals(current, team["plan"]["owner"], owner_doc, owner_task, payload)
     carried = payload.get("carried", {})
-    if not isinstance(carried, dict) or not all(
-        isinstance(v, str) and v.strip() for v in carried.values()
-    ):
-        raise ValueError("剩余责任需要员工/任务及接续入口")
-    check_registered_handoffs(team, room, resolve_home, carried)
+    check_registered_handoffs(team["plan"]["members"], room, resolve_home, carried)
     subject = {k: payload[k] for k in ("room", "task", "artifact", "basis", "remaining", "read_to")}
     if carried:
         subject["carried"] = carried

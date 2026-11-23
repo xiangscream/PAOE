@@ -8,7 +8,14 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "code/personal-agent-os/scripts"
 sys.path.insert(0, str(SCRIPTS))
 from paos_human_action import confirm
 from paos_stage import task_snapshot
-from paos_team import propose, read_action, enroll, live_role
+from paos_team import (
+    propose,
+    read_action,
+    enroll,
+    live_role,
+    read_owner_acceptance,
+    record_owner_acceptance,
+)
 from paos_todo import render_todo
 
 
@@ -96,6 +103,23 @@ class PlanTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 confirm(data, "open-plan", "ha-" + "2" * 32, args, self.homes.__getitem__, self.client)
             display.assert_not_called()
+
+    def test_owner_acceptance_is_bound_to_the_original_plan_and_readable_deliverables(self):
+        data = self.base / "Data"
+        self.team.update(roles_receipt=self.id, revision=2)
+        evidence = dict(
+            task="T1", artifact="guide.md", basis="review.md", remaining="complete", read_to=4
+        )
+        for name in ("guide.md", "review.md"):
+            (self.project / name).write_text(name, encoding="utf8")
+        key = record_owner_acceptance(data, "room1", self.team, evidence)
+        self.assertEqual(record_owner_acceptance(data, "room1", self.team, evidence), key)
+        self.assertEqual(
+            read_owner_acceptance(data, key, self.homes.__getitem__)["subject"]["acceptance"], evidence
+        )
+        (self.project / "review.md").rename(self.project / "archived.md")
+        with self.assertRaisesRegex(ValueError, "review.md"):
+            read_owner_acceptance(data, key, self.homes.__getitem__)
 
     def test_only_a_released_role_links_to_its_own_task_preserving_current(self):
         home = self.homes["S063"]

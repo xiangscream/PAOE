@@ -3,22 +3,23 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from urllib.parse import quote
 
 from paos_attention_service import resolve_home_by_registry
-from paos_content import scoped_file
 from paos_human_action import confirm
 from paos_installation import effective_data_root, load_installation_descriptor
 from paos_stage import render, task_snapshot, with_refs
 from paos_team import (
     PLAN,
+    check_goal_originals,
     check_registered_handoffs,
     decision_subject,
     enroll,
     plan_view,
     propose,
     read_action,
+    read_owner_acceptance,
+    record_owner_acceptance,
     role_projection,
     team_path,
 )
@@ -81,13 +82,8 @@ def add_team_actions(group):
             )
 
 
-def accept_task(home, staff, args, client, resolve):
+def accept_task(home, staff, args, client, resolve, data):
     path, before, doc, task = task_snapshot(home, args.task)
-    root = Path(home["project_root"] or home["home_path"])
-    for rel in (args.artifact, args.basis):
-        scoped_file(root, rel)
-    if not args.remaining.strip():
-        raise ValueError("请说明剩余事项的去向")
     if any(r.startswith(PLAN) for r in task["source_refs"]) and not args.room:
         raise ValueError("此计划需关联已有专用房后验收")
     if task["state"] == "cancelled":
@@ -102,23 +98,17 @@ def accept_task(home, staff, args, client, resolve):
         if not sep or not item.strip() or not locator.strip():
             raise ValueError("--carry 使用 HOME/TASK=接续原件")
         carried[item.strip()] = locator.strip()
-    if (
-        not accepted
-        and staff + "/" + args.task not in carried
-        and (
-            task["waiting"]
-            or (
-                "task:" + args.task in doc["current"]["context_refs"]
-                and (doc["current"]["waiting"] or doc["current"]["inflight"])
-            )
-        )
-    ):
-        raise ValueError("本目标还有已登记的等待或在途事项，请先记录其实际去向")
-    if not accepted:
-        task.update(state="done", result=note, artifact_ref=args.artifact, waiting="")
-        task["acceptance_refs"] = with_refs(task["acceptance_refs"], [args.basis, *carried.values()])
-        candidate = render(doc)
+    evidence = {
+        "task": args.task,
+        "artifact": args.artifact,
+        "basis": args.basis,
+        "remaining": args.remaining,
+    }
+    if carried:
+        evidence["carried"] = carried
+    team = None
     if args.room:
+        evidence["read_to"] = args.read_to
         team = client.request("GET", team_path(args.room))["team"]
         if (team["plan"]["owner"], team["plan"]["task"], team["plan"]["project"]) != (
             staff,
@@ -126,25 +116,26 @@ def accept_task(home, staff, args, client, resolve):
             home["project_id"],
         ):
             raise ValueError("此专用房属于其他目标")
+        if team["accepted"] is not None and team["accepted"] != evidence:
+            raise ValueError("该房已按不同的依据验收")
+        if team["accepted"] is None and team["plan"]["close_policy"] == "human_confirm":
+            raise ValueError("此目标需先在 Human 入口完成同一项验收")
+    if not accepted and (team is None or team["accepted"] is None):
+        check_goal_originals(home, staff, doc, task, evidence)
+    if not accepted:
+        task.update(state="done", result=note, artifact_ref=args.artifact, waiting="")
+        task["acceptance_refs"] = with_refs(task["acceptance_refs"], [args.basis, *carried.values()])
+        candidate = render(doc)
+    if team is not None and team["accepted"] is None:
         if team["plan"]["version"] != plan_view(home, staff, task)["plan"]["version"]:
             raise ValueError("验收时计划范围已变化")
-        payload = dict(
-            actor_id=staff,
-            task=args.task,
-            artifact=args.artifact,
-            basis=args.basis,
-            remaining=args.remaining,
-            read_to=args.read_to,
-        )
-        if carried:
-            payload["carried"] = carried
-        if not team["accepted"]:
-            check_registered_handoffs(team, args.room, resolve, carried)
-        if team["plan"]["close_policy"] == "human_confirm":
-            if team["accepted"] != {k: v for k, v in payload.items() if k != "actor_id"}:
-                raise ValueError("此目标需先在 Human 入口完成同一项验收")
-        else:
-            client.request("POST", team_path(args.room) + "/accept", payload)
+        if not team["roles_receipt"] or not all(role["approved"] for role in team["roles"].values()):
+            raise ValueError("验收前须完成约定角色放行")
+        if args.read_to is None:
+            raise ValueError("专用房验收需要实际已读的 --read-to")
+        check_registered_handoffs(team["plan"]["members"], args.room, resolve, carried)
+        receipt = record_owner_acceptance(data, args.room, team, evidence)
+        client.request("POST", team_path(args.room) + "/accept", {"receipt_id": receipt})
     if not accepted:
         write_todo(path, candidate, expected_fingerprint=before)
     return {
@@ -165,6 +156,8 @@ def execute_team_actions(args, installation, identity, cat_client, text_arg):
     client = cat_client(args.cat_url, service="CAT")
     op = "accept" if args.command == "task" else args.plan_command
     if op == "receipt":
+        if args.receipt_id.startswith("oa-"):
+            return {"ok": True, "receipt": read_owner_acceptance(data, args.receipt_id, resolve)}
         proof = read_action(data, args.receipt_id)
         if proof["action"] == "open-plan":
             current, _ = decision_subject("open-plan", proof["input"], resolve, client)
@@ -182,7 +175,7 @@ def execute_team_actions(args, installation, identity, cat_client, text_arg):
     home = resolve(args.home)
     staff = identity(args.home, installation_path=installation)["staff_number"] or args.home
     if op == "accept":
-        return accept_task(home, staff, args, client, resolve)
+        return accept_task(home, staff, args, client, resolve, data)
     if op == "role":
         role = {k: getattr(args, k) for k in ("duty", "arrangement", "deliverables")}
         return client.request(

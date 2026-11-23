@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
-import uuid
 from datetime import datetime, timezone
 
-from paos_team import decision_subject, read_action, receipt_path, team_path
+from paos_team import decision_subject, publish_receipt, read_action, receipt_path, team_path
 
 
 def _display(action, subject, explanation):
@@ -44,17 +42,6 @@ def _display(action, subject, explanation):
     return bool(choice)
 
 
-def _persist(path, receipt):
-    """Publish only a complete receipt. The replay key is the original UI request."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.parent / (path.name + "." + uuid.uuid4().hex + ".tmp")
-    try:
-        temp.write_text(json.dumps(receipt, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.link(temp, path)
-    finally:
-        temp.unlink(missing_ok=True)
-
-
 def confirm(data, action, ident, payload, resolve_home, client):
     path = receipt_path(data, ident)
     if path.is_file():
@@ -86,7 +73,7 @@ def confirm(data, action, ident, payload, resolve_home, client):
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         try:
-            _persist(path, receipt)
+            publish_receipt(path, receipt)
         except FileExistsError:
             original = read_action(data, ident)
             if original["action"] != action or original["input"] != payload:
