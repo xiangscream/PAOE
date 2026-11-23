@@ -1,0 +1,11 @@
+{
+  "name": "dsh-paoe-context",
+  "description": "Load the registered PAOE Home's originals in a selected DeepSeek Harness session.",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": { ".": "./index.mjs", "./package.json": "./package.json", "./cordis.patch.yml": "./cordis.patch.yml" },
+  "files": ["index.mjs", "session.mjs", "paos-core.mjs", "cordis.patch.yml", "README.md"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

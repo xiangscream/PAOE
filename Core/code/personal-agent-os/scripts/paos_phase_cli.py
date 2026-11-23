@@ -116,6 +116,8 @@ def execute_phase(args, installation, identity, cat_client):
                             "kind": "active_role",
                             "path": ref,
                             "version": str(role["revision"]),
+                            "plan_version": team["plan"]["version"],
+                            "roles_receipt": team["roles_receipt"],
                             "body": "\n".join(
                                 role["role"][k] for k in ("duty", "arrangement", "deliverables")
                             )
