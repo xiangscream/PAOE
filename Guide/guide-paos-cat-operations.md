@@ -161,6 +161,7 @@ CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。
 | --- | --- |
 | 扫本人负责房间与未读增量 | `paos cat list --home <本人Sxxx>` |
 | 创建任务房 / 小房 | `paos cat create --title "<标题>" [--from <actor>] [--owner <owner>] [--close-policy human_confirm\|owner] [--goal "..."] [--source-ref <路径>] [--human-request-ref <来源>] [--project-id <id>] [--index-path <相对路径>]` |
+| 首次入席（建房后先入席再发言/推游标） | `paos cat join <room> --home <本人Sxxx> [--label "<标签>"]` |
 | 更新房间任务与 INDEX 引用 | `paos cat context <room> --from <actor> [--owner <owner>] [--goal "..."] [--project-id <id>] [--index-path <相对路径>]` |
 | 看房间概况 / 成员与在线状态 | `paos cat show <room>` / `paos cat members <room>` |
 | 读未读增量 | `paos cat read <room> --after <已读seq>` |
