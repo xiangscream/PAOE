@@ -4,6 +4,10 @@
 
 ## 安装与选定会话
 
+先在自己的 DSH 原会话运行 `paos --json wake status <项目号> <员工号>`。核对 `configured` 为 true、`runtime` 为 `dsh`，并将 `native_session_id` 与宿主显示的当前会话 ID 核对。二者一致后，将该 ID 用作下方 `sessions` 的键。
+
+安装负责人从选定的安装描述读取 `source_root`，在其中运行 `python -X utf8 -B scripts/paos.py --installation-file <安装描述> --json context read <员工号> --reason resume`。查看 `task_id`、`documents` 中的工位与原件路径，以及 `missing`。空 `task_id` 表示本次读取没有选定任务。若该 Core 的帮助中没有 `context`，先由安装负责人配好含此命令的正式版本或限定试用入口，再启用插件。
+
 由本机安装负责人从 DSH 插件管理器选择本目录安装 Host bundle。配置项 `paoe-session-context` 随包登记，空配置不选择任何会话。给该项提供安装描述及本次启用的工位，填写实际值。
 
 ```yaml
