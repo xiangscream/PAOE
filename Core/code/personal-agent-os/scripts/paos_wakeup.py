@@ -62,14 +62,16 @@ def _validate_id(value: str, *, label: str) -> str:
     return cleaned
 
 
-def native_target(root: Path, agent_id: str) -> dict[str, Any] | None:
-    targets = load_native_targets(root)
+def native_target(root: Path, agent_id: str,
+                  installation_path: str | Path | None = None) -> dict[str, Any] | None:
+    targets = load_native_targets(root, installation_path=installation_path)
     value = (targets or {}).get(_validate_id(agent_id, label="agent_id"))
     return value if isinstance(value, dict) else None
 
 
-def load_binding(root: Path, agent_id: str, *, required: bool = True) -> dict[str, Any] | None:
-    target = native_target(root, agent_id)
+def load_binding(root: Path, agent_id: str, *, required: bool = True,
+                 installation_path: str | Path | None = None) -> dict[str, Any] | None:
+    target = native_target(root, agent_id, installation_path=installation_path)
     if target is None:
         if required:
             raise WakeProblem(
@@ -108,6 +110,7 @@ def bind_wakeup(
     driver_name: str,
     driver_config: dict[str, Any] | None = None,
     replace: bool = False,
+    installation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Store the Contact native target entry (Contact 是唯一 target 事实源）。"""
     root = Path(root)
@@ -187,7 +190,7 @@ def bind_wakeup(
                 and not target.get("stop_file")):
             target["stop_file"] = previous.get("stop_file")
     targets[agent_id] = target
-    store = save_native_targets(root, targets)
+    store = save_native_targets(root, targets, installation_path=installation_path)
     return {
         "schema": WAKE_ACTION_SCHEMA,
         "action": "bind",
@@ -198,10 +201,11 @@ def bind_wakeup(
     }
 
 
-def wake_status(root: Path, agent_id: str) -> dict[str, Any]:
+def wake_status(root: Path, agent_id: str,
+                installation_path: str | Path | None = None) -> dict[str, Any]:
     root = Path(root)
     agent_id = _validate_id(agent_id, label="agent_id")
-    target = native_target(root, agent_id)
+    target = native_target(root, agent_id, installation_path=installation_path)
     if target is None:
         return {
             "schema": WAKE_STATUS_SCHEMA,
@@ -246,6 +250,7 @@ def trigger_wake(
     wake_prompt: str = "检查 Workstation mailbox 或 CAT，并从当前工位继续。",
     source_kind: str = "manual",
     attempt_id: str = "",
+    installation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """一次原生注入：只受 configured target 与明确 STOP 影响；失败如实暴露。"""
     root = Path(root)
@@ -256,7 +261,7 @@ def trigger_wake(
             f"不支持的 source kind：{source_kind}",
             {"source_kind": source_kind},
         )
-    target = native_target(root, agent_id)
+    target = native_target(root, agent_id, installation_path=installation_path)
     if target is None:
         raise WakeProblem(
             "wake_binding_missing",
@@ -296,11 +301,12 @@ def recover_wakeup(root: Path, agent_id: str) -> dict[str, Any]:
     }
 
 
-def stop_wakeup(root: Path, agent_id: str) -> dict[str, Any]:
+def stop_wakeup(root: Path, agent_id: str,
+                installation_path: str | Path | None = None) -> dict[str, Any]:
     """停止提醒注入：只写 Contact 配置里登记的 stop_file 标记（若未配置则为 no-op）。"""
     root = Path(root)
     agent_id = _validate_id(agent_id, label="agent_id")
-    target = native_target(root, agent_id)
+    target = native_target(root, agent_id, installation_path=installation_path)
     stop_file = str((target or {}).get("stop_file") or "").strip()
     if not stop_file:
         return {
@@ -322,7 +328,8 @@ def stop_wakeup(root: Path, agent_id: str) -> dict[str, Any]:
     }
 
 
-def unbind_wakeup(root: Path, agent_id: str, *, force: bool = False) -> dict[str, Any]:
+def unbind_wakeup(root: Path, agent_id: str, *, force: bool = False,
+                  installation_path: str | Path | None = None) -> dict[str, Any]:
     """移除 Contact native-target 配置项（对历史 binding 文件不动）。"""
     root = Path(root)
     agent_id = _validate_id(agent_id, label="agent_id")
@@ -336,7 +343,7 @@ def unbind_wakeup(root: Path, agent_id: str, *, force: bool = False) -> dict[str
             "result": {"state": "not_configured", "agent_id": agent_id},
         }
     targets.pop(agent_id, None)
-    store = save_native_targets(root, targets)
+    store = save_native_targets(root, targets, installation_path=installation_path)
     return {
         "schema": WAKE_ACTION_SCHEMA,
         "action": "unbind",
