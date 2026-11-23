@@ -139,7 +139,7 @@ CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。
 ### 任务房、负责人与关房边界
 
 - **专用目标房与共享讨论房的关房区别**：
-  - **目标专用房（为单一目标单独建立且唯一关联该目标）**：登记目标、负责人已有 Task/计划关联、共同口径（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面）与验收负责人。房间持续开放，即使成员全部离线也继续保留；当约定验收人读到最新 Human 房内输入、明确交付与剩余事项去向并通过验收后，由系统自动关闭（PAOE 0.1 拟议沿 `task accept` 完成；Human 保留的验收仍由 Human 确认）。
+  - **目标专用房（为单一目标单独建立且唯一关联该目标）**：登记目标、负责人已有 Task/计划关联、共同口径（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面）与验收负责人。房间持续开放，即使成员全部离线也继续保留；当约定验收人读到最新 Human 房内输入、明确交付与剩余事项去向并通过验收后，由系统自动关闭（PAOE 0.1 候选沿 `task accept` 完成，待正式采用；Human 保留的验收仍由 Human 确认）。
   - **共享讨论房 / Agent 小房（`--close-policy owner`）**：承载多项议题的共享房或 Agent 自行发起的小房，不被单一目标验收自动关闭，由负责人或发起人在结论归位后正常关闭；关闭后历史可读。
   - **Human 手动关房（`--close-policy human_confirm`）**：如仍显式指定需 Human 手动关房，沿既有 `cat close --action request|confirm|continue` 执行。
 - **房间 INDEX 与负责人**：任务房负责人沿 [Coordinator 工作循环](wf-coordinator-governance-cycle.md#4-项目口径收口与阶段归并) 维护任务 INDEX（目标与交付、Human 当前要求、待定问题、下一步与负责人）；任务结束后稳定结论归入项目 INDEX 或成果原件。
@@ -333,18 +333,18 @@ Library 源文件变化后用 `paos library catalog workflow --root <Workflow根
 
 ## PAOE 0.1 共用动作速查（候选实参 / 拟议项分别标明）
 
-以下接口中标注“候选已实现”者已按 System 候选（`07b6b4f`）实际 `--help` 核对，待同批工程正式发布采用；标注“拟议”者待 S010 后续切片定稿后替换：
+以下接口中标注“候选已实现”者已按 System Core 候选（`05c536e`）与 CAT 候选（`a74fd66`）实际 `--help` 核对，待同批工程正式发布采用；标注“拟议”者待 S010 后续切片定稿后替换：
 
 | 入口与状态 | 适用时机 | 命令与关键边界 |
 | --- | --- | --- |
 | `context read`（候选已实现） | 会话启动、恢复、压缩后或显式补读 | `paos context read <本人Sxxx> [--task <TaskID>] [--reason startup\|resume\|compact\|stage\|request] [--source <原件>]`；返回原文、版本与缺项，不凭读取就记录请求已装载 |
 | `context stop`（候选已实现） | 回合停止或中断时处理 CAT 离线与至多一轮纠偏 | `paos context stop <本人Sxxx> --event <宿主事件ID> [--task <TaskID>] [--cat-url <URL>] [--interrupted\|--reentry\|--waiting-human]`；返回 `action=stop\|continue`、`rooms_offline` 等，不作任务验收 |
+| `team-plan`（候选已实现） | 0 类团队计划、两次放行、角色卡草案与正式接单 | `propose <负责人Sxxx> --task <ID> --plan <原件> --member <Sxxx> [--close-policy human_confirm\|owner]`；`role <本人Sxxx> --room <room> --duty ... --arrangement ... --deliverables ... --expected-revision <rev>`；`enroll <本人Sxxx> --room <room> [--task <ID>]`；`members --room <room>`；`confirm {open-plan\|approve-roles\|save-role\|accept-goal} --id <receipt> --input <JSON\|@file\|->`（可选 `--cat-url`） |
 | `stage deliver`（候选已实现） | 显式交付一阶段成果 | `paos stage deliver <本人Sxxx> --task <TaskID> --id <稳定交付ID> --artifact <成果路径> --intent <意图来源> --result "<结果>" (--next "<下一步>" \| --waiting "<等待>") [--current]`；返回重读原文，**默认不结束整项 Task**（整项完结时，有原 Mail 的任务走 `mail result`，普通 Task 按验收条件收口） |
+| `task accept`（候选已实现） | 约定验收人完成整项目标验收并关闭专用房 | `paos task accept <验收人Sxxx> --task <TaskID> --artifact <最终成果> --basis "<验收依据>" --remaining "<剩余事项去向>" [--room <room>] [--read-to <seq>] [--carry HOME/TASK=continuation] [--cat-url <URL>]`；核对最终成果、依据、已登记在途与最新 Human 输入，按原约定关闭本目标专用房 |
 | `content changes / consume`（候选已实现） | EXM 整理者拉取变化清单并登记消费位置 | `paos content changes [--after <N>] [--limit <N>]`；`paos content consume <本人Sxxx> --through <N> --result-ref <整理结果路径>`；按同一原件版本合并去重，索引失败不回滚正文 |
 | `context search`（拟议） | 新目标或方向调整，按项目/方法/经历筛选检索 | 复用 Library/Tool 与 QMD，返回带用途、日期与原件位置的少量候选 |
-| `task accept`（拟议） | 约定验收人完成整项目标验收 | 核对已登记的本目标在途记录，记录验收依据与剩余事项去向，并自动关闭该目标专用房 |
 | `content watch`（拟议） | 整机单一本地内容观察进程 | 启动先接实时事件并对账补漏，仅管本地文件；飞书等云端原件走既有工具 `read / refresh` |
-| 0 类放行与角色卡接口（拟议） | 登记计划/角色 Human 放行、读写角色卡 | 放行前角色草案落房间/计划原件，放行后投影到本人 Task；Human 保存直接提醒本人 |
 
 ## 问题定位
 
