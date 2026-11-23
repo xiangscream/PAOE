@@ -63,12 +63,12 @@ def _is_prepare_event(event):
     return name == "UserPromptSubmit" or name == "SessionStart" and event.get("source") in {"startup", "resume", "compact"}
 
 
-def observe_hook_entry(event):
+def observe_hook_entry(event, *, installation_path=None):
     """Record that a registered hook reached Python before the Owner environment guard."""
     thread = event.get("session_id")
     if not _is_prepare_event(event) or not isinstance(thread, str) or not thread:
         return
-    descriptor = load_installation_descriptor(resolve_installation_path())
+    descriptor = load_installation_descriptor(installation_path or resolve_installation_path())
     try:
         home, target = registered_target(thread, descriptor)
     except ValueError as exc:
