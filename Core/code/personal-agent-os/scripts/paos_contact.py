@@ -530,7 +530,8 @@ def _dsh_receiver_view(target: dict[str, Any]) -> dict[str, Any]:
     return view
 
 
-def runtime_contact(root: Path, agent_id: str) -> dict[str, Any]:
+def runtime_contact(root: Path, agent_id: str,
+                    installation_path: str | Path | None = None) -> dict[str, Any]:
     """Runtime contact facts for one Agent from its Contact native-target 项。
 
     Workless 语义：读面只反映已配置的本机原生 target（runtime/base_url/
@@ -559,7 +560,7 @@ def runtime_contact(root: Path, agent_id: str) -> dict[str, Any]:
         "inflight_attempts": [],
         "uncertain_attempts": [],
     }
-    targets = load_native_targets(root)
+    targets = load_native_targets(root, installation_path=installation_path)
     if targets is None:
         return contact
     target = targets.get(agent_id) if isinstance(targets.get(agent_id), dict) else None
@@ -595,13 +596,19 @@ def runtime_contact(root: Path, agent_id: str) -> dict[str, Any]:
     return contact
 
 
-def load_native_targets(root: Path) -> dict[str, Any] | None:
-    """Read the workless Contact native-target store (`contact/native-targets.json`).
+def load_native_targets(root: Path,
+                        installation_path: str | Path | None = None) -> dict[str, Any] | None:
+    """Read the workless Contact native-target store.
 
-    Returns None when the file is absent; raises TaskProblem on corrupt JSON so
-    callers can visibly distinguish missing from broken.
+    With an installation path this is the single installation Data store. The
+    old project-private path is only kept for callers that have not yet been
+    wired by the CLI owner; new production callers must pass installation_path.
     """
-    store = Path(root) / "private-data" / "contact" / "native-targets.json"
+    if installation_path is not None:
+        from paos_data_paths import contact_store_path
+        store = contact_store_path(installation_path)
+    else:
+        store = Path(root) / "private-data" / "contact" / "native-targets.json"
     if not store.is_file():
         return None
     try:
@@ -614,8 +621,13 @@ def load_native_targets(root: Path) -> dict[str, Any] | None:
         ) from exc
 
 
-def save_native_targets(root: Path, targets: dict[str, Any]) -> Path:
-    store = Path(root) / "private-data" / "contact" / "native-targets.json"
+def save_native_targets(root: Path, targets: dict[str, Any],
+                        installation_path: str | Path | None = None) -> Path:
+    if installation_path is not None:
+        from paos_data_paths import contact_store_path
+        store = contact_store_path(installation_path)
+    else:
+        store = Path(root) / "private-data" / "contact" / "native-targets.json"
     store.parent.mkdir(parents=True, exist_ok=True)
     store.write_text(json.dumps(targets, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return store

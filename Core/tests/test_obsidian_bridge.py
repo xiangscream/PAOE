@@ -66,7 +66,7 @@ class ObsidianBridgeTests(unittest.TestCase):
                                   {"layout": {"nodes": {"1001-s001": {"x": 10, "y": 20}},
                                               "viewport": {"x": 1, "y": 2, "zoom": 1}}})
         self.assertEqual(status, 200)
-        self.assertTrue((self.vault / ".paos/ui/board.json").is_file())
+        self.assertTrue((self.fixture.base / "data/ui/project-1001/board.json").is_file())
         status, rejected = self.call("PUT", "/api/layout",
                                      {"project": "2001", "layout": {"nodes": {}}})
         self.assertEqual(status, 422)

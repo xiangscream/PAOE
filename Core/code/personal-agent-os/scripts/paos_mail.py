@@ -252,7 +252,13 @@ def _render_mail(
     )
 
 
-def _dispatch_path(root: Path, message_id: str) -> Path:
+def _dispatch_path(root: Path, message_id: str, *,
+                   installation_path: str | Path | None = None,
+                   project_id: str = "") -> Path:
+    if installation_path is not None:
+        from paos_data_paths import mail_dispatch_dir, project_scope
+        return mail_dispatch_dir(
+            project_scope(project_id), installation_path) / f"{message_id}.json"
     return root / ".paos" / "mail" / "dispatch" / f"{message_id}.json"
 
 
@@ -463,6 +469,7 @@ def send_mail(
     sender_id: str = "",
     message_id: str = "",
     registry_lookup: Callable[[str], Any] | None = None,
+    installation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Persist a stable dispatch envelope, then deliver immutable MD copies.
 
@@ -496,7 +503,9 @@ def send_mail(
     )
     sender_id = _clean_single_line(sender_id, label="sender_id", max_chars=120)
     message_id = _validate_message_id(message_id or new_message_id())
-    dispatch_path = _dispatch_path(root, message_id)
+    dispatch_path = _dispatch_path(
+        root, message_id, installation_path=installation_path,
+        project_id=str(project.get("id") or ""))
     replayed_dispatch = dispatch_path.exists()
 
     if dispatch_path.exists():
@@ -720,6 +729,8 @@ def dispatch_status(
     message_id: str,
     *,
     registry_lookup: Callable[[str], dict[str, Any]] | None = None,
+    installation_path: str | Path | None = None,
+    project_id: str = "",
 ) -> dict[str, Any]:
     """公共 Mail 状态读面。跨 Project / Rooter 接收者的 durable Mail 不落在
     发送方 root。传 registry_lookup（如 resolve_home_by_registry）时，登记
@@ -729,7 +740,9 @@ def dispatch_status(
     无新 store。不传 resolver 则维持 ToolIo 原明确合同（旧路径读面）。"""
     root = Path(root)
     message_id = _validate_message_id(message_id)
-    dispatch = _load_dispatch(_dispatch_path(root, message_id))
+    dispatch = _load_dispatch(_dispatch_path(
+        root, message_id, installation_path=installation_path,
+        project_id=project_id))
     states: list[dict[str, Any]] = []
     expected_files = dispatch.get("expected_files") or {}
     resolved_homes: dict[str, dict[str, Any]] | None = None
