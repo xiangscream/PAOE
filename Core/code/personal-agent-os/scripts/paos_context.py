@@ -33,28 +33,28 @@ def read_context(home, *, staff_number, reason="resume", task_id="", sources=())
     home_path = Path(home["home_path"])
     project = Path(home["project_root"]) if home["project_root"] else home_path
     rooter = home["home_kind"] == "rooter"
-    documents, missing, references = [], [], []
+    documents, missing, references, omitted = [], [], [], []
     result = {"schema": "paoe-context/v1", "home_id": home["home_id"],
               "task_id": task_id, "reason": reason, "documents": documents,
-              "missing": missing, "references": references}
+              "missing": missing, "references": references, "omitted": omitted}
     seen = set()
 
     def read(kind, path, *, transform=None, optional=False):
         path = Path(path)
+        issues = omitted if optional else missing
         try:
             with path.open("r", encoding="utf-8-sig") as f:
                 text = f.read()
                 stat = os.fstat(f.fileno())
         except FileNotFoundError:
-            if not optional:
-                missing.append({"kind": kind, "path": str(path), "reason": "missing"})
+            issues.append({"kind": kind, "path": str(path), "reason": "missing"})
             return ""
         except (OSError, UnicodeError) as exc:
-            missing.append({"kind": kind, "path": str(path), "reason": str(exc)})
+            issues.append({"kind": kind, "path": str(path), "reason": str(exc)})
             return ""
         body = transform(text) if transform else text
         if not body.strip():
-            missing.append({"kind": kind, "path": str(path), "reason": "required_text_missing"})
+            issues.append({"kind": kind, "path": str(path), "reason": "text_missing"})
         elif (kind, str(path)) not in seen:
             seen.add((kind, str(path)))
             documents.append({"kind": kind, "path": str(path), "body": body,
@@ -106,7 +106,7 @@ def read_context(home, *, staff_number, reason="resume", task_id="", sources=())
     # Explicit inputs are required. Other external links remain references.
     for locator in dict.fromkeys([*sources, *related]):
         if locator.startswith("mail:"):
-            mid = locator.removeprefix("mail:")
+            mid = locator.removeprefix("mail:").removesuffix(".md")
             path = home_path / "mailbox" / (mid + ".md") if re.fullmatch(r"[A-Za-z0-9._-]+", mid) else None
         elif re.match(r"^[a-z]+(?:-[a-z]+)*:", locator, re.I) and not re.match(r"^[a-z]:[/\\]", locator, re.I):
             path = None
@@ -114,14 +114,14 @@ def read_context(home, *, staff_number, reason="resume", task_id="", sources=())
             path = local_source(project, locator)
         if path is None:
             references.append(locator)
-            if locator in sources:
-                missing.append({"kind": "input", "path": locator, "reason": "requires_original_reader"})
+            (missing if locator in sources else omitted).append(
+                {"kind": "input", "path": locator, "reason": "requires_original_reader"})
             continue
         if path.suffix.lower() not in {".md", ".txt"} or path.is_dir():
             references.append(locator)
-            if locator in sources:
-                missing.append({"kind": "input", "path": locator, "reason": "text_original_required"})
+            (missing if locator in sources else omitted).append(
+                {"kind": "input", "path": locator, "reason": "text_original_required"})
             continue
-        read("input", path)
+        read("input", path, optional=locator not in sources)
     result["ok"] = not missing
     return result

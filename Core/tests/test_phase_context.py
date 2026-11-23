@@ -47,7 +47,22 @@ class ContextReadTests(unittest.TestCase):
 
     def test_missing_original_is_actionable_and_not_a_load_receipt(self):
         self.source.unlink()
+        (self.home / "AGENTS.md").write_text("", encoding="utf8")
         got = read_context(self.ref, staff_number="S001", task_id="T1")
+        self.assertTrue(got["ok"])
+        self.assertEqual({x["kind"] for x in got["omitted"]}, {"home_rules","input"})
+        got = read_context(self.ref, staff_number="S001", task_id="T1", sources=["mail:one.md"])
         self.assertFalse(got["ok"])
         self.assertEqual(got["missing"], [{"kind":"input","path":str(self.source),"reason":"missing"}])
         self.assertTrue(any(d["kind"] == "background" for d in got["documents"]))
+
+    def test_installation_home_has_no_project_team_or_index(self):
+        rooter = dict(home_kind="rooter", home_id="rooter-001", home_path=str(self.home), project_root="")
+        (self.home / "AGENTS.md").write_text("[共同背景](../..//background.md)", encoding="utf8")
+        (self.home / "TODO.md").write_text(render_todo(
+            home_kind="rooter", home_id="rooter-001", objective="Maintain", next_action="Read"),
+            encoding="utf8")
+        got = read_context(rooter, staff_number="S035", sources=["mail:one.md"])
+        self.assertTrue(got["ok"], got["missing"])
+        self.assertEqual({x["kind"] for x in got["documents"]},
+                         {"guide","entry","current","background","input"})
