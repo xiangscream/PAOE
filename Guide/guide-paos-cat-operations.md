@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 100
+version: 101
 ---
 
 # PAOS 操作指南
@@ -43,9 +43,15 @@ Mail、正式 Requests 和已配置 CAT 分开读取。读取失败不是零消�
 
 ### 邮件接手、TODO 联动与提醒边界
 
-- **先接手再交付**：收件人实读原信后，只要满足① 职责归本人（对照 TEAM）、② 交付物与落盘位置清楚、③ 起步的核心输入可读，即使局部边界还有模糊或当场就能办完，也应先安静接手。接手静默且幂等，优先把原信关联进本人已有 Task（省略 `--task` 时按 `--title` 新建 Task）；**个人 Current 始终由本人按当前优先级自行管理**。
+- **先接手再交付**：收件人实读原信后，只要满足① 职责归本人（对照 TEAM）、② 交付物与落盘位置清楚、③ 起步的核心输入可读，即使局部边界还有模糊或当场就能办完，也应先安静接手。接手静默且幂等，优先把原信关联进本人已有 Task（省略 `--task` 时按 `--title` 新建 Task）；**Mail 与本人 Task 关联即向发件人显示「已接手」**，**个人 Current 始终由本人按当前优先级自行管理**（立即处理时同步切 Current，暂排后面的责任留在 Tasks 中）。
 - **发件人任务视图与解除等待**：发件人用 `mail track` 把已发原信挂到本人已有 Task 后，可用 `mail task-status` 和 `mail status` 随时查看投递、接手与结果回执。发件人任务视图直接从对应原信的收件回执解除该项等待，不自动覆盖双方手动 Current。
-- **提醒边界**：接手（`claim` / `rooter-claim`）与普通进展保持静默，不打断发件人。仅在**需要对方回答（范围局部含糊先查 EXM，仍影响动笔再提具体问题并记 `Waiting`）、明确接不了（职责不符或缺失核心前提）、或交付结果需下游接续**时，按真实后续动作使用最终发布命令定向提醒（现行采用 `agent send --remind`）。普通交付后发件人解除相应等待即可，省去礼节性回一封「收到」。
+- **提醒边界与简明唤醒文案（PAOE 0.1）**：接手（`claim` / `rooter-claim`）与普通进展保持静默，不打断发件人。仅在**需要对方回答（范围局部含糊先查 EXM，仍影响动笔再提具体问题并记 `Waiting`）、明确接不了（职责不符或缺失核心前提）、或交付结果需下游接续**时，使用 `agent send --remind` 定向提醒一次。发件人标题应写清业务含义（避免只剩内部代号）；原生唤醒注入词由系统复用现有字段直接拼装（不临时调模型润色），先说清“谁发来什么、下一步做什么”，原信/房间编号退到末行，不堆砌“durable mail”“原输入合同”“本提醒只是……”等内部术语与防御性声明：
+  - **Mail 通用模板**（复用 `sender_id`、`subject`、`message_id`）：
+    > 收到 `{sender_id}` 发来的新消息：`{subject}`  
+    > 请读原信，接着处理。  
+    > （原信：`{message_id}`）
+  - **CAT / 角色卡提醒**：`{sender_id} 在讨论房「{room_title}」发来新消息，请查看并按需回应。（房间：{room_id} · 消息：{message_id}）`；角色卡更新用 `Human 更新了你在「{room_title}」的角色卡，请在继续本房任务前查看最新安排。（房间：{room_id}）`。
+  - **普通交付收口**：普通交付后发件人解除相应等待即可，省去礼节性回一封「收到」。
 
 | 角色与目的 | 命令（以同版 `--help` 为准） |
 | --- | --- |
@@ -132,17 +138,22 @@ CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。
 
 ### 任务房、负责人与关房边界
 
-- **谁要求开房决定怎么关**：
-  - **Human 任务房（`--close-policy human_confirm`）**：Human 明确要求为大任务开房时，登记目标、原任务/成果入口、Human 开房要求、Human 指定的负责人（`--owner`）与项目已有短 INDEX（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面，不造第二份任务正文）。房间持续开放，即使成员全部离线也继续保留；负责人完成后用 `cat close --action request` 提请关闭（进入 `pending_close`），须由 Human 手动确认（`--action confirm`）才关闭，或用 `--action continue` 恢复 `open`。
-  - **Agent 小房（`--close-policy owner`）**：Agent 为局部问题自行开的房间，由发起人或约定负责人在结论归位后自行关闭；即使 Human 后来进小房发言仍沿原关房约定。关闭后历史可读。
-- **房间 INDEX 与负责人**：任务房负责人由 Human 指定，沿 [Coordinator 工作循环](wf-coordinator-governance-cycle.md#4-项目口径收口与阶段归并) 维护任务 INDEX（任务目标与交付、Human 当前要求、待定问题、下一步与负责人），引用对应 Human 消息并标明归并到哪一条；任务结束后稳定结论归入项目 INDEX 或成果原件。
-  网页或 Obsidian 中点击刷新，会重新读取关联的项目 INDEX 原页。
+- **专用目标房与共享讨论房的关房区别**：
+  - **目标专用房（为单一目标单独建立且唯一关联该目标）**：登记目标、负责人已有 Task/计划关联、共同口径（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面）与验收负责人。房间持续开放，即使成员全部离线也继续保留；当约定验收人读到最新 Human 房内输入、明确交付与剩余事项去向并通过验收后，由系统自动关闭（PAOE 0.1 候选沿 `task accept` 完成，待正式采用；Human 保留的验收仍由 Human 确认）。
+  - **共享讨论房 / Agent 小房（`--close-policy owner`）**：承载多项议题的共享房或 Agent 自行发起的小房，不被单一目标验收自动关闭，由负责人或发起人在结论归位后正常关闭；关闭后历史可读。
+  - **Human 手动关房（`--close-policy human_confirm`）**：如仍显式指定需 Human 手动关房，沿既有 `cat close --action request|confirm|continue` 执行。
+- **房间 INDEX 与负责人**：任务房负责人沿 [Coordinator 工作循环](wf-coordinator-governance-cycle.md#4-项目口径收口与阶段归并) 维护任务 INDEX（目标与交付、Human 当前要求、待定问题、下一步与负责人）；任务结束后稳定结论归入项目 INDEX 或成果原件。
+
+### 0 类综合工作与临时角色卡（PAOE 0.1）
+
+- **两次 Human 放行**：Human 以 `0` 开头的真实新输入（不从引用、正文或历史消息触发）由临时负责人按四步推进：① 拟团队计划（仅登记规划责任）→ ② **Human 第一次放行**后建本目标专用 CAT 并邀请同事 → ③ 成员在房内完善临时角色卡（放行前拟职责与拟 TODO 安排仅存房间/计划原件，不提前写入正式执行 Task）→ ④ **Human 第二次放行**后按已批准版本接入本人正式执行 Task 并全员开工。普通非 0 类任务按原授权直接执行。
+- **临时角色卡**：每张卡对应一名已有员工（姓名/员工号、Harness、本轮临时职责、本轮 TODO 安排、协作关系与成果链接），放行后直接从本人 Task 与业务原件投影，不另抄第二份进度。Human 保存修改后系统直接提醒对应成员，继续该房任务时在下一次请求或动作边界带入变化（不波及无关任务、不增加手动确认），负责人后续汇总同步即可。Agent 在原授权内更新进展照常进行，仅实质改动已批准的目标、参与人、职责或交付范围时交受影响差异。
 
 ### 在线循环、离线语义与恢复扫房
 
-- **高频在线（`presence=online`）**：在线表示本人承诺主动回看，不按接收器进程猜测。高频在线者每做完一个可交付的小步骤、准备开始下一步时，主动回房看新增，实读后用 `cat progress --read-to <seq>` 显式推进游标（`cat read` 不自动推进游标，游标不回退且不超当前 `last_seq`）。
-- **离线不是离席（`presence=offline` ≠ `left`）**：停止本轮工作循环或不再主动看房时，主动将本房状态记为 `offline`。**不要把 `offline` 写成离席（`left`）**——离线仍保留成员席位（`participant`）、任务与已读位置，仍可被点名或 Human 全房提醒唤醒；状态无法确认时记 `unknown`。
-- **恢复先扫房**：新会话、接班、压缩恢复或被唤醒时，先用 `cat list --home <本人Sxxx>` 扫自己仍承担责任的相关房间与未读数（`left` 不进入恢复列表）；再读房间挂载的 INDEX 和上次已读位置之后的未读增量（`cat read --after <last_read_seq>`），核对 INDEX 之后是否有 Human 新要求，实读后显式推进游标并恢复 `online`。
+- **高频在线（`presence=online`）与后台作业分离**：**CAT 在线仅表示本人承诺会主动回看本房**，不按接收器进程猜测，也不把“仍有后台命令或子任务在跑”写成 CAT 在线（后台作业状态另行附带显示）。高频在线者每做完一个可交付的小步骤、准备开始下一步时，主动回房看新增，实读后用 `cat progress --read-to <seq>` 显式推进游标（`cat read` 不自动推进游标，游标不回退且不超当前 `last_seq`）。
+- **离线不是离席（`presence=offline` ≠ `left`）**：停止本轮工作循环或不再主动看房时，主动将本房状态记为 `offline`（阶段停止不取消后台作业）。**不要把 `offline` 写成离席（`left`）**——离线仍保留成员席位（`participant`）、任务与已读位置，仍可被点名或 Human 全房提醒唤醒；状态无法确认时记 `unknown`。
+- **恢复先扫房**：新会话、接班、压缩恢复或被唤醒时，先用 `cat list --home <本人Sxxx>` 扫自己仍承担责任的相关房间与未读数（`left` 不进入恢复列表）；再读房间挂载的 INDEX、临时角色卡变化与上次已读位置之后的未读增量（`cat read --after <last_read_seq>`），核对是否有 Human 新要求，实读后显式推进游标并恢复 `online`。
 
 ### 发言提醒、多选点名与命令速查
 
@@ -150,6 +161,7 @@ CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。
 | --- | --- |
 | 扫本人负责房间与未读增量 | `paos cat list --home <本人Sxxx>` |
 | 创建任务房 / 小房 | `paos cat create --title "<标题>" [--from <actor>] [--owner <owner>] [--close-policy human_confirm\|owner] [--goal "..."] [--source-ref <路径>] [--human-request-ref <来源>] [--project-id <id>] [--index-path <相对路径>]` |
+| 首次入席（建房后先入席再发言/推游标） | `paos cat join <room> --home <本人Sxxx> [--label "<标签>"]` |
 | 更新房间任务与 INDEX 引用 | `paos cat context <room> --from <actor> [--owner <owner>] [--goal "..."] [--project-id <id>] [--index-path <相对路径>]` |
 | 看房间概况 / 成员与在线状态 | `paos cat show <room>` / `paos cat members <room>` |
 | 读未读增量 | `paos cat read <room> --after <已读seq>` |
@@ -318,6 +330,21 @@ Human 显式指定 OpenCode 模型时，`--model` 传完整原生 JSON 对象，
 Windows/WSL 共用安装描述，定位看 `paos install show`。已批准的候选直呼需显式安装描述和受控根，参数查同版 help，不复制另一份默认配置。
 
 Library 源文件变化后用 `paos library catalog workflow --root <Workflow根>` 重建目录，保留使用记录。运行切换和回退见 [升级与采用](guide-upgrade-adoption.md)，安装异常见 [Rooter 安装](guide-rooter-installation.md)。
+
+## PAOE 0.1 共用动作速查（候选实参 / 拟议项分别标明）
+
+以下接口中标注“候选已实现”者已按 System Core 候选（`0e24d83`）与 CAT 候选（`825792d`）实际 `--help` 核对，待同批工程正式发布采用；标注“拟议”者待 S010 后续切片定稿后替换：
+
+| 入口与状态 | 适用时机 | 命令与关键边界 |
+| --- | --- | --- |
+| `context read`（候选已实现） | 会话启动、恢复、压缩后或显式补读 | `paos context read <本人Sxxx> [--task <TaskID>] [--reason startup\|resume\|compact\|stage\|request] [--source <原件>]`；返回原文、版本与缺项，不凭读取就记录请求已装载 |
+| `context stop`（候选已实现） | 回合停止或中断时处理 CAT 离线与至多一轮纠偏 | `paos context stop <本人Sxxx> --event <宿主事件ID> [--task <TaskID>] [--cat-url <URL>] [--interrupted\|--reentry\|--waiting-human]`；返回 `action=stop\|continue`、`rooms_offline` 等，不作任务验收 |
+| `team-plan`（候选已实现） | 0 类团队计划、两次放行、角色卡草案与历史回执核验 | `propose <负责人Sxxx> --task <ID> --plan <原件> --member <负责人Sxxx> --member <成员Sxxx> [--close-policy human_confirm\|owner]`（逐人重复 `--member` 且包含负责人；按 `#Scope` 选章批准时将 `Progress` 放独立章节）；`role <本人Sxxx> --room <room> --duty ... --arrangement ... --deliverables ... --expected-revision <rev>`；`enroll <本人Sxxx> --room <room> [--task <ID>]`；`members --room <room>`；`confirm {open-plan\|approve-roles\|save-role\|accept-goal} --id ha-<32位小写hex> --input <JSON\|@file\|->`（`--id` 同一操作幂等复用、不手填放行记录）；历史回执查验用 `receipt <receipt_id> [--verify] [--archived-artifact <归档成果路径>] [--archived-basis <归档依据路径>]`（均可选 `--cat-url`） |
+| `stage deliver`（候选已实现） | 显式交付一阶段成果 | `paos stage deliver <本人Sxxx> --task <TaskID> --id <稳定交付ID> --artifact <成果路径> --intent <意图来源> --result "<结果>" (--next "<下一步>" \| --waiting "<等待>") [--current] [--cat-url <URL>]`（隔离联调可传 `--cat-url`）；返回重读原文，**默认不结束整项 Task**，且不替代本目标的最终验收（整项完结时，有原 Mail 的任务走 `mail result`，普通 Task 按验收条件收口） |
+| `task accept`（候选已实现） | 约定验收人完成整项目标验收并关闭专用房 | `paos task accept <验收人Sxxx> --task <TaskID> --artifact <项目内成果文件> --basis <项目内验收依据文件> --remaining "<剩余事项去向>" [--room <room> --read-to <实际已读seq>] [--carry HOME/TASK=continuation] [--cat-url <URL>]`；收口当前明确指向该任务的工位责任，`--artifact`/`--basis` 均指向项目内已有文件；普通 Task 可省 `--room`，专用房须同时给 `--room` 与实际读到的 `--read-to`（首次关房由适配器核验）；`human_confirm` 策略须先由 Human 完成 `accept-goal`，再由负责人收口本人 Task |
+| `content changes / consume`（候选已实现） | EXM 整理者拉取变化清单并登记消费位置 | `paos content changes [--after <N>] [--limit <N>]`；`paos content consume <本人Sxxx> --through <N> --result-ref <整理结果路径>`；按同一原件版本合并去重，索引失败不回滚正文 |
+| `context search`（拟议） | 新目标或方向调整，按项目/方法/经历筛选检索 | 复用 Library/Tool 与 QMD，返回带用途、日期与原件位置的少量候选 |
+| `content watch`（拟议） | 整机单一本地内容观察进程 | 启动先接实时事件并对账补漏，仅管本地文件；飞书等云端原件走既有工具 `read / refresh` |
 
 ## 问题定位
 
