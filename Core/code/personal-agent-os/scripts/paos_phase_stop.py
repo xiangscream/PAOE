@@ -7,7 +7,8 @@ from paos_content import changes_db
 from paos_todo import read_todo
 
 
-def on_stop(data, home, *, staff, event, task_id, interrupted, reentry, waiting_human, client=None):
+def on_stop(data, home, *, staff, event, task_id, interrupted, reentry, waiting_human,
+            client=None, presence_only=False):
     if not event.strip():
         raise ValueError("停止事件需要原宿主事件 ID")
     offline = []
@@ -36,6 +37,9 @@ def on_stop(data, home, *, staff, event, task_id, interrupted, reentry, waiting_
     }
     if interrupted or reentry or waiting_human:
         answer["reason"] = "interrupted" if interrupted else "reentry" if reentry else "waiting_human"
+        return answer
+    if presence_only:
+        answer["reason"] = "presence_only"
         return answer
     todo = read_todo(Path(home["home_path"]) / "TODO.md")
     current = todo["current"]

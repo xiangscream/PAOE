@@ -120,6 +120,10 @@ test('recovery only runs at idle once and retains the same task and model select
   h.fixture.total = 150
   await assert.rejects(h.request(), /after idle/)
   assert.equal(h.fixture.compactions, 0)
+  const stopping = h.hooks.get('agent/turn-stopping')
+  await stopping({ agent: h.agent, turn: 1, signal: h.signal })
+  assert.deepEqual(h.stops, [{ event: 'dsh:own-session:1', task: 'T1', flags: ['--presence-only'] }])
+  assert.equal(h.steering.length, 0)
   h.agent.status = 'idle'
   h.hooks.get('agent/status')({ agent: h.agent, status: 'idle' })
   await nextTick()
@@ -163,10 +167,29 @@ test('one normal stop can steer once; a second stop, unregistered session and ST
   assert.deepEqual(h.stops.map(s => s.flags), [[], ['--reentry']])
   h.fixture.stopFile = true
   await handle(event)
-  assert.equal(h.stops.length, 2)
+  assert.deepEqual(h.stops.at(-1).flags, ['--presence-only'])
+  assert.equal(h.steering.length, 1)
   const changed = harness()
   changed.fixture.unbound = true
   await assert.rejects(changed.enter([changed.direct]), /Contact/)
+})
+
+test('a missing original or initially stopped Home leaves once without starting business work', async () => {
+  for (const mode of ['missing', 'stopFile']) {
+    const h = harness()
+    h.fixture[mode] = true
+    if (mode === 'missing') await assert.rejects(h.enter([h.direct]), /approval.md/)
+    else await h.enter([h.direct])
+    const stop = h.hooks.get('agent/turn-stopping')
+    const event = { agent: h.agent, turn: 1, signal: h.signal }
+    await stop(event)
+    await stop(event)
+    h.hooks.get('session/event')(h.agent.session, { type: 'turn/end', data: { turn: 1, reason: { kind: 'interrupted' } } })
+    await nextTick()
+    assert.deepEqual(h.stops, [{ event: 'dsh:own-session:1', task: '', flags: ['--presence-only'] }])
+    assert.equal(h.steering.length, 0)
+    assert.equal(h.followups.length, 0)
+  }
 })
 
 test('unknown model capacity stays unknown and does not manufacture a threshold', async () => {

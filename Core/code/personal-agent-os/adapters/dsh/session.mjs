@@ -95,7 +95,10 @@ export function registerContextHooks(ctx, sessions, core, { createUserMessage, i
     if (!s || decision.kind !== 'enter' || (step === 1 && decision.messages.length === 0)) return decision
     signal.throwIfAborted()
     const newTurn = s.turn !== turn
-    if (newTurn || !s.contact || s.reason) s.contact = await core.contact(s.target, agent.session.id, signal)
+    if (newTurn || !s.contact || s.reason) {
+      s.contact = undefined
+      s.contact = await core.contact(s.target, agent.session.id, signal)
+    }
     s.turn = turn
     s.step = step
     s.muted = s.contact.stopped || await core.stopped(s.contact.stopFile)
@@ -217,9 +220,25 @@ export function registerContextHooks(ctx, sessions, core, { createUserMessage, i
     }))
   })
 
+  async function leaveRooms(s, turn, flag) {
+    if (s.offlineTurn === turn) return
+    s.offlineTurn = turn
+    try {
+      await core.stop(s.target, 'dsh:' + s.agent.session.id + ':' + turn,
+        s.frame?.source.task || '', [flag])
+    } catch (error) {
+      if (s.offlineTurn === turn) s.offlineTurn = undefined
+      throw error
+    }
+  }
+
   ctx.on('agent/turn-stopping', async ({ agent, turn, signal }) => {
     const s = states.get(agent.session.id)
-    if (!s?.frame || s.agent !== agent || s.blocked || s.muted || signal.aborted || await core.stopped(s.contact.stopFile)) return
+    if (!s?.contact || s.agent !== agent) return
+    if (signal.aborted || s.blocked || !s.frame || s.muted || await core.stopped(s.contact.stopFile)) {
+      await leaveRooms(s, turn, signal.aborted ? '--interrupted' : '--presence-only')
+      return
+    }
     const flags = s.correctedTurn === turn ? ['--reentry'] : []
     const decision = await core.stop(s.target, 'dsh:' + agent.session.id + ':' + turn, s.frame.source.task, flags, signal)
     if (decision.action === 'continue' && !flags.length && !signal.aborted && !await core.stopped(s.contact.stopFile)) {
@@ -236,8 +255,8 @@ export function registerContextHooks(ctx, sessions, core, { createUserMessage, i
     if (event.type === 'turn/end' && ['aborted', 'interrupted'].includes(event.data.reason.kind)) {
       s.pending = undefined
       s.recovery?.abort()
-      if (s.contact && !s.muted) {
-        void core.stop(s.target, 'dsh:' + session.id + ':' + event.data.turn, s.frame?.source.task, ['--interrupted'])
+      if (s.contact) {
+        void leaveRooms(s, event.data.turn, '--interrupted')
           .catch(error => ctx.logger.warn('PAOE interrupt readback failed: %s', error.message))
       }
     }

@@ -33,6 +33,8 @@ def add_phase_parsers(sub):
     stop.add_argument("--interrupted", action="store_true")
     stop.add_argument("--reentry", action="store_true")
     stop.add_argument("--waiting-human", action="store_true")
+    stop.add_argument("--presence-only", action="store_true",
+                      help="Leave active rooms without continuing or claiming a task")
     stop.add_argument("--cat-url", help="The CAT endpoint explicitly selected for this installation")
 
     stage = sub.add_parser("stage", help="Deliver work on an existing Task").add_subparsers(
@@ -86,6 +88,7 @@ def execute_phase(args, installation, identity, cat_client):
             interrupted=args.interrupted,
             reentry=args.reentry,
             waiting_human=args.waiting_human,
+            presence_only=args.presence_only,
             client=cat_client(args.cat_url, service="CAT") if args.cat_url else None,
         )
 

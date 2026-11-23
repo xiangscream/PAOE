@@ -1,7 +1,7 @@
 {
   "name": "dsh-paoe-context",
   "description": "Load the registered PAOE Home's originals in a selected DeepSeek Harness session.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "main": "./index.mjs",
