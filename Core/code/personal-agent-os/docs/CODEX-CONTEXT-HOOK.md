@@ -15,6 +15,8 @@ Stop 的 action=continue 翻译为原生 `decision=block` 和 next_action；acti
 
 ## 配置与采用
 
+限定原会话的渐进采用用[只追加的会话选择配置](CODEX-SELECTED-HOOK.md)：保留旧准备定义及位置，新入口传`--reuse-existing-prepare`，对startup/resume/提交只读上下文，compact才执行准备。此模式避免新增定义审阅前中断其他会话；以下整体替换方式仅用于整体切换，不用于限定试用。
+
 Rooter 通过受支持宿主入口，把下面同一命令配置到 SessionStart（matcher `^(startup|resume|compact)$`）、UserPromptSubmit 和 Stop：
 
 ```text

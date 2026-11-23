@@ -39,7 +39,7 @@ def call_context(installation, args):
     return value
 
 
-def run_hook(event, installation, cat_url=None):
+def run_hook(event, installation, cat_url=None, *, reuse_existing_prepare=False):
     name = event.get('hook_event_name')
     reason = event.get('source') if name == 'SessionStart' else 'request'
     if name not in {'SessionStart', 'UserPromptSubmit', 'Stop'}:
@@ -88,8 +88,11 @@ def run_hook(event, installation, cat_url=None):
 
     # Reading originals works even when a local hook lacks the Desktop pipe.
     # Receiver preparation still requires the original Desktop environment.
-    observe_hook_entry(event, installation_path=installation)
-    message = prepare_current(event=event, installation_path=installation, expected_home=home)
+    if reuse_existing_prepare and reason != 'compact':
+        message = 'receiver_prepare_delegated: unchanged existing hook owns preparation.'
+    else:
+        observe_hook_entry(event, installation_path=installation)
+        message = prepare_current(event=event, installation_path=installation, expected_home=home)
     result = call_context(installation, ['read', home['home_id'], '--reason', reason])
     if result.get('schema') != 'paoe-context/v1' or result.get('home_id') != home['home_id'] or result.get('reason') != reason:
         raise HookProblem('上下文回执与当前工位或事件不符')
@@ -109,6 +112,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--installation-file')
     parser.add_argument('--cat-url', help='Explicit installation CAT endpoint for Stop presence')
+    parser.add_argument('--reuse-existing-prepare', action='store_true',
+                        help='Append-only installation: original hooks prepare startup/resume/request.')
     args = parser.parse_args()
     event = {}
     try:
@@ -116,7 +121,8 @@ def main():
         if not isinstance(event, dict):
             raise HookProblem('宿主事件必须为 JSON 对象')
         installation = resolve_installation_path(args.installation_file)
-        response = run_hook(event, installation, args.cat_url)
+        response = run_hook(event, installation, args.cat_url,
+                            reuse_existing_prepare=args.reuse_existing_prepare)
     except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired, InstallationProblem,
             AttentionServiceProblem, HomeProblem, RegistryProblem, WorkstationProblem, ReceiverError,
             InjectionError) as exc:
