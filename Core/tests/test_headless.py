@@ -243,7 +243,8 @@ class HeadlessTests(unittest.TestCase):
         self.record.unlink()  # Installation Rooter must not require any Project.
         result=self.call('wake','bind','rooter','rooter-001','--driver','opencode',
                          '--native-session-id','ses_real_local_fixture')[1]
-        self.assertEqual(result['store'],str(rooter/'private-data/contact/native-targets.json'))
+        self.assertEqual(result['store'],str(self.data/'contact/native-targets.json'))
+        self.assertFalse((rooter/'private-data/contact/native-targets.json').exists())
         self.assertNotIn('project_id',result['target'])
         self.assertEqual(self.call('wake','status','rooter','rooter-001')[1]['agent_id'],'rooter-001')
         with patch.object(paos,'_inject_from_contact_store',return_value={'accepted':True}) as inject:

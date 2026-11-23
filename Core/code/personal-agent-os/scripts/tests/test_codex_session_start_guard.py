@@ -441,7 +441,7 @@ class SessionStartGuardTests(unittest.TestCase):
         launch.assert_not_called()
         stop = Path(self.target["stop_file"])
         stop.write_text("Human STOP", encoding="utf-8")
-        contact = self.root / "3002/private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         before = contact.read_bytes()
         result, launch = self.prepare(event)
         self.assertIn("original_STOP_present", result)
