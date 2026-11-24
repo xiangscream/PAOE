@@ -99,3 +99,51 @@ class ContextReadTests(unittest.TestCase):
         self.assertTrue(
             any(d["kind"] == "task" and "Read first message" in d["body"] for d in got["documents"])
         )
+
+    def test_unresolved_current_leaves_original_tasks_readable_for_owner_repair(self):
+        from paos_todo import update_todo_current
+
+        path = self.home / "TODO.md"
+        update_todo_current(path, {"context_refs": ["task:T1（已归档）"]})
+        before = path.read_bytes()
+        got = read_context(self.ref, staff_number="S001")
+        self.assertTrue(got["ok"], got["missing"])
+        self.assertEqual(got["task_id"], "")
+        self.assertEqual(got["task_selection"], {
+            "state": "unresolved", "context_refs": ["task:T1（已归档）"],
+        })
+        recovery = next(d for d in got["documents"] if d["kind"] == "task_recovery")
+        self.assertEqual(recovery["body"], "# Tasks" + path.read_text(encoding="utf8").split("# Tasks", 1)[1].rstrip())
+        self.assertFalse(any(d["kind"] == "task" for d in got["documents"]))
+        self.assertNotIn("The actual request", "\n".join(d["body"] for d in got["documents"]))
+        self.assertEqual(path.read_bytes(), before)
+        update_todo_current(path, {"context_refs": ["task:T1"]})
+        repaired = read_context(self.ref, staff_number="S001")
+        self.assertTrue(repaired["ok"])
+        self.assertEqual(repaired["task_id"], "T1")
+        self.assertTrue(any(d["kind"] == "input" and d["body"] == "The actual request" for d in repaired["documents"]))
+
+    def test_multiple_current_task_refs_do_not_guess_a_business_task(self):
+        from paos_todo import update_todo_current
+
+        update_todo_current(self.home / "TODO.md", {"context_refs": ["task:T1", "task:T2"]})
+        got = read_context(self.ref, staff_number="S001")
+        self.assertTrue(got["ok"])
+        self.assertEqual(got["task_id"], "")
+        self.assertEqual(got["task_selection"]["state"], "unresolved")
+        self.assertTrue(any(d["kind"] == "task_recovery" for d in got["documents"]))
+
+    def test_explicit_missing_task_still_fails(self):
+        got = read_context(self.ref, staff_number="S001", task_id="T1（已归档）")
+        self.assertFalse(got["ok"])
+        self.assertEqual(got["missing"], [{"kind": "task", "path": str(self.home / "TODO.md"), "reason": "task_missing"}])
+        self.assertFalse(any(d["kind"] == "task_recovery" for d in got["documents"]))
+
+    def test_current_repair_does_not_hide_required_missing_originals(self):
+        from paos_todo import update_todo_current
+
+        update_todo_current(self.home / "TODO.md", {"context_refs": ["task:gone"]})
+        (self.home / "ENTRY.md").unlink()
+        got = read_context(self.ref, staff_number="S001")
+        self.assertFalse(got["ok"])
+        self.assertEqual(got["missing"], [{"kind": "entry", "path": str(self.home / "ENTRY.md"), "reason": "missing"}])

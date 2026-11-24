@@ -1,4 +1,8 @@
-"""Read phase inputs from the registered Home. This command has no writers."""
+"""Read phase inputs from the registered Home. This command has no writers.
+
+Unresolved Current task references select no business Task. The exact Tasks
+section remains available for Home maintenance; explicit task IDs stay required.
+"""
 
 from __future__ import annotations
 
@@ -101,9 +105,22 @@ def read_context(home, *, staff_number, reason="resume", task_id="", sources=())
             related = list(todo["current"].get("context_refs", []))
             if not task_id:
                 anchors = [r[5:] for r in related if r.startswith("task:")]
-                if len(anchors) == 1:
+                if len(anchors) == 1 and any(t["id"] == anchors[0] for t in todo["tasks"]):
                     task_id = anchors[0]
                     result["task_id"] = task_id
+                elif anchors:
+                    result["task_selection"] = {
+                        "state": "unresolved",
+                        "context_refs": ["task:" + anchor for anchor in anchors],
+                    }
+                    documents.append(
+                        {
+                            "kind": "task_recovery",
+                            "path": str(todo_path),
+                            "version": next(d["version"] for d in documents if d["kind"] == "current"),
+                            "body": _section(todo_text, "# Tasks"),
+                        }
+                    )
             if task_id:
                 task = next((t for t in todo["tasks"] if t["id"] == task_id), None)
                 if not task:
