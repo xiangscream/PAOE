@@ -12,6 +12,12 @@ from paos_library import LibraryProblem, load_library_roots, parse_frontmatter, 
 from paos_registry import ProjectRegistry
 from paos_workstation import posix_windows_drive_locator
 
+EXPERIENCE_VIEWS = {
+    "topics": ("exm-topics", "{Topics,Projects,心得}/**/*.md"),
+    "originals": ("exm-originals", "{Sessions,Materials}/**/*.md"),
+    "daily": ("exm-daily", "Daily/**/*.md"),
+}
+
 
 def add_search_parser(group):
     command = group.add_parser("search", help="Find originals across the project, methods and experience")
@@ -21,6 +27,8 @@ def add_search_parser(group):
     command.add_argument("--project", help="Select another registered project")
     command.add_argument("--mode", choices=["hybrid", "lexical", "semantic"], default="hybrid")
     command.add_argument("--limit", type=int, default=8)
+    command.add_argument("--experience-view", choices=["all", *EXPERIENCE_VIEWS], default="all",
+                         help="Select current topics, original sources or dates in the same QMD")
     plan = group.add_parser("collections", help="Show QMD collection roots and registration commands")
     plan.add_argument("home")
     plan.add_argument("--project", help="Select another registered project")
@@ -59,6 +67,10 @@ def collection_plan(home, installation, descriptor, project):
                      "inspect": ["collection", "show", name],
                      "add_if_missing": ["collection", "add", str(folder), "--name", name, "--mask", mask]})
     rows.append({"scope": "experience", "collection": "exm", "inspect": ["collection", "show", "exm"]})
+    rows.extend({"scope": "experience", "view": view, "collection": name,
+                 "base_collection": "exm", "mask": mask,
+                 "inspect": ["collection", "show", name]}
+                for view, (name, mask) in EXPERIENCE_VIEWS.items())
     return {"ok": True, "launcher": str(effective_data_root(descriptor) / "exm" / "exm.ps1"),
             "collections": rows, "refresh": [["update"], ["embed"]], "writes": []}
 
@@ -189,7 +201,8 @@ def search_context(args, home, installation, descriptor):
             collections.extend(_method_collections(roots))
     if "experience" in scopes:
         # The installation's existing QMD exm collection owns its filesystem locator.
-        collections.append(("experience", "exm", None, None))
+        name = "exm" if args.experience_view == "all" else EXPERIENCE_VIEWS[args.experience_view][0]
+        collections.append(("experience", name, None, None))
     for scope, name, root, _mask in collections:
         try:
             rows = query_qmd(launcher, name, query, args.mode, args.limit)
@@ -222,5 +235,6 @@ def search_context(args, home, installation, descriptor):
     complete = all(entry["state"] == "searched" for entry in coverage)
     return {
         "ok": complete, "schema": "paoe-context-search/v1", "query": query, "mode": args.mode,
+        "experience_view": args.experience_view,
         "coverage": coverage, "results": [originals[k] for k in sorted(scores, key=scores.get, reverse=True)[:args.limit]],
     }

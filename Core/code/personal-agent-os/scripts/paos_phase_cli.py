@@ -15,6 +15,7 @@ from paos_stage import deliver
 from paos_stage import task_snapshot
 from paos_registry import ProjectRegistry
 from paos_relations import related
+from paos_exm_publish import add_originals_parser, execute_originals
 from paos_team import ROLE, live_role
 
 DEFAULT_CAT_URL = "http://127.0.0.1:8870"
@@ -29,6 +30,7 @@ def add_phase_parsers(sub):
         "context", help="Read phase inputs or end native participation"
     ).add_subparsers(dest="context_command", required=True)
     add_search_parser(ctx)
+    add_originals_parser(ctx)
     relations = ctx.add_parser("related", help="Expand explicit topic links and derived backlinks")
     relations.add_argument("home")
     relations.add_argument("--source", required=True)
@@ -130,6 +132,8 @@ def _stage_failure(context, args):
 def execute_phase(args, installation, identity, cat_client):
     descriptor = load_installation_descriptor(installation)
     data = effective_data_root(descriptor)
+    if args.command == "context" and args.context_command == "originals":
+        return execute_originals(args, installation)
     if args.command == "content" and args.content_command == "watch":
         return execute_watch(args, installation)
     if args.command == "content" and args.content_command == "changes":

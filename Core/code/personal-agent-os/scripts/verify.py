@@ -32,6 +32,7 @@ def main():
              run('Bootstrap + headless real-file integration',['-m','unittest','discover','-s','tests','-v']),
              run('Core receiver + installation contracts',['-m','unittest','discover','-s','tests','-v'],CORE),
              run('DSH native injection contracts',['-m','unittest','discover','-s',str(CORE/'scripts/tests'),'-p','test_dsh_injection.py','-v'],CORE),
+             run('EXM selected originals + resumable publication',['-m','unittest','discover','-s',str(CORE/'scripts/tests'),'-p','test_exm_*.py','-v'],CORE),
              run('Codex registered Home preparation',['-m','unittest','discover','-s',str(CORE/'scripts/tests'),'-p','test_codex_session_start_guard.py','-v']),
              run('Python syntax',['-m','compileall','-q',str(CORE/'scripts'),str(PACKAGE/'portable.py'),str(PACKAGE/'front')])]
     print('\nPortable verifier: '+('PASS' if all(results) else 'FAIL'))
