@@ -113,8 +113,8 @@ $tools.raw_markdown -split '\r?\n' | Select-String -SimpleMatch 'lark-cli'
 
 ~~~powershell
 $exm = '<从本机 EXM 方法取得的完整脚本路径>'
-& $exm search '充电站' -n 5 --format json                 # 名称或术语已知
-& $exm query '少量抽样导致遗漏长录音中的产品讨论' --no-rerank -n 8 --format json
+& $exm search '充电站' -c exm -n 5 --format json                 # 名称或术语已知
+& $exm query '少量抽样导致遗漏长录音中的产品讨论' -c exm --no-rerank -n 8 --format json
 & $exm get 'qmd://exm/Daily/2026-10-19.md' --full-path  # 换成所选结果的 file
 ~~~
 

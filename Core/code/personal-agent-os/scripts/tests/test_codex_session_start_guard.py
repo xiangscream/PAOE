@@ -41,13 +41,15 @@ class SessionStartGuardTests(unittest.TestCase):
     def register(self, project_id, agent_id, thread="own-thread"):
         root = self.root / project_id
         (root / "Workstations" / agent_id).mkdir(parents=True)
-        contact = root / "private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         contact.parent.mkdir(parents=True, exist_ok=True)
         target = {"runtime": "codex", "session_id": thread, "stop_file": str(root / "STOP"),
                   "extension": {"receiver_runtime_file": str(root / "receiver/runtime.json"),
                                 "windows_python": str(root / "registered-python.exe"),
                                 "execution_environment": "windows"}}
-        contact.write_text(json.dumps({agent_id: target}), encoding="utf-8")
+        store = json.loads(contact.read_text(encoding="utf-8")) if contact.exists() else {}
+        store[agent_id] = target
+        contact.write_text(json.dumps(store), encoding="utf-8")
         (self.registry / f"{project_id}.json").write_text(json.dumps({
             "schema": "paos-project-registry/v1", "id": project_id,
             "root_path": str(root), "homes": [agent_id],
@@ -105,7 +107,7 @@ class SessionStartGuardTests(unittest.TestCase):
     def test_cli_stop_preserves_registration_and_does_not_start(self):
         stop = Path(self.target["stop_file"])
         stop.write_text("Human STOP", encoding="utf-8")
-        contact = self.root / "3002/private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         original = contact.read_bytes()
         result, launch = self.prepare(cli=True)
         self.assertFalse(result["ok"])
@@ -116,13 +118,16 @@ class SessionStartGuardTests(unittest.TestCase):
 
     def register_rooter(self, thread="rooter-thread", directory="rooter-001"):
         root = self.root / directory
-        contact = root / "private-data/contact/native-targets.json"
-        contact.parent.mkdir(parents=True)
+        root.mkdir(parents=True, exist_ok=True)
+        contact = self.source / "private-data/contact/native-targets.json"
+        contact.parent.mkdir(parents=True, exist_ok=True)
         target = {"runtime": "codex", "session_id": thread, "stop_file": str(root / "STOP"),
                   "extension": {"receiver_runtime_file": str(root / "runtime.json"),
                                 "windows_python": str(root / "python.exe"),
                                 "execution_environment": "windows"}}
-        contact.write_text(json.dumps({"rooter-001": target}), encoding="utf-8")
+        store = json.loads(contact.read_text(encoding="utf-8")) if contact.exists() else {}
+        store["rooter-001"] = target
+        contact.write_text(json.dumps(store), encoding="utf-8")
         self.descriptor["rooter_home"] = str(root)
         Path(self.descriptor["path"]).write_text(json.dumps(self.descriptor), encoding="utf-8")
         return target
@@ -163,12 +168,12 @@ class SessionStartGuardTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "Windows default Contact registration")
     def test_normal_bind_completes_contact_before_owner_prepare(self):
-        contact = self.root / "3002/private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         bare = {"runtime": "codex", "session_id": "own-thread", "stop_file": self.target["stop_file"]}
         colleague = {"runtime": "opencode", "session_id": "colleague-thread"}
         contact.write_text(json.dumps({"3002-s031": bare, "3002-s032": colleague}), encoding="utf-8")
         with patch.object(Path, "home", return_value=self.root), patch.object(wake, "os", SimpleNamespace(name="nt")):
-            wake.bind_wakeup(root=self.root / "3002", project_id="3002", agent_id="3002-s031",
+            wake.bind_wakeup(installation_path=self.descriptor["path"], root=self.root / "3002", project_id="3002", agent_id="3002-s031",
                              native_session_id="own-thread", runtime_id="codex-desktop", driver_name="codex")
         before = contact.read_bytes()
         result, launch = self.prepare(manual=True)
@@ -185,7 +190,7 @@ class SessionStartGuardTests(unittest.TestCase):
         self.assertEqual(contact.read_bytes(), before)
 
     def test_stopped_bare_contact_does_not_register_or_launch(self):
-        contact = self.root / "3002/private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         bare = {"runtime": "codex", "session_id": "own-thread", "stop_file": self.target["stop_file"]}
         contact.write_text(json.dumps({"3002-s031": bare}), encoding="utf-8")
         before = contact.read_bytes()
@@ -197,7 +202,7 @@ class SessionStartGuardTests(unittest.TestCase):
 
     def test_incomplete_rooter_is_not_silently_registered_during_resume(self):
         self.register_rooter("own-thread")
-        contact = self.root / "rooter-001/private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         contact.write_text(json.dumps({"rooter-001": {"runtime": "codex", "session_id": "own-thread"}}), encoding="utf-8")
         # This fixture must have only one matching Home, like the real Owner.
         self.environment["CODEX_THREAD_ID"] = "rooter-only"
@@ -219,9 +224,9 @@ class SessionStartGuardTests(unittest.TestCase):
         registry.write_text(json.dumps(value), encoding="utf-8")
         with patch.object(Path, "home", return_value=self.root), patch.object(wake, "os", SimpleNamespace(name="nt")):
             for agent, thread in (("3002-s031", "own-thread"), ("3002-s032", "peer-thread")):
-                wake.bind_wakeup(root=project, project_id="3002", agent_id=agent,
+                wake.bind_wakeup(installation_path=self.descriptor["path"], root=project, project_id="3002", agent_id=agent,
                                  native_session_id=thread, runtime_id="codex-desktop", driver_name="codex")
-        contact = project / "private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         original = contact.read_bytes()
         context = threading.local()
         barrier = threading.Barrier(2)
@@ -246,10 +251,10 @@ class SessionStartGuardTests(unittest.TestCase):
         self.assertEqual(contact.read_bytes(), original)
 
     def test_non_windows_bind_without_receiver_config_rejects_without_writing(self):
-        contact = self.root / "3002/private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         original = contact.read_bytes()
         with patch.object(wake, "os", SimpleNamespace(name="posix")), self.assertRaises(wake.WakeProblem):
-            wake.bind_wakeup(root=self.root / "3002", project_id="3002", agent_id="3002-s099",
+            wake.bind_wakeup(installation_path=self.descriptor["path"], root=self.root / "3002", project_id="3002", agent_id="3002-s099",
                              native_session_id="new-thread", runtime_id="codex-desktop", driver_name="codex")
         self.assertEqual(contact.read_bytes(), original)
 
@@ -257,17 +262,17 @@ class SessionStartGuardTests(unittest.TestCase):
         config = {"extension": {"receiver_runtime_file": "C:/PAOS/receiver/runtime.json",
                                 "windows_python": "C:/Python/python.exe"}}
         with patch.object(wake, "os", SimpleNamespace(name="posix")):
-            result = wake.bind_wakeup(root=self.root / "3002", project_id="3002", agent_id="3002-s099",
+            result = wake.bind_wakeup(installation_path=self.descriptor["path"], root=self.root / "3002", project_id="3002", agent_id="3002-s099",
                                       native_session_id="new-thread", runtime_id="codex-desktop", driver_name="codex",
                                       driver_config=config)
         self.assertEqual(result["target"]["extension"]["execution_environment"], "windows")
         self.assertEqual(result["target"]["stop_file"], "C:\\PAOS\\receiver\\STOP")
 
     def test_invalid_windows_receiver_config_does_not_write_contact(self):
-        contact = self.root / "3002/private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         original = contact.read_bytes()
         with patch.object(wake, "os", SimpleNamespace(name="posix")), self.assertRaises(wake.WakeProblem):
-            wake.bind_wakeup(root=self.root / "3002", project_id="3002", agent_id="3002-s099",
+            wake.bind_wakeup(installation_path=self.descriptor["path"], root=self.root / "3002", project_id="3002", agent_id="3002-s099",
                              native_session_id="new-thread", runtime_id="codex-desktop", driver_name="codex",
                              driver_config={"extension": {"receiver_runtime_file": "relative/runtime.json",
                                                           "windows_python": "C:/Python/python.exe"}})
@@ -436,7 +441,7 @@ class SessionStartGuardTests(unittest.TestCase):
         launch.assert_not_called()
         stop = Path(self.target["stop_file"])
         stop.write_text("Human STOP", encoding="utf-8")
-        contact = self.root / "3002/private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         before = contact.read_bytes()
         result, launch = self.prepare(event)
         self.assertIn("original_STOP_present", result)
@@ -466,7 +471,7 @@ class SessionStartGuardTests(unittest.TestCase):
         runtime = Path(self.target["extension"]["receiver_runtime_file"])
         runtime.parent.mkdir()
         runtime.write_text("existing private grant", encoding="utf-8")
-        contact = self.root / "3002/private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         original = runtime.read_bytes(), contact.read_bytes()
         with patch.object(hook, "reusable_owned_runtime", return_value=456):
             for event in (self.event, {**self.event, "source": "compact"},
@@ -509,9 +514,8 @@ class SessionStartGuardTests(unittest.TestCase):
         value["homes"] = ["3002-s099"]
         value["coordinator_home_id"] = "3002-s099"
         project_file.write_text(json.dumps(value), encoding="utf-8")
-        with self.assertRaises(hook.HomeProblem) as caught:
+        with self.assertRaisesRegex(ValueError, "contact_thread_not_registered"):
             self.prepare()
-        self.assertEqual(caught.exception.code, "home_agent_unknown")
 
     def test_new_employee_contact_needs_no_hook_change(self):
         self.register("3003", "3003-s099", "new-own-thread")
@@ -527,7 +531,7 @@ class SessionStartGuardTests(unittest.TestCase):
         with patch.object(hook, "load_native_targets", wraps=hook.load_native_targets) as read:
             result, _ = self.prepare()
         self.assertIn("receiver_prepare_started", result)
-        read.assert_called_once_with(self.root / "3002")
+        read.assert_called_once_with(self.source, installation_path=self.descriptor["path"])
 
     def test_legacy_empty_roots_fail_without_reading_current_directory_contact(self):
         from paos_registry import RegistryProblem
@@ -546,7 +550,7 @@ class SessionStartGuardTests(unittest.TestCase):
             os.chdir(previous)
 
     def test_incomplete_binding_is_actionable_without_a_false_prepare_success(self):
-        contact = self.root / "3002/private-data/contact/native-targets.json"
+        contact = self.source / "private-data/contact/native-targets.json"
         del self.target["extension"]["windows_python"]
         contact.write_text(json.dumps({"3002-s031": self.target}), encoding="utf-8")
         before = contact.read_bytes()

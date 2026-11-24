@@ -2,7 +2,9 @@
 
 from paos_attention_service import resolve_home_by_registry
 from paos_content import consume, list_changes
+from paos_content_watch_cli import add_watch_parser, execute_watch
 from paos_context import read_context
+from paos_context_search import add_search_parser, collection_plan, search_context
 from paos_installation import effective_data_root, load_installation_descriptor
 from paos_phase_stop import on_stop
 from paos_stage import deliver
@@ -14,6 +16,7 @@ def add_phase_parsers(sub):
     ctx = sub.add_parser(
         "context", help="Read phase inputs or end native participation"
     ).add_subparsers(dest="context_command", required=True)
+    add_search_parser(ctx)
     read = ctx.add_parser("read", help="Read original phase inputs from the registered Home")
     read.add_argument("home")
     read.add_argument("--task", default="")
@@ -31,6 +34,8 @@ def add_phase_parsers(sub):
     stop.add_argument("--interrupted", action="store_true")
     stop.add_argument("--reentry", action="store_true")
     stop.add_argument("--waiting-human", action="store_true")
+    stop.add_argument("--presence-only", action="store_true",
+                      help="Leave active rooms without continuing or claiming a task")
     stop.add_argument("--cat-url", help="The CAT endpoint explicitly selected for this installation")
 
     stage = sub.add_parser("stage", help="Deliver work on an existing Task").add_subparsers(
@@ -52,6 +57,7 @@ def add_phase_parsers(sub):
     content = sub.add_parser(
         "content", help="Read and consume versions of changed originals"
     ).add_subparsers(dest="content_command", required=True)
+    add_watch_parser(content)
     changes = content.add_parser("changes", help="Read changes after a sequence number")
     changes.add_argument("--after", type=int, default=0)
     changes.add_argument("--limit", type=int, default=50)
@@ -62,10 +68,17 @@ def add_phase_parsers(sub):
 
 
 def execute_phase(args, installation, identity, cat_client):
-    data = effective_data_root(load_installation_descriptor(installation))
+    descriptor = load_installation_descriptor(installation)
+    data = effective_data_root(descriptor)
+    if args.command == "content" and args.content_command == "watch":
+        return execute_watch(args, installation)
     if args.command == "content" and args.content_command == "changes":
         return list_changes(data, args.after, args.limit)
     home = resolve_home_by_registry(args.home, installation_file=str(installation))
+    if args.command == "context" and args.context_command == "collections":
+        return collection_plan(home, installation, descriptor, args.project)
+    if args.command == "context" and args.context_command == "search":
+        return search_context(args, home, installation, descriptor)
     if args.command == "content":
         return consume(data, home, args.through, args.result_ref)
     staff = identity(args.home, installation_path=installation).get("staff_number") or args.home
@@ -79,6 +92,7 @@ def execute_phase(args, installation, identity, cat_client):
             interrupted=args.interrupted,
             reentry=args.reentry,
             waiting_human=args.waiting_human,
+            presence_only=args.presence_only,
             client=cat_client(args.cat_url, service="CAT") if args.cat_url else None,
         )
 
@@ -116,6 +130,8 @@ def execute_phase(args, installation, identity, cat_client):
                             "kind": "active_role",
                             "path": ref,
                             "version": str(role["revision"]),
+                            "plan_version": team["plan"]["version"],
+                            "roles_receipt": team["roles_receipt"],
                             "body": "\n".join(
                                 role["role"][k] for k in ("duty", "arrangement", "deliverables")
                             )

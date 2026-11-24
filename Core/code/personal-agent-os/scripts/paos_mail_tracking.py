@@ -10,7 +10,8 @@ from paos_todo import parse_todo, render_todo, write_todo
 
 
 def handoff_status(root, message_id, resolve_home, installation_file=None):
-    dispatch = dispatch_status(root, message_id, registry_lookup=resolve_home)
+    dispatch = dispatch_status(root, message_id, registry_lookup=resolve_home,
+                               installation_path=installation_file)
     if resolve_home is None:
         return dispatch
     for delivery in dispatch["deliveries"]:

@@ -164,6 +164,8 @@ class StageCliTests(unittest.TestCase):
 
     def test_stop_only_continues_active_unblocked_work_once(self):
         args = ["context", "stop", "S010", "--event", "run.1"]
+        presence = self.cli(*args, "--presence-only")
+        self.assertEqual((presence["action"], presence["reason"]), ("stop", "presence_only"))
         self.assertEqual(self.cli(*args, "--interrupted")["action"], "stop")
         self.assertEqual(self.cli(*args)["action"], "continue")
         self.assertEqual(self.cli(*args)["action"], "stop")
