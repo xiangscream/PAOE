@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   HUMAN_ACTIONS, actionOutcome, cardGroup, cardTaskLine, confirmInput, decisionPayload,
-  planMembers, planSummary, receiptKey, roleCardState, roleLine, teamStage,
+  planInput, planMembers, planSummary, receiptKey, reviewKey, reviewMatches,
+  roleCardState, roleLine, teamStage,
 } from '../../team-select.mjs'
 
 describe('roleCardState', () => {
@@ -154,19 +155,36 @@ describe('cardTaskLine', () => {
   })
 })
 
+describe('F87 displayed review snapshot', () => {
+  it('matches only the exact action+input that was displayed', () => {
+    const input = { room: 'r1', expected_revision: 3 }
+    const review = { status: 'ready', key: reviewKey('approve-roles', input), subject: { revision: 3 } }
+    expect(reviewMatches(review, 'approve-roles', input)).toBe(true)
+    expect(reviewMatches(review, 'approve-roles', { ...input, expected_revision: 4 })).toBe(false)
+    expect(reviewMatches(review, 'save-role', input)).toBe(false)
+    expect(reviewMatches({ ...review, status: 'loading' }, 'approve-roles', input)).toBe(false)
+    expect(reviewMatches({ ...review, subject: {} }, 'approve-roles', input)).toBe(false)
+  })
+  it('builds the open-plan input from the displayed plan', () => {
+    expect(planInput({ owner: 'S010', task: 'T-1', version: 3 }))
+      .toEqual({ owner: 'S010', task: 'T-1', version: 3 })
+    expect(planInput(null)).toEqual({ owner: '', task: '', version: 1 })
+  })
+})
+
 describe('cardGroup (F88 read-only mapping of todo.groups)', () => {
   it('maps the backend group name, rooms and original tasks', () => {
     const tasks = [{ id: 'T-1', title: '前端交付', state: 'doing', artifact_ref: 'ui.ts' }]
     expect(cardGroup({ group: { name: 'PAOE 0.1', rooms: ['room-a'], tasks } }))
       .toEqual({ name: 'PAOE 0.1', rooms: ['room-a'], tasks })
   })
-  it('keeps loose items with a null name and tolerates a plain name', () => {
+  it('keeps loose items with a null name', () => {
     expect(cardGroup({ group: { name: null, tasks: [] } })).toEqual({ name: null, rooms: [], tasks: [] })
-    expect(cardGroup({ group: 'PAOE 0.1' })).toEqual({ name: 'PAOE 0.1', rooms: [], tasks: [] })
   })
-  it('returns null when the card has no group', () => {
+  it('returns null when the card has no group object', () => {
     expect(cardGroup(null)).toBeNull()
     expect(cardGroup({ task: { id: 'T-1' } })).toBeNull()
     expect(cardGroup({ group: null })).toBeNull()
+    expect(cardGroup({ group: 'PAOE 0.1' })).toBeNull()
   })
 })
