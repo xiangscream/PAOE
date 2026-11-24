@@ -76,6 +76,7 @@ from paos_todo import (
     render_todo, update_todo_current, write_todo,
     CURRENT_FIELDS, LIST_CURRENT_FIELDS, validate_current_updates,
 )
+from paos_todo_groups import project_groups
 from paos_workstation import locator_like, posix_windows_drive_locator
 from paos_home import agent_project_id
 
@@ -642,6 +643,7 @@ def read_home_state(home_ref: dict[str, Any]) -> dict[str, Any]:
     except (HomeProblem, TodoProblem, NoticeProblem) as problem:
         raise _map_problem(problem) from problem
 
+    todo["groups"] = project_groups(todo.get("tasks") or [])
     current = dict(todo.get("current") or {})
     notice_items = list(notices.get("items") or [])
     read_pending = [
