@@ -203,8 +203,8 @@ async function settle(ctx, core, state, sessionID, turn, signal) {
   await ctx.session.wait({ sessionID })
   if (!current(state, turn, signal)) return
   const binding = await contact(core, state.target, sessionID, signal)
-  const stopped = binding.stop_present || await stopped(core, binding.stop_file)
-  const presenceOnly = stopped || !task || !turn.checked || turn.outcome === 'failed'
+  const stopPresent = binding.stop_present || await stopped(core, binding.stop_file)
+  const presenceOnly = stopPresent || !task || !turn.checked || turn.outcome === 'failed'
   if (presenceOnly && !core.config.catUrl) return
   // The context snapshot also detects a newer execution before the event consumer sees it.
   const history = await ctx.session.context({ sessionID })

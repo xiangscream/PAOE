@@ -35,10 +35,11 @@ export const runBridge: BridgeRunner = (config, request) => new Promise(resolve 
   const finish = (response: BridgeResponse) => {
     if (settled) return
     settled = true
-    clearTimeout(timer)
+    if (timer !== null) clearTimeout(timer)
     resolve(response)
   }
-  const timer = setTimeout(() => finish(errorResponse('PAOS 桥请求超时（45 秒）', 'bridge_timeout')), 45000)
+  const humanConfirm = request.method === 'POST' && request.path === '/api/team/confirm'
+  const timer = humanConfirm ? null : setTimeout(() => finish(errorResponse('PAOS 桥请求超时（45 秒）', 'bridge_timeout')), 45000)
   try {
     const child = spawn(config.pythonPath, [
       '-X', 'utf8',

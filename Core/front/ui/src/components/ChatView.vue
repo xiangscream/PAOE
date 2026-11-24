@@ -26,7 +26,7 @@ async function request(path, options={}) {
   const controller = new AbortController();
   // Human 确认（/api/team/confirm）等待真人读确认框并按按钮，不能自动中止；
   // 其他请求保持正常超时（POST 20s / GET 15s）。
-  const humanConfirm = path === '/api/team/confirm';
+  const humanConfirm = options.method === 'POST' && path === '/api/team/confirm';
   const timeout = humanConfirm ? null : setTimeout(() => controller.abort(), options.method==='POST' ? 20000 : 15000);
   try {
     const response = await requestTransport(path, {...options,signal:controller.signal,cache:'no-store'});
