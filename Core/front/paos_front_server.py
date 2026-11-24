@@ -672,7 +672,7 @@ class Board:
         action = payload.get("action")
         ident = payload.get("receipt_id")
         subject = payload.get("input")
-        if action not in ("open-plan", "approve-roles", "save-role", "accept-goal"):
+        if action not in ("open-plan", "approve-roles", "save-role", "accept-goal", "close-room"):
             raise BoardProblem("team_action_unknown", "请选择相应的团队操作。")
         if not isinstance(subject, dict) or (not review and (not isinstance(ident, str) or not ident)):
             raise BoardProblem("team_action_input_invalid", "请提供本次操作的编号和审阅对象。")
