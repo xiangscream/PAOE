@@ -2,7 +2,8 @@
 
 One foreground process observes the selected installation's registered Project
 roots (including EXM when registered), Workflow/Skill roots, and the explicitly
-registered tool catalog. It writes versions to the existing
+registered tool catalog. The same process distributes the two managed System
+rule documents. It writes original versions to the existing
 `Data/content/events.sqlite3`; it does not invoke models or refresh QMD itself.
 
 ## Run the observer
@@ -22,6 +23,28 @@ is needed. Rooter owns login startup and deployment. `watch.lock` uses an OS byt
 lock scoped to Data: a second observer for the same installation fails; a dead
 process releases the lock automatically. The leftover file is not a stale lock.
 
+## System rule synchronization
+
+The default `content watch` command also applies the managed blocks of
+`Project-Template/AGENTS.md` and `Project-Template/WORK-LEAD.md`. The canonical template
+directory is under the System root of the registered `Core/code/personal-agent-os`
+installation. The observer subscribes to that directory, the registry directory,
+and the exact downstream rule directories before reconciling them. A new
+registration enters the rule pass while the observer is running.
+
+The source and targets are checked per document. The observer writes only an
+eligible managed block, verifies the written result and reports each target.
+An unchanged public area keeps the existing file. An edited or unmanaged public
+area needs an explicit repair. A missing `WORK-LEAD.md` uses the existing
+initializer. Source errors, conflicts and failed writes appear in the existing
+stderr logs as `rules_sync` receipts. Native events trigger reconciliation after
+repairs. A narrow retry covers an I/O lock that may be released without a save.
+
+Run `paos --json content watch --rules-status` to check alignment without
+starting the observer or writing. The result lists the document, target, path,
+status and reason. The sync receipt establishes file state. Each Agent reads
+those files at its normal context boundary.
+
 ## Content boundary
 
 Only the explicit installation descriptor and its registry are read, without
@@ -31,8 +54,14 @@ mailbox, History/archive directories, private-data, hidden directories, virtual
 environments, dependency directories, and editor temporary files are excluded.
 Junctions and symbolic links within registered roots are not followed. The tool
 catalog is a file-only exception in its registered location: nearby Rooter files
-are never enumerated or versioned. Scope registrations are fixed for one run;
-restart after changing them. Missing configured roots fail startup explicitly.
+are never enumerated or versioned. Original-version collection keeps the
+business root snapshot for one run. Rule-only subscriptions track registry
+changes during that run and do not index the registry, templates or Rooter.
+Invalid project registrations surface in the rule receipts while healthy
+projects continue. A temporarily unavailable registered project root stays in
+the original observer's reconnect queue. Once it is available, the observer
+reconciles the surviving content and resumes normal notifications there.
+Missing configured Library roots or tool catalog fail startup explicitly.
 
 All remaining ordinary files are eligible originals, including binary assets.
 Startup and lost-event recovery read their content to determine versions. Normal
@@ -71,6 +100,7 @@ consumer contract. No production watcher or task scheduler is enabled by tests.
 
 ```powershell
 python -m unittest discover -s Core/tests -p test_content_watch.py -v
+python -m unittest discover -s Core/tests -p test_rules_sync.py -v
 python Core/code/personal-agent-os/scripts/verify.py
 ```
 

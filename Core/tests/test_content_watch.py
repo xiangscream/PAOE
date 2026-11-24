@@ -207,6 +207,18 @@ class ContentWatchTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "Windows public entry")
     def test_public_registration_entry_stop_and_missing_installation(self):
+        from paos_agents_common import START, END
+        source = self.root / "System/Core/code/personal-agent-os"
+        source.mkdir(parents=True)
+        templates = source.parents[2] / "Project-Template"
+        templates.mkdir()
+        descriptor = json.loads(self.install.read_text(encoding="utf-8"))
+        descriptor["source_root"] = str(source)
+        self.install.write_text(json.dumps(descriptor), encoding="utf-8")
+        for document in ("AGENTS.md", "WORK-LEAD.md"):
+            text = f"{START}\nFixture rule\n{END}\n"
+            for root in (templates, self.project, self.rooter):
+                (root / document).write_text(text, encoding="utf-8")
         parser = argparse.ArgumentParser()
         add_watch_parser(parser.add_subparsers(dest="content_command"))
         args = parser.parse_args(["watch"])

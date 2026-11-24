@@ -5,7 +5,7 @@ title: 发布采用与回退
 description: 按需读取：发布范围、实际运行采用、成员例外及数据回退。
 tags: upgrade, adoption, recovery
 status: active
-version: 21
+version: 22
 absorbed_tips: [{"tip_id":"tip-s010-d217-scoped-validation-adoption-20261020","source_sha256":"74681c883f88d96b2668f3fdac3a7dfc51b5276c6e936e2080c5fdc35db3fad9","evidence_ref":"https://github.com/xiangscream/personal-agent-os/blob/0bd6f915a25723bc5123ed7d0518f9074b1118b6/docs/handoff/v15-d1-20261016/D217-FINAL-RETURN-S010-20261020.md"}]
 ---
 
@@ -67,7 +67,17 @@ CLI/API 检查先走用户使用的公开入口，在隔离目录复用安装中
 
 ## 公共区统一分发（System AGENTS）
 
-运行母本为 `Project-Template/AGENTS.md` 标记区域，生效副本为 Registry 已登记 Project 根 `AGENTS.md` 的对应区域，项目人工约定在区域之外。默认校验只读，不因缺失文件而补建项目。
+在 System 的 `Project-Template/AGENTS.md` 或 `WORK-LEAD.md` 中编辑公共标记区并保存。Windows 现有 `PAOE-Content-Watch` 在保存和启动时将公共区下发到登记项目和 Rooter。新项目登记后一起纳入。项目人工约定留在标记之外。生效文件同步后，Agent 在现有恢复或阶段入口读取最新规则。
+
+用以下命令只读检查当前文件，输出按项目、文档和路径列出状态与原因。
+
+```powershell
+paos --json content watch --rules-status
+```
+
+后台逐目标结果见安装 Data 下 `runtime/content-watch/process.json` 的 `stderr` 日志。查找 `rules_sync` 行。健康目标继续同步。遇到母本错误、公共区冲突或目标写入失败，按报告中的路径修复，原后台会重新检查。临时暂停可在任务计划程序结束现有 `PAOE-Content-Watch`，按 `process.json` 核对实际监听进程已退出。前台运行用 Ctrl+C。恢复运行原任务会补齐停机期间的变化。
+
+### 手动诊断
 
 `Core/code/personal-agent-os/scripts/paos_agents_common.py` 使用同版安装描述和明确的母本路径：
 
@@ -87,4 +97,4 @@ python paos_agents_common.py --installation-file /path/to/installation.json --te
 
 规划负责 Task 的 `team-plan:` 关联会让 `context read` 返回项目 `WORK-LEAD.md` 全文；其他临时负责人在对应 Task 的 `source_refs` 挂载 `WORK-LEAD.md`，或用 `paos context read <本人Sxxx> --source WORK-LEAD.md` 补读。普通成员不默认载入。分发工位公共 AGENTS 时，将该项目链接展开到登记项目根；Rooter 链到其本人工位的同名指南，避免相对链接落到错误目录。
 
-此机制不覆盖 `~/.codex/AGENTS.md`、Core 开发 AGENTS 或未登记项目。按 `[公共正文编辑 → --diff → 显式 --apply → --check]` 采用即可，无后台轮询、第二份名册或签收账本。
+使用 `--check` 和 `--diff` 检查单个目标，`--apply` 留给明确指定范围的维护。同步范围以登记项目和 Rooter 为准。公共原件始终来自 System 母本。

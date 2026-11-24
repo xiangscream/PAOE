@@ -71,6 +71,7 @@ external Runtime, and a successful transport receipt is **not** task completion.
 | `paos_todo_groups.py` | Project the original Tasks by optional work-group/CAT labels | Read only; no Work registry or second TODO |
 | `paos_context.py`, `paos_team.py`, `paos_human_action.py` | Load responsible-role sources and apply attributable Human decisions | Exact reviewed content, one decision; ordinary members do not load the lead guide |
 | `paos_content.py`, `paos_content_watch.py`, `paos_stage.py` | Keep observed source transitions, retained text and post-write consumption cursors | Old missing bytes stay explicit; registered cross-project sources do not transfer TODO ownership |
+| `paos_rules_sync.py`, `paos_agents_common.py` | Reconcile the two System public blocks in the existing content observer | The System templates are authoritative, and each target keeps its local text |
 | `paos_relations.py` | Read named topic relations and derive bounded neighbors/backlinks from Markdown | Explanations and source attribution remain the author's text; no independent graph store |
 | `paos_exm_originals.py`, `paos_exm_publish.py` | Import explicitly selected native Human originals and commit cursors after publication | Unknown authors/cropped text stay gaps; source revisions and human edits survive restart |
 | `paos_mail.py`, `paos_notice.py` | Immutable Mail and durable Notice | Input handled != task finished |

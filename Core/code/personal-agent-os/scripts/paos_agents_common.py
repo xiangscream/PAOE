@@ -18,7 +18,7 @@ import tempfile
 from dataclasses import dataclass
 
 from paos_installation import effective_data_root, load_installation_descriptor
-from paos_registry import ProjectRegistry
+from paos_registry import ProjectRegistry, RegistryProblem
 from paos_workstation import posix_windows_drive_locator
 
 START = "<!-- paoe:common:start -->"
@@ -101,6 +101,7 @@ class TargetStatus:
     reason: str
     before: bytes | None = None
     after: bytes | None = None
+    retry: bool = False
 
 
 def inspect_target(project_id: str, path: Path, source: CommonBlock) -> TargetStatus:
@@ -110,7 +111,7 @@ def inspect_target(project_id: str, path: Path, source: CommonBlock) -> TargetSt
         raw = path.read_bytes()
         text = raw.decode("utf-8")
     except (OSError, UnicodeError) as exc:
-        return TargetStatus(project_id, path, "unavailable", f"读取失败：{exc}")
+        return TargetStatus(project_id, path, "unavailable", f"读取失败：{exc}", retry=isinstance(exc, OSError))
     unsealed = False
     try:
         block = parse_block(text, require_stamp=True)
@@ -147,28 +148,45 @@ def inspect_target(project_id: str, path: Path, source: CommonBlock) -> TargetSt
     return TargetStatus(project_id, path, "stale", reason, raw, updated.encode("utf-8"))
 
 
-def registered_targets(installation_file: Path, selected: list[str], *, document="AGENTS.md") -> list[tuple[str, Path]]:
-    descriptor = load_installation_descriptor(installation_file)
+def project_roots(installation_file, descriptor, selected=()):
     if not descriptor.get("configured"):
         raise CommonError(f"安装描述未配置：{installation_file}")
     directory = effective_data_root(descriptor) / "project-registry" / "projects"
     registry = ProjectRegistry(installation_file)
-    records = sorted(directory.glob("*.json"))
+    try:
+        records = sorted(directory.glob("*.json"))
+    except OSError as exc:
+        return {}, [TargetStatus("registry", directory, "unavailable", str(exc), retry=True)]
     ids = {path.stem for path in records}
     if selected and not set(selected).issubset(ids):
         raise CommonError(f"请求的 Project 不在 Registry 中：{sorted(set(selected) - ids)}")
-    result = []
+    roots, errors = {}, []
     for path in records:
         if selected and path.stem not in selected:
             continue
-        record = registry.read_record(path.stem)
-        project_root = str(record.get("root_path") or "").strip()
-        if not project_root:
-            raise CommonError(f"Registry 未提供 Project 根：{path.stem}")
-        root = Path(posix_windows_drive_locator(project_root)).expanduser()
-        # The registered root, not a scan or candidate file, is authoritative.
-        result.append((path.stem, root / document))
-    return result
+        try:
+            record = registry.read_record(path.stem)
+            roots[path.stem] = Path(posix_windows_drive_locator(record["root_path"])).expanduser().resolve()
+        except (RegistryProblem, OSError, RuntimeError) as exc:
+            errors.append(TargetStatus(path.stem, path, "unavailable", str(exc)))
+    return roots, errors
+
+
+def registered_targets(installation_file: Path, selected: list[str], *, document="AGENTS.md") -> list[tuple[str, Path]]:
+    descriptor = load_installation_descriptor(installation_file)
+    roots, errors = project_roots(installation_file, descriptor, selected)
+    if errors:
+        raise CommonError(f"{errors[0].path}：{errors[0].reason}")
+    return [(project, root / document) for project, root in roots.items()]
+
+
+def inspect_document(project, path, source):
+    if (path.name == "WORK-LEAD.md" and path.parent.is_dir()
+            and not path.exists() and not path.is_symlink()):
+        body = (source.before.replace("<project-id>", project) + managed_section(source)
+                + source.after.replace("<project-id>", project))
+        return TargetStatus(project, path, "stale", "负责人指南尚未创建", None, body.encode("utf-8"))
+    return inspect_target(project, path, source)
 
 
 def _atomic_update(status: TargetStatus) -> None:
@@ -197,6 +215,13 @@ def _atomic_update(status: TargetStatus) -> None:
     finally:
         if staged is not None:
             staged.unlink(missing_ok=True)
+
+
+def update_target(status, source):
+    _atomic_update(status)
+    checked = inspect_target(status.project_id, status.path, source)
+    if checked.status != "in-sync":
+        raise CommonError(f"写入后未读到一致的公共区：{checked.reason}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -235,14 +260,7 @@ def main(argv: list[str] | None = None) -> int:
             if not root:
                 raise CommonError("当前安装没有登记 rooter_home")
             targets.append(("rooter", Path(posix_windows_drive_locator(root)).expanduser() / args.document))
-        statuses = []
-        for pid, path in targets:
-            if args.document == "WORK-LEAD.md" and not path.exists() and not path.is_symlink():
-                block = parse_block(args.template.read_text(encoding="utf-8").replace("<project-id>", pid), require_stamp=False)
-                body = block.before + managed_section(block) + block.after
-                statuses.append(TargetStatus(pid, path, "stale", "负责人指南尚未创建", None, body.encode("utf-8")))
-            else:
-                statuses.append(inspect_target(pid, path, source))
+        statuses = [inspect_document(pid, path, source) for pid, path in targets]
         for item in statuses:
             print(f"{item.project_id}: {item.status} — {item.reason} ({item.path})")
             if args.diff and item.status == "stale":
@@ -258,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.apply:
             for item in statuses:
                 if item.status == "stale":
-                    _atomic_update(item)
+                    update_target(item, source)
                     print(f"updated: {item.project_id} ({item.path})")
             return 0
         return 1 if any(item.status == "stale" for item in statuses) else 0

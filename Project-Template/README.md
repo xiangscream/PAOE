@@ -46,7 +46,7 @@
 
 ## 2. 规则维护与公共区分发
 
-1. **公共运行区**：只编辑 `System/Project-Template/AGENTS.md` 中的公共区。各项目副本承载派生区，项目独立约定保留在标记之外。具体分发操作见 [公共区统一分发](../Guide/guide-upgrade-adoption.md#公共区统一分发system-agents)。
+1. **公共运行区**：编辑 `System/Project-Template/AGENTS.md` 或 `WORK-LEAD.md` 的公共区。现有 Windows 内容监听在保存或启动时将公共区同步到登记项目和 Rooter。项目独立约定留在标记之外。查看实际对齐和处理异常见 [公共区统一分发](../Guide/guide-upgrade-adoption.md#公共区统一分发system-agents)。
 2. **ENTRY 模板展开**：ENTRY 母本中的 `{{字段名}}` 由初始化工具替换身份与路径；不执行复杂表达式。Core 不另存文案。
 3. **保护人工基线**：Human 已编辑或确认的正文为后续修改基线。更新只改当前任务涉及段落，不擅自重写整份文件。
 

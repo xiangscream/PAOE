@@ -36,8 +36,9 @@ def api():
 
 
 class DirectorySubscription:
-    def __init__(self, root, *, buffer_size=64 * 1024):
+    def __init__(self, root, *, buffer_size=64 * 1024, recursive=True):
         self.root = root
+        self.recursive = recursive
         self.dll = api()
         self.handle = self.dll.CreateFileW(str(root), 1, 7, None, 3, 0x42000000, None)
         if self.handle == c.c_void_p(-1).value:
@@ -59,7 +60,7 @@ class DirectorySubscription:
         self.dll.ResetEvent(self.event)
         self.overlapped = OVERLAPPED(hEvent=self.event)
         if not self.dll.ReadDirectoryChangesW(self.handle, self.buffer, len(self.buffer),
-                                             True, 0x1B, None, c.byref(self.overlapped), None):
+                                             self.recursive, 0x1B, None, c.byref(self.overlapped), None):
             error = c.get_last_error()
             if error != 997:  # ERROR_IO_PENDING
                 raise c.WinError(error)

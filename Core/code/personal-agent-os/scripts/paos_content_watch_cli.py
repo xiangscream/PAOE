@@ -12,16 +12,23 @@ from paos_registry import RegistryProblem
 
 
 def add_watch_parser(content_subparsers):
-    return content_subparsers.add_parser("watch", help="Observe registered local originals on Windows")
+    parser = content_subparsers.add_parser("watch", help="Observe local originals and sync System public rules")
+    parser.add_argument("--rules-status", action="store_true", help="Check current rules alignment without writing or starting the observer")
+    return parser
 
 
 def execute_watch(args, installation, *, stop=None, emit=None):
     from paos_content_watch import ContentScope, ContentWatcher, WatcherAlreadyRunning
+    from paos_rules_sync import RulesSync
 
     if emit is None:
         emit = lambda event: print(json.dumps(event, ensure_ascii=False), file=sys.stderr, flush=True)
     previous = {}
     try:
+        rules = RulesSync(installation)
+        if args.rules_status:
+            rules.refresh()
+            return rules.reconcile()[0]
         if stop is None:
             stop = Event()
             signals = [signal.SIGINT, signal.SIGTERM]
@@ -29,7 +36,7 @@ def execute_watch(args, installation, *, stop=None, emit=None):
                 signals.append(signal.SIGBREAK)
             for sig in signals:
                 previous[sig] = signal.signal(sig, lambda *_: stop.set())
-        return ContentWatcher(ContentScope(installation), emit=emit).run(stop)
+        return ContentWatcher(ContentScope(installation), emit=emit, rules=rules).run(stop)
     except WatcherAlreadyRunning as error:
         return {"ok": False, "error_code": "content_watch_already_running", "error": str(error)}
     finally:
