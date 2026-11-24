@@ -1,7 +1,8 @@
 // PAOE 0.1 任务房前端共用纯逻辑：团队计划卡、角色卡、两次放行状态与 Human 操作入口。
 // 合同来源：msg-s010-s040-paoe01-team-ui-20261123 ①②③、team-names、team-approval-labels、
 // team-bridge-actions-real-entry-20261124 与 paired-smoke.py 实际 API 形状。
-// 前端只展示与提交（POST /api/team/confirm {action, receipt_id, input}）；
+// 前端只展示与提交：先 POST /api/team/review 读准确 subject，再一次业务按钮
+// POST /api/team/confirm {action, receipt_id, input, decision}；不打开第二个确认窗。
 // 批准/放行/验收的状态判定全在后台（GET /api/rooms/R/team），本模块不做第二套推断。
 // 四步：open-plan 通过计划并建房（第一次放行）→ approve-roles 放行角色（第二次放行）
 // → save-role 调整角色 → accept-goal 为 Human 保留的最终验收。
@@ -106,19 +107,71 @@ export function confirmInput(action, context) {
   }
 }
 
-// Human 操作结果的三种可见状态：applied / cancelled / failed
+// F87：一次业务按钮即决定，不再打开第二个确认窗。
+// decision 的 subject 必须来自同一 input 的 review；四类 choice 都按明确选择处理。
+export const DECISION_LABELS = { approve: '通过', reject: '拒绝', revise: '要求修改', defer: '稍后决定' };
+
+// 编号绑定 action + 已展示输入 + choice；unknown 重入同一主体复用，改内容换新。
+export function receiptKey(action, input, choice = 'approve') {
+  return action + ':' + JSON.stringify(input) + ':' + choice;
+}
+
+// 审阅快照按 action+input 绑定；按钮只提交与已展示快照相同的 subject。
+export function reviewKey(action, input) {
+  return action + ':' + JSON.stringify(input);
+}
+
+export function reviewMatches(review, action, input) {
+  return !!review && review.status === 'ready' && review.key === reviewKey(action, input) &&
+    !!review.subject && typeof review.subject === 'object' && !Array.isArray(review.subject) &&
+    Object.keys(review.subject).length > 0;
+}
+
+// 计划列表与 pending plan 用同一 open-plan 输入。
+export function planInput(plan) {
+  return { owner: plan?.owner || '', task: plan?.task || '', version: plan?.version || 1 };
+}
+
+export function decisionPayload(action, input, choice, subject, recordedBy = 'human') {
+  const room = input?.room;
+  const task = input?.task;
+  const source = room
+    ? 'paoe://ui/room/' + room + '/' + action
+    : 'paoe://ui/team-plan/' + (task || '') + '/' + action;
+  return {
+    choice,
+    channel: 'ui',
+    recorded_by: recordedBy,
+    source_ref: source,
+    quote: DECISION_LABELS[choice] || String(choice),
+    subject,
+  };
+}
+
+// Human 操作结果的可见状态：applied / recorded / cancelled / conflict / failed。
 // applied 是对象（含 room_id 等），不只是 boolean——对齐 Core 正式结构。
+// 非通过决定返回 state=rejected/changes_requested/deferred 且 applied=null，必须显示为已记录。
+const RECORDED_STATES = {
+  rejected: '已记录：拒绝',
+  changes_requested: '已记录：要求修改',
+  deferred: '已记录：稍后决定',
+};
+
 export function actionOutcome(value) {
   if (!value) return { kind: 'failed', text: '请求未完成' };
   if (value.ok === true && value.applied)
     return { kind: 'applied', text: '已生效' };
+  if (value.ok === true && RECORDED_STATES[value.state])
+    return { kind: 'recorded', text: RECORDED_STATES[value.state] };
   if (value.cancelled === true || value.state === 'cancelled' || value.result === 'cancelled')
     return { kind: 'cancelled', text: 'Human 取消了操作' };
   if (value.ok === false) {
     const code = value.error_code || '';
-    if (code.includes('revision') || code.includes('conflict') || code.includes('stale'))
-      return { kind: 'conflict', text: '版本冲突：' + (value.error || '请刷新后重试') };
-    return { kind: 'failed', text: value.error || '操作失败' };
+    const text = value.error || '';
+    if (code.includes('revision') || code.includes('conflict') || code.includes('stale') ||
+        /内容已变化|版本|冲突|revise|conflict|stale/i.test(text))
+      return { kind: 'conflict', text: '版本冲突：' + (text || '请刷新后重试') };
+    return { kind: 'failed', text: text || '操作失败' };
   }
   return { kind: 'failed', text: '结果未确认' };
 }
@@ -135,4 +188,16 @@ export function cardTaskLine(card) {
   if (t.artifact_ref) parts.push(t.artifact_ref);
   if (t.title) parts.push(t.title);
   return parts.join(' · ');
+}
+
+// F88：角色卡直接映射后端 todo.groups 的同名组（只读）。
+// group.tasks 为原 Task 投影；前端不建第二份 TODO、批准状态或分组规则。
+export function cardGroup(card) {
+  const group = card?.group;
+  if (!group || typeof group !== 'object' || Array.isArray(group)) return null;
+  return {
+    name: typeof group.name === 'string' && group.name ? group.name : null,
+    rooms: Array.isArray(group.rooms) ? group.rooms : [],
+    tasks: Array.isArray(group.tasks) ? group.tasks : [],
+  };
 }

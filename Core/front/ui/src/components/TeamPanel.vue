@@ -3,19 +3,22 @@
 // 数据来源 GET /api/rooms/{room}/team → {team, cards}；
 // Human 操作 POST /api/team/confirm {action, receipt_id, input}，由 Core 受信确认流一次生效。
 // 本组件不做第二次确认弹窗；错误/冲突/取消分别可见。
-import { roleCardState, teamStage, planSummary, planMembers, roleLine, confirmInput, actionOutcome, cardTaskLine, allSeatRoles, canShowAcceptGoal } from '../../../team-select.mjs';
+import { roleCardState, teamStage, planSummary, planMembers, roleLine, actionOutcome, cardTaskLine, cardGroup, allSeatRoles, canShowAcceptGoal, reviewKey, reviewMatches } from '../../../team-select.mjs';
 
 export default {
   name: 'TeamPanel',
   props: {
     team: { type: Object, default: null },
-    cards: { type: Object, default: null },       // {HOME: {home, role, task:{state,artifact_ref,title,...}}}
+    cards: { type: Object, default: null },       // {HOME: {role, task, current, group?}}
     people: { type: Array, default: () => [] },
+    room: { type: String, default: '' },          // 当前任务房；由页面显式传入
+    readTo: { type: Number, default: 0 },         // 当前已读游标
+    reviews: { type: Object, default: () => ({}) }, // 已展示的 review 快照，按 action+input 绑定
     open: { type: Boolean, default: true },
     actionBusy: { type: String, default: '' },     // 当前在途的 action 名（'approve-roles' 等）
     actionOutcome: { type: Object, default: null }, // {kind, text} 最近一次操作结果
   },
-  emits: ['toggle', 'confirm'],
+  emits: ['toggle', 'confirm', 'review'],
   computed: {
     stage() { return teamStage(this.team); },
     summary() { return planSummary(this.team?.plan); },
@@ -26,6 +29,7 @@ export default {
         memberName: this.nameOf(entry.home),
         line: roleLine(entry?.role),
         taskLine: cardTaskLine(this.cards?.[entry.home]),
+        group: cardGroup(this.cards?.[entry.home]),
       }));
     },
     canApproveRoles() {
@@ -39,40 +43,83 @@ export default {
       return false; // 网页是 Human 身份，owner 角色由 close_policy 联动判定
     },
     editingHome() { return this.editHome || ''; },
+    approveInput() {
+      return { room: this.room, expected_revision: this.team?.revision || 0 };
+    },
+    approveReview() { return this.reviews[reviewKey('approve-roles', this.approveInput)]; },
+    approveReady() { return reviewMatches(this.approveReview, 'approve-roles', this.approveInput); },
+    saveInput() {
+      if (!this.editHome) return null;
+      const entry = this.team?.roles?.[this.editHome];
+      return {
+        room: this.room,
+        home: this.editHome,
+        expected_revision: entry?.revision || 0,
+        role: {
+          duty: this.editDuty.trim(),
+          arrangement: this.editArrangement.trim(),
+          deliverables: this.editDeliverables.trim(),
+        },
+      };
+    },
+    saveReview() { return this.saveInput ? this.reviews[reviewKey('save-role', this.saveInput)] : null; },
+    saveReady() { return !!this.saveInput && reviewMatches(this.saveReview, 'save-role', this.saveInput); },
+    acceptInput() {
+      if (!this.acceptArtifact?.trim() || !this.acceptBasis?.trim()) return null;
+      return {
+        room: this.room,
+        task: this.team?.plan?.task || '',
+        artifact: this.acceptArtifact.trim(),
+        basis: this.acceptBasis.trim(),
+        remaining: this.acceptRemaining?.trim() || 'none',
+        read_to: this.readTo,
+      };
+    },
+    acceptReview() { return this.acceptInput ? this.reviews[reviewKey('accept-goal', this.acceptInput)] : null; },
+    acceptReady() { return !!this.acceptInput && reviewMatches(this.acceptReview, 'accept-goal', this.acceptInput); },
+  },
+  watch: {
+    team: {
+      handler() { if (this.canApproveRoles) this.queueReview('approve-roles', this.approveInput); },
+      deep: true, immediate: true,
+    },
+    acceptInput: {
+      handler(input) { if (input) this.queueReview('accept-goal', input, 250); },
+      deep: true,
+    },
+    saveInput: {
+      handler(input) { if (input) this.queueReview('save-role', input, 250); },
+      deep: true,
+    },
   },
   data() {
     return {
       editHome: '',
       editDuty: '', editArrangement: '', editDeliverables: '',
       acceptArtifact: '', acceptBasis: '', acceptRemaining: '',
+      reviewTimer: 0,
     };
   },
+  beforeUnmount() { clearTimeout(this.reviewTimer); },
   methods: {
     nameOf(id) {
       const person = this.people.find(p => p.staff_number === id || p.home_id === id || p.number === id);
       return person?.name || id;
     },
-    emitConfirm(action, context) {
-      const input = confirmInput(action, context);
-      if (input) this.$emit('confirm', { action, input });
+    taskLine(task) { return cardTaskLine({ task }); },
+    queueReview(action, input, delay = 0) {
+      if (!input) return;
+      clearTimeout(this.reviewTimer);
+      if (!delay) { this.$emit('review', { action, input }); return; }
+      this.reviewTimer = setTimeout(() => this.$emit('review', { action, input }), delay);
     },
     approveRoles() {
-      this.emitConfirm('approve-roles', {
-        room: this.team?.plan?.task ? this.$parent?.state?.id || '' : '',
-        expected_revision: this.team?.revision || 0,
-      });
+      if (!this.approveReady) return;
+      this.$emit('confirm', { action: 'approve-roles', input: this.approveInput, choice: 'approve' });
     },
     acceptGoal() {
-      const state = this.$parent?.state;
-      if (!this.acceptArtifact?.trim() || !this.acceptBasis?.trim()) return;
-      this.emitConfirm('accept-goal', {
-        room: state?.id || '',
-        task: this.team?.plan?.task || '',
-        artifact: this.acceptArtifact.trim(),
-        basis: this.acceptBasis.trim(),
-        remaining: this.acceptRemaining?.trim() || 'none',
-        read_to: state?.cursor || 0,
-      });
+      if (!this.acceptReady) return;
+      this.$emit('confirm', { action: 'accept-goal', input: this.acceptInput, choice: 'approve' });
     },
     startEdit(home) {
       const entry = this.team?.roles?.[home];
@@ -83,14 +130,8 @@ export default {
     },
     cancelEdit() { this.editHome = ''; },
     saveRole() {
-      if (!this.editHome) return;
-      const entry = this.team?.roles?.[this.editHome];
-      this.emitConfirm('save-role', {
-        room: this.$parent?.state?.id || '',
-        home: this.editHome,
-        expected_revision: entry?.revision || 0,
-        role: { duty: this.editDuty.trim(), arrangement: this.editArrangement.trim(), deliverables: this.editDeliverables.trim() },
-      });
+      if (!this.saveReady) return;
+      this.$emit('confirm', { action: 'save-role', input: this.saveInput, choice: 'approve' });
       this.editHome = '';
     },
   },
@@ -116,15 +157,38 @@ export default {
         {{actionOutcome.text}}
       </div>
       <div class="action-bar">
-        <button v-if="canApproveRoles" class="primary-button small" :disabled="!!actionBusy" data-testid="btn-approve-roles"
-                @click="approveRoles">{{actionBusy==='approve-roles'?'处理中…':'放行角色卡（第二次放行）'}}</button>
+        <template v-if="canApproveRoles">
+          <div class="review-box" data-testid="review-approve-roles">
+            <small v-if="approveReview?.status==='loading'">正在读取本次审阅内容…</small>
+            <small v-else-if="approveReview?.status==='error'" class="review-error">审阅失败：{{approveReview.error}}
+              <button class="text-button" @click="$emit('review',{action:'approve-roles',input:approveInput})">重试</button></small>
+            <template v-else-if="approveReady">
+              <small>本次审阅版本 r{{team.revision}}</small>
+              <pre v-if="approveReview.explanation">{{approveReview.explanation}}</pre>
+            </template>
+            <small v-else>审阅内容未就绪</small>
+          </div>
+          <button class="primary-button small" :disabled="!!actionBusy || !approveReady" data-testid="btn-approve-roles"
+                  @click="approveRoles">{{actionBusy==='approve-roles'?'处理中…':'放行角色卡（第二次放行）'}}</button>
+        </template>
       </div>
       <div v-if="canAcceptGoal" class="accept-goal-form" data-testid="accept-goal-form">
         <label>成果原件<input v-model="acceptArtifact" type="text" placeholder="如 result.md（必填）"/></label>
         <label>验收依据<input v-model="acceptBasis" type="text" placeholder="如 basis.md（必填）"/></label>
         <label>剩余事项<input v-model="acceptRemaining" type="text" placeholder="无则留空"/></label>
-        <button class="primary-button small" :disabled="!!actionBusy || !acceptArtifact.trim() || !acceptBasis.trim()" data-testid="btn-accept-goal"
-                @click="acceptGoal">{{actionBusy==='accept-goal'?'等待确认…':'验收目标'}}</button>
+        <div class="review-box" data-testid="review-accept-goal">
+          <small v-if="!acceptInput">填写成果原件与验收依据后读取本次审阅内容。</small>
+          <small v-else-if="acceptReview?.status==='loading'">正在读取本次审阅内容…</small>
+          <small v-else-if="acceptReview?.status==='error'" class="review-error">审阅失败：{{acceptReview.error}}
+            <button class="text-button" @click="$emit('review',{action:'accept-goal',input:acceptInput})">重试</button></small>
+          <template v-else-if="acceptReady">
+            <small>本次审阅版本</small>
+            <pre v-if="acceptReview.explanation">{{acceptReview.explanation}}</pre>
+          </template>
+          <small v-else>审阅内容未就绪</small>
+        </div>
+        <button class="primary-button small" :disabled="!!actionBusy || !acceptReady" data-testid="btn-accept-goal"
+                @click="acceptGoal">{{actionBusy==='accept-goal'?'提交中…':'验收目标'}}</button>
       </div>
 
       <div v-if="roleEntries.length" class="role-grid" role="list">
@@ -140,9 +204,19 @@ export default {
             <label>职责<input v-model="editDuty" type="text" placeholder="做什么"/></label>
             <label>安排<input v-model="editArrangement" type="text" placeholder="怎么做"/></label>
             <label>交付物<input v-model="editDeliverables" type="text" placeholder="交什么"/></label>
+            <div class="review-box" data-testid="review-save-role">
+              <small v-if="saveReview?.status==='loading'">正在读取本次审阅内容…</small>
+              <small v-else-if="saveReview?.status==='error'" class="review-error">审阅失败：{{saveReview.error}}
+                <button class="text-button" @click="$emit('review',{action:'save-role',input:saveInput})">重试</button></small>
+              <template v-else-if="saveReady">
+                <small>本次审阅版本 r{{saveInput.expected_revision}}</small>
+                <pre v-if="saveReview.explanation">{{saveReview.explanation}}</pre>
+              </template>
+              <small v-else>审阅内容未就绪</small>
+            </div>
             <div class="edit-actions">
               <button class="secondary-button small" @click="cancelEdit">取消</button>
-              <button class="primary-button small" :disabled="!!actionBusy" @click="saveRole">{{actionBusy==='save-role'?'保存中…':'保存'}}</button>
+              <button class="primary-button small" :disabled="!!actionBusy || !saveReady" @click="saveRole">{{actionBusy==='save-role'?'保存中…':'保存'}}</button>
             </div>
           </div>
 
@@ -154,7 +228,15 @@ export default {
               <div v-if="entry.role.deliverables"><dt>交付物</dt><dd>{{entry.role.deliverables}}</dd></div>
             </dl>
             <p v-else class="role-empty">{{entry.state.hint}}</p>
-            <p v-if="entry.taskLine" class="task-line" data-testid="task-line">{{entry.taskLine}}</p>
+            <!-- F88：直接映射后端 todo.groups 的同名组；不在前端另存 TODO。 -->
+            <div v-if="entry.group" class="work-group" data-testid="work-group">
+              <small class="group-name">工作：{{entry.group.name || '零散事项'}}</small>
+              <ul v-if="entry.group.tasks.length" class="group-tasks">
+                <li v-for="task in entry.group.tasks" :key="task.id || task.title">{{taskLine(task)}}</li>
+              </ul>
+              <small v-if="entry.group.rooms.length" class="group-rooms">CAT {{entry.group.rooms.join(' · ')}}</small>
+            </div>
+            <p v-else-if="entry.taskLine" class="task-line" data-testid="task-line">{{entry.taskLine}}</p>
             <button v-if="team.accepted!==true" class="text-button edit-role" :data-home="entry.home" @click="startEdit(entry.home)">调整角色</button>
           </template>
         </article>
@@ -185,7 +267,13 @@ button{cursor:pointer}
 .team-body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:10px}
 .plan-title{font-size:14.5px;font-weight:600;line-height:1.5}
 .stage-description{margin:0;font-size:11.5px;opacity:.66;line-height:1.6}
-.action-bar{display:flex;gap:8px;flex-wrap:wrap}
+.action-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start}
+.action-bar .review-box{flex:1 1 100%}
+.review-box{display:grid;gap:4px;min-width:0;padding:7px 9px;border:1px solid var(--line-soft);border-radius:8px;background:var(--surface)}
+.review-box small{font-size:10.5px;opacity:.62}
+.review-box pre{margin:0;max-height:140px;overflow:auto;padding:6px 8px;border-radius:7px;background:#fff;font:inherit;font-size:10.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.review-box .review-error{color:#c62828;opacity:1}
+.review-box .text-button{margin-left:6px;font-size:10.5px}
 .accept-goal-form{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--line-soft);border-radius:10px;background:#fff}
 .accept-goal-form label{display:grid;gap:3px;font-size:11px;font-weight:600;opacity:.7}
 .accept-goal-form input{border:1px solid var(--line-soft);border-radius:6px;padding:5px 8px;font-size:12px;background:#fff;color:inherit}
@@ -199,6 +287,7 @@ button{cursor:pointer}
 .text-button:hover{text-decoration:underline}
 .action-outcome{padding:8px 12px;border-radius:8px;font-size:12px;line-height:1.5}
 .outcome-applied{background:#e8f5e9;color:#1b7a3d}
+.outcome-recorded{background:#fff8e1;color:#8d6e00}
 .outcome-cancelled{background:#fff3e0;color:#b47923}
 .outcome-conflict{background:#fce4ec;color:#c62828}
 .outcome-failed{background:#ffebee;color:#c62828}
@@ -217,6 +306,10 @@ button{cursor:pointer}
 .role-card dd{margin:0;min-width:0;word-break:break-word}
 .role-empty{margin:0;font-size:11px;opacity:.55;line-height:1.5}
 .task-line{margin:0;font-size:10.5px;opacity:.6;line-height:1.5}
+.work-group{display:grid;gap:4px;padding:7px 9px;border-radius:8px;background:var(--surface)}
+.group-name{font-size:10.5px;font-weight:600;opacity:.7}
+.group-tasks{margin:0;padding-left:15px;font-size:10.5px;opacity:.65;line-height:1.55}
+.group-rooms{font-size:10px;opacity:.5}
 .edit-role{align-self:flex-start}
 .role-edit{display:flex;flex-direction:column;gap:8px}
 .role-edit label{display:grid;gap:4px;font-size:11px;font-weight:600;opacity:.7}
