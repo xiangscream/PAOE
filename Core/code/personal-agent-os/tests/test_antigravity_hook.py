@@ -1,5 +1,6 @@
 """Antigravity adapter dispatches only for the registered conversation."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -10,6 +11,9 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from paos_antigravity_hook import run_hook
+from paos_contact import save_native_targets
+from paos_installation import write_installation_descriptor
+from paos_registry import ProjectRegistry
 
 
 class AntigravityHookTests(unittest.TestCase):
@@ -20,19 +24,18 @@ class AntigravityHookTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.installation = self.root / "installation.json"
-        self.project = {
-            "id": "3999",
-            "root_path": str(self.root),
-            "sessions": [{"id": "S034"}],
-        }
+        write_installation_descriptor(
+            self.installation, source_root=str(Path(__file__).resolve().parents[1]),
+            data_root=str(self.root / "Data"),
+            library_roots_config=str(self.root / "libraries.json"),
+        )
+        ProjectRegistry(self.installation).register(
+            "3999", root_path=str(self.root), homes=["S034"], coordinator_home_id="S034",
+        )
         (self.root / "Workstations" / "S034").mkdir(parents=True)
-        targets = self.root / "private-data" / "contact" / "native-targets.json"
-        targets.parent.mkdir(parents=True)
-        targets.write_text(json.dumps({
+        save_native_targets(self.root, {
             "S034": {"runtime": "antigravity", "session_id": self.session_id},
-        }), encoding="utf-8")
-        self.registry = self.enterContext(patch("paos_antigravity_hook.ProjectRegistry"))
-        self.registry.return_value.read.return_value = self.project
+        }, installation_path=self.installation)
         self.reader = self.enterContext(patch("paos_antigravity_hook.subprocess.run"))
 
     def invoke(self, event="PreInvocation", session_id=None, cat_url=None, **extra):
@@ -76,6 +79,31 @@ class AntigravityHookTests(unittest.TestCase):
     def test_unrelated_conversation_never_runs_reader_or_receives_context(self):
         self.assertEqual(self.invoke(session_id="other-conversation"), {})
         self.reader.assert_not_called()
+
+    def test_contact_uses_the_same_installation_as_the_context_reader(self):
+        other = self.root / "other-installation.json"
+        write_installation_descriptor(
+            other, source_root=str(Path(__file__).resolve().parents[1]),
+            data_root=str(self.root / "OtherData"),
+            library_roots_config=str(self.root / "libraries.json"),
+        )
+        save_native_targets(self.root, {
+            "S034": {"runtime": "antigravity", "session_id": "00000000-0000-0000-0000-000000000002"},
+        }, installation_path=other)
+        self.receipt()
+        with patch.dict(os.environ, {"PAOS_INSTALLATION_FILE": str(other)}):
+            got = self.invoke()
+        self.assertIn("完整原文", got["injectSteps"][0]["ephemeralMessage"])
+        self.assertEqual(self.reader.call_args.args[0][2:4], ["--installation-file", str(self.installation)])
+
+    def test_registered_role_reader_uses_the_configured_cat_endpoint(self):
+        endpoint = "http://127.0.0.1:12345"
+        self.receipt(documents=[{"kind": "active_role", "path": "cat-role:room-fixture", "body": "当前有效角色原文"}])
+        got = self.invoke(cat_url=endpoint)
+        self.assertIn("当前有效角色原文", got["injectSteps"][0]["ephemeralMessage"])
+        self.assertEqual(self.reader.call_args.args[0][5:], [
+            "context", "read", "S034", "--reason", "request", "--cat-url", endpoint,
+        ])
 
     def test_missing_required_input_returns_explicit_termination_without_partial_documents(self):
         self.receipt(ok=False, missing=[{"kind": "input", "path": "INPUT.md", "reason": "missing"}])

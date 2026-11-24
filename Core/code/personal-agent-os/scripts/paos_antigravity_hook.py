@@ -87,15 +87,18 @@ def run_hook(event, request, project_id, agent_id, installation_path, cat_url=No
     session_id = request["conversationId"]
     project = ProjectRegistry(installation_path).read(project_id)
     home = project_agent_home(project=project, agent_id=agent_id)
-    contact = runtime_contact(Path(home["project_root"]), agent_id)
+    contact = runtime_contact(Path(home["project_root"]), agent_id,
+                              installation_path=installation_path)
     if contact["runtime"] != "antigravity" or contact["native_session_id"] != session_id:
         return {}
     if event == "Stop":
         return observe_stop(request, installation_path, agent_id, cat_url)
 
+    args = ["read", agent_id, "--reason", "request"]
+    if cat_url:
+        args.extend(["--cat-url", cat_url])
     try:
-        result = call_context(installation_path, ["read", agent_id, "--reason", "request"],
-                              timeout=READ_TIMEOUT_SECONDS)
+        result = call_context(installation_path, args, timeout=READ_TIMEOUT_SECONDS)
         text = context_text(result, agent_id)
     except subprocess.TimeoutExpired:
         message = "读取 PAOE 必读原件超时。"

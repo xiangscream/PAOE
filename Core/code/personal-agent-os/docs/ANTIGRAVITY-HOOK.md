@@ -12,7 +12,7 @@
     "PreInvocation": [
       {
         "type": "command",
-        "command": "\"<Python 可执行文件>\" \"<当前 Core scripts/paos_antigravity_hook.py>\" --installation-file \"<installation.json>\" --project <项目号> --agent <S号> --event PreInvocation",
+        "command": "\"<Python 可执行文件>\" \"<当前 Core scripts/paos_antigravity_hook.py>\" --installation-file \"<installation.json>\" --project <项目号> --agent <S号> --event PreInvocation --cat-url \"<已登记的 CAT 地址>\"",
         "timeout": 15
       }
     ],
@@ -27,9 +27,9 @@
 }
 ```
 
-Hook 用 Contact 的会话 ID 匹配宿主提供的 `conversationId`。正常输出是包含完整正文的 `ephemeralMessage`。共用读取失败、缺必读原件或内部读取超时会返回原生 `terminationBehavior=terminate` 和界面错误提示。共用读取的 8 秒时限留出宿主回传时间。
+Hook 从同一安装描述取得 Contact 和工位原件，用 Contact 的会话 ID 匹配宿主提供的 `conversationId`，不借用全局默认安装。正常输出是包含完整正文的 `ephemeralMessage`。共用读取失败、缺必读原件或内部读取超时会返回原生 `terminationBehavior=terminate` 和界面错误提示。共用读取的 8 秒时限留出宿主回传时间。
 
-Stop 沿 `context stop` 更新本人 CAT 状态，宿主的后台活动仍由宿主报告。未使用 CAT 的工位可省略 `--cat-url`。CLI 实测同一回合由 Stop 请求重入时 `executionNum` 也递增，当前采用共用动作的 `--reentry` 禁续跑分支，等待可辨认同一回合的宿主标识。阶段交付仍走显式动作，原提醒继续由已登记 Sidecar 单次提交。
+Stop 沿 `context stop` 更新本人 CAT 状态，宿主的后台活动仍由宿主报告。已登记团队角色的工位，读取与停止都使用同一 `--cat-url`；未使用 CAT 的工位可在两处省略该参数。CLI 实测同一回合由 Stop 请求重入时 `executionNum` 也递增，当前采用共用动作的 `--reentry` 禁续跑分支，等待可辨认同一回合的宿主标识。阶段交付仍走显式动作，原提醒继续由已登记 Sidecar 单次提交。
 
 ## 验收
 
