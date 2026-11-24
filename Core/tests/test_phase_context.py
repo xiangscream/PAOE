@@ -73,6 +73,28 @@ class ContextReadTests(unittest.TestCase):
         )
         self.assertTrue(any(d["kind"] == "background" for d in got["documents"]))
 
+    def test_only_the_planning_owner_loads_the_full_work_lead_guide(self):
+        from paos_todo import parse_todo
+        guide = self.root / "WORK-LEAD.md"
+        guide.write_text("# Work lead\nSpecific alignment and closeout rules", encoding="utf8")
+        path = self.home / "TODO.md"
+        todo = parse_todo(path.read_text(encoding="utf8"))
+        todo["tasks"][0]["source_refs"] += ["team-plan:plan.md#Scope", "work-group:Guide", "cat-room:room-one"]
+        path.write_text(render_todo(home_kind=todo["home_kind"], home_id=todo["home_id"],
+            project_id=todo["project_id"], tasks=todo["tasks"], **todo["current"]), encoding="utf8")
+        before = {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
+        got = read_context(self.ref, staff_number="S001", task_id="T1")
+        self.assertTrue(got["ok"], got["missing"])
+        self.assertEqual([d["body"] for d in got["documents"] if d["kind"] == "work_lead"],
+                         [guide.read_text(encoding="utf8")])
+        ordinary = read_context(self.ref, staff_number="S001", task_id="T2")
+        self.assertFalse(any(d["kind"] == "work_lead" for d in ordinary["documents"]))
+        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
+        guide.unlink()
+        missing = read_context(self.ref, staff_number="S001", task_id="T1")
+        self.assertFalse(missing["ok"])
+        self.assertEqual(missing["missing"][0]["kind"], "work_lead")
+
     def test_installation_home_has_no_project_team_or_index(self):
         rooter = dict(
             home_kind="rooter", home_id="rooter-001", home_path=str(self.home), project_root=""

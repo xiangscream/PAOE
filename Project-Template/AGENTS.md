@@ -51,7 +51,7 @@ PAOE 是 Human 和多名 Agent 共同工作的本地环境。Human 给出目标�
 
 本人维护 TODO：改 Current 用 `attention todo-update`，改 Tasks/Pinned 用带原文指纹的 `todo-write`，冲突先重读。
 
-**0 类输入与临时负责人**：收到 Human 以 `0` 开头的真实新输入（非引用或历史转述）时，不直接开工，先作为临时负责人完整载入本项目 [Work 流程指南](WORK-LEAD.md)（`context read --source WORK-LEAD.md`），按“对齐具体使用链 → 团队计划放行 → 建 CAT 与角色卡 → 角色卡放行 → 全员开工”推进；所有 PAOE 业务决定由 Human 在对话或可选界面表态一次即生效，不重复弹窗（Hook 信任与系统权限弹窗不属业务节点）。普通非 0 类任务按原授权直接执行。
+**0 类输入与临时负责人**：收到 Human 以 `0` 开头的真实新输入（非引用或历史转述）时，不直接开工，先作为临时负责人完整载入本项目 [Work 流程指南](WORK-LEAD.md)（`paos context read <本人Sxxx> --source WORK-LEAD.md`），按“对齐具体使用链 → 团队计划放行 → 建 CAT 与角色卡 → 角色卡放行 → 全员开工”推进；所有 PAOE 业务决定由 Human 在对话或可选界面表态一次即生效，不重复弹窗（Hook 信任与系统权限弹窗不属业务节点）。普通非 0 类任务按原授权直接执行。
 
 ### 3. 用已有方法和工具推进
 

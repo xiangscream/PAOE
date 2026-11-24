@@ -28,8 +28,9 @@ class TemplateSyncTests(unittest.TestCase):
         station = self.mother / 'Workstations/_workstation';station.mkdir(parents=True)
         (self.mother/'README.md').write_text('# Mother\n','utf-8')
         (self.mother/'AGENTS.md').write_text('# Mother\n'+common.START+'\nRule.\n'+common.END+'\n','utf-8')
-        for name in ('INDEX.md','TEAM.md','HISTORY.md'):
+        for name in ('INDEX.md','TEAM.md','HISTORY.md','WORK-LEAD.md'):
             (self.mother/name).write_text('# fixture\n','utf-8')
+        (self.mother/'WORK-LEAD.md').write_text(common.START+'\nLead rules.\n'+common.END+'\n','utf-8')
         self.template = station/'ENTRY.md'
         self.template.write_bytes(self.f.entry_template.read_bytes())
         (station/'TODO.md').write_text(render_todo(home_kind='project_agent',home_id='S099',project_id='3002',objective='fixture',next_action='read'),'utf-8')
@@ -42,8 +43,10 @@ class TemplateSyncTests(unittest.TestCase):
             (self.system/name).write_text('# fixture\n','utf-8')
         source=common.source_block(self.mother/'AGENTS.md')
         (self.f.vault/'AGENTS.md').write_text(common.START+'\n'+common.managed_section(source)+common.END+'\n## Human\nPreserve.\n','utf-8')
-        for name in ('INDEX.md','TEAM.md','HISTORY.md'):
+        for name in ('INDEX.md','TEAM.md','HISTORY.md','WORK-LEAD.md'):
             (self.f.vault/name).write_text('# fixture\n','utf-8')
+        descriptor=json.loads(self.f.install.read_text('utf-8'))
+        (Path(descriptor['rooter_home'])/'WORK-LEAD.md').write_bytes((self.mother/'WORK-LEAD.md').read_bytes())
         overview=self.system/'PROJECTS.md';overview.write_text(render_overview(self.f.install,overview),'utf-8')
 
     def snapshot(self):
@@ -143,6 +146,18 @@ class TemplateSyncTests(unittest.TestCase):
         code,out=self.check('--templates-only')
         self.assertNotEqual(code,0,out)
         self.assertIn('HISTORY.md',out)
+
+    def test_work_lead_mother_and_installed_document_are_checked_read_only(self):
+        guide = self.mother / 'WORK-LEAD.md'
+        guide.unlink()
+        self.assertIn('WORK-LEAD.md', self.check('--templates-only')[1])
+        guide.write_text(common.START+'\nLead rules.\n'+common.END+'\n', encoding='utf8')
+        (self.f.vault / 'WORK-LEAD.md').unlink()
+        before = self.snapshot()
+        code, out = self.check()
+        self.assertEqual(code, 1)
+        self.assertIn('WORK-LEAD.md', out)
+        self.assertEqual(before, self.snapshot())
 
     def test_registered_project_history_is_checked_read_only(self):
         (self.f.vault/'HISTORY.md').unlink()

@@ -147,7 +147,7 @@ def inspect_target(project_id: str, path: Path, source: CommonBlock) -> TargetSt
     return TargetStatus(project_id, path, "stale", reason, raw, updated.encode("utf-8"))
 
 
-def registered_targets(installation_file: Path, selected: list[str]) -> list[tuple[str, Path]]:
+def registered_targets(installation_file: Path, selected: list[str], *, document="AGENTS.md") -> list[tuple[str, Path]]:
     descriptor = load_installation_descriptor(installation_file)
     if not descriptor.get("configured"):
         raise CommonError(f"安装描述未配置：{installation_file}")
@@ -167,29 +167,33 @@ def registered_targets(installation_file: Path, selected: list[str]) -> list[tup
             raise CommonError(f"Registry 未提供 Project 根：{path.stem}")
         root = Path(posix_windows_drive_locator(project_root)).expanduser()
         # The registered root, not a scan or candidate file, is authoritative.
-        result.append((path.stem, root / "AGENTS.md"))
+        result.append((path.stem, root / document))
     return result
 
 
 def _atomic_update(status: TargetStatus) -> None:
-    if status.status != "stale" or status.before is None or status.after is None:
+    if status.status != "stale" or status.after is None:
         raise CommonError(f"只允许写入 stale 项：{status.path}")
     path = status.path
     staged: Path | None = None
     try:
-        if path.is_symlink() or not path.is_file():
+        if path.is_symlink() or (status.before is None and path.exists()) or (status.before is not None and not path.is_file()):
             raise CommonError(f"目标已变化：{path}")
-        mode = stat.S_IMODE(path.stat().st_mode)
+        mode = stat.S_IMODE(path.stat().st_mode) if status.before is not None else None
         with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".agents-common-",
                                          suffix=".tmp", delete=False) as handle:
             staged = Path(handle.name)
             handle.write(status.after)
-        os.chmod(staged, mode)
+        if mode is not None:
+            os.chmod(staged, mode)
         # This prevents ordinary intervening edits; does not claim a cross-file transaction.
-        if path.is_symlink() or path.read_bytes() != status.before:
-            raise CommonError(f"写入前原件已变化；不覆盖：{path}")
-        os.replace(staged, path)
-        staged = None
+        if status.before is None:
+            os.link(staged, path)
+        else:
+            if path.is_symlink() or path.read_bytes() != status.before:
+                raise CommonError(f"写入前原件已变化；不覆盖：{path}")
+            os.replace(staged, path)
+            staged = None
     finally:
         if staged is not None:
             staged.unlink(missing_ok=True)
@@ -198,7 +202,9 @@ def _atomic_update(status: TargetStatus) -> None:
 def main(argv: list[str] | None = None) -> int:
     """Expose check/diff/apply; no schedule, loop or periodic reconciliation."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--template", type=Path, required=True, help="System Project-Template/AGENTS.md")
+    parser.add_argument("--template", type=Path, required=True, help="System Project-Template 中的公共文档母本")
+    parser.add_argument("--document", choices=["AGENTS.md", "WORK-LEAD.md"], default="AGENTS.md")
+    parser.add_argument("--rooter", action="store_true", help="同时包含登记的安装级 Rooter；未选项目时仅 Rooter")
     parser.add_argument("--installation-file", type=Path, help="当前安装描述；--print-block 不需要")
     parser.add_argument("--project", action="append", default=[], help="只检查/分发某个已登记项目，可重复")
     parser.add_argument("--all", action="store_true", help="分发所有登记项目；必须显式选择")
@@ -219,15 +225,29 @@ def main(argv: list[str] | None = None) -> int:
             raise CommonError("--check/--diff/--apply 必须提供 --installation-file")
         if args.all and args.project:
             raise CommonError("--all 与 --project 不可同时选择")
-        if args.apply and not (args.project or args.all):
-            raise CommonError("--apply 必须显式指定 --project 或 --all")
-        targets = registered_targets(args.installation_file, args.project)
-        statuses = [inspect_target(pid, p, source) for pid, p in targets]
+        if args.apply and not (args.project or args.all or args.rooter):
+            raise CommonError("--apply 必须显式指定 --project、--all 或 --rooter")
+        targets = registered_targets(args.installation_file, args.project, document=args.document)
+        if args.rooter:
+            if not (args.project or args.all):
+                targets = []
+            root = load_installation_descriptor(args.installation_file).get("rooter_home")
+            if not root:
+                raise CommonError("当前安装没有登记 rooter_home")
+            targets.append(("rooter", Path(posix_windows_drive_locator(root)).expanduser() / args.document))
+        statuses = []
+        for pid, path in targets:
+            if args.document == "WORK-LEAD.md" and not path.exists() and not path.is_symlink():
+                block = parse_block(args.template.read_text(encoding="utf-8").replace("<project-id>", pid), require_stamp=False)
+                body = block.before + managed_section(block) + block.after
+                statuses.append(TargetStatus(pid, path, "stale", "负责人指南尚未创建", None, body.encode("utf-8")))
+            else:
+                statuses.append(inspect_target(pid, path, source))
         for item in statuses:
             print(f"{item.project_id}: {item.status} — {item.reason} ({item.path})")
             if args.diff and item.status == "stale":
                 print("".join(difflib.unified_diff(
-                    item.before.decode("utf-8").splitlines(keepends=True),
+                    (item.before or b"").decode("utf-8").splitlines(keepends=True),
                     item.after.decode("utf-8").splitlines(keepends=True),
                     fromfile=f"{item.path}:old", tofile=f"{item.path}:new")), end="")
         # Conservative: do not partially apply when any selected target is unsafe.

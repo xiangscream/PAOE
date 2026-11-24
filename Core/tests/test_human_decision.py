@@ -5,7 +5,9 @@ from unittest.mock import patch
 
 import test_team_plan as plan_fixtures
 from paos_human_action import confirm, review
-from paos_team import propose, read_action, receipt_path
+from paos_team import propose, read_action, receipt_path, role_projection
+from paos_todo import parse_todo
+from paos_stage import render
 
 
 class DecisionTests(unittest.TestCase):
@@ -131,6 +133,24 @@ class DecisionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             confirm(self.base / "Data", "close-room", "ha-" + "e" * 32, payload,
                     self.homes.__getitem__, self.client, decision=decision)
+
+    def test_role_card_maps_only_its_named_group_or_single_unlabelled_task(self):
+        path = self.project / "Workstations/S042/TODO.md"
+        doc = parse_todo(path.read_text(encoding="utf8"))
+        task = doc["tasks"][0]
+        task["source_refs"] += ["cat-role:room-one", "work-group:Guide"]
+        doc["tasks"] += [{"id": "T2", "title": "Same work", "state": "todo", "source_refs": ["work-group:Guide"]},
+                         {"id": "T3", "title": "Other work", "state": "doing", "source_refs": ["work-group:Research"]},
+                         {"id": "T4", "title": "Unrelated scattered task", "state": "todo"}]
+        path.write_text(render(doc), encoding="utf8")
+        before = path.read_bytes()
+        card = role_projection(self.team, "room-one", self.homes.__getitem__)["cards"]["S042"]
+        self.assertEqual([t["id"] for t in card["group"]["tasks"]], ["T1", "T2"])
+        self.assertEqual(before, path.read_bytes())
+        task["source_refs"].remove("work-group:Guide")
+        path.write_text(render(doc), encoding="utf8")
+        card = role_projection(self.team, "room-one", self.homes.__getitem__)["cards"]["S042"]
+        self.assertEqual([t["id"] for t in card["group"]["tasks"]], ["T1"])
 
 
 if __name__ == "__main__":

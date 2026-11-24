@@ -14,6 +14,7 @@ from paos_content import original_version, pack, scoped_file
 from paos_context import _section, local_source
 from paos_stage import render, task_snapshot
 from paos_todo import parse_todo, read_todo, write_todo
+from paos_todo_groups import project_groups
 
 PLAN = "team-plan:"
 SEAT = "team-member:"
@@ -225,19 +226,22 @@ def linked_tasks(members, room, resolve_home):
             if task and "task:" + task["id"] in todo["current"]["context_refs"]
             else None
         )
-        yield staff, task, current
+        group = next((g for g in project_groups(todo["tasks"]) if task in g["tasks"]), None) if task else None
+        if group and group["name"] is None:
+            group = {"name": None, "rooms": [room], "tasks": [task]}
+        yield staff, task, current, group
 
 
 def role_projection(team, room, resolve_home):
     cards = {
-        staff: {"role": team["roles"].get(staff), "task": task, "current": current}
-        for staff, task, current in linked_tasks(team["plan"]["members"], room, resolve_home)
+        staff: {"role": team["roles"].get(staff), "task": task, "current": current, "group": group}
+        for staff, task, current, group in linked_tasks(team["plan"]["members"], room, resolve_home)
     }
     return {"ok": True, "room": room, "team": team, "cards": cards}
 
 
 def check_registered_handoffs(members, room, resolve_home, carried):
-    for staff, task, current in linked_tasks(members, room, resolve_home):
+    for staff, task, current, _ in linked_tasks(members, room, resolve_home):
         current = current or {}
         if task and (task["waiting"] or current.get("waiting") or current.get("inflight")):
             target = staff + "/" + task["id"]

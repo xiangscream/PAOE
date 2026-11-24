@@ -92,11 +92,12 @@ def inspect_markdown(path: Path, retired=()):
 def check_templates(system: Path, installation_file: Path, retired=()):
     """Use the real mother in a disposable Home; never register its sample."""
     mother = system / 'Project-Template'
-    for relative in ('README.md', 'AGENTS.md', 'INDEX.md', 'TEAM.md', 'HISTORY.md',
+    for relative in ('README.md', 'AGENTS.md', 'INDEX.md', 'TEAM.md', 'HISTORY.md', 'WORK-LEAD.md',
                      'Workstations/_workstation/ENTRY.md', 'Workstations/_workstation/TODO.md'):
         if not (mother / relative).is_file():
             raise ValueError(f'母版缺失：{mother / relative}')
     source_block(mother / 'AGENTS.md')
+    source_block(mother / 'WORK-LEAD.md')
     with tempfile.TemporaryDirectory(prefix='paoe-template-') as directory:
         root = Path(directory) / 'Project'; home_id, project_id = 'S099', '3002'
         staff_number = 'S099'
@@ -104,7 +105,7 @@ def check_templates(system: Path, installation_file: Path, retired=()):
         home.mkdir(parents=True)
         for name in ('mailbox', 'notices'):
             (home / name).mkdir()
-        for name in ('AGENTS.md', 'INDEX.md', 'TEAM.md', 'HISTORY.md'):
+        for name in ('AGENTS.md', 'INDEX.md', 'TEAM.md', 'HISTORY.md', 'WORK-LEAD.md'):
             text = ((mother / name).read_text('utf-8-sig')
                     .replace('<home-id>', home_id)
                     .replace('<project-id>', project_id)
@@ -159,10 +160,12 @@ def main(argv=None):
                     errors.append(f'{agents}: {state.status}；{state.reason}')
                 record = registry.read_record(pid)
                 project = agents.parent
-                files.update(project / n for n in ('AGENTS.md','INDEX.md','TEAM.md','HISTORY.md'))
+                files.update(project / n for n in ('AGENTS.md','INDEX.md','TEAM.md','HISTORY.md','WORK-LEAD.md'))
                 for hid in record['homes']:
                     home = project / 'Workstations' / hid
                     files.add(home / 'ENTRY.md')
+                    if (home / 'AGENTS.md').is_file():
+                        files.add(home / 'AGENTS.md')
                     todo = parse_todo((home / 'TODO.md').read_text('utf-8-sig'))
                     if (todo['home_kind'],todo['home_id'],todo['project_id']) != ('project_agent',hid,pid):
                         errors.append(f'{home / "TODO.md"}: 身份不匹配')
@@ -170,6 +173,7 @@ def main(argv=None):
             if descriptor.get('rooter_home'):
                 rooter = Path(posix_windows_drive_locator(descriptor['rooter_home'])).expanduser()
                 files.add(rooter / 'ENTRY.md')
+                files.add(rooter / 'WORK-LEAD.md')
             overview = system / 'PROJECTS.md'
             if overview.read_text('utf-8-sig') != render_overview(installation_file, overview):
                 errors.append(f'{overview}: 聚合已过期；使用既有 --write 入口重建')

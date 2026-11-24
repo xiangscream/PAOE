@@ -144,6 +144,8 @@ def read_context(home, *, staff_number, reason="resume", task_id="", sources=())
                         }
                     )
                     related += task["source_refs"]
+                    if any(ref.startswith("team-plan:") for ref in task["source_refs"]):
+                        read("work_lead", project / "WORK-LEAD.md")
     background = re.search(r"\[共同背景\]\((?:<([^>]+)>|([^)]+))\)", guide)
     if background:
         locator = background.group(1) or background.group(2)
