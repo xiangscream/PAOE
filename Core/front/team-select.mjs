@@ -116,6 +116,22 @@ export function receiptKey(action, input, choice = 'approve') {
   return action + ':' + JSON.stringify(input) + ':' + choice;
 }
 
+// 审阅快照按 action+input 绑定；按钮只提交与已展示快照相同的 subject。
+export function reviewKey(action, input) {
+  return action + ':' + JSON.stringify(input);
+}
+
+export function reviewMatches(review, action, input) {
+  return !!review && review.status === 'ready' && review.key === reviewKey(action, input) &&
+    !!review.subject && typeof review.subject === 'object' && !Array.isArray(review.subject) &&
+    Object.keys(review.subject).length > 0;
+}
+
+// 计划列表与 pending plan 用同一 open-plan 输入。
+export function planInput(plan) {
+  return { owner: plan?.owner || '', task: plan?.task || '', version: plan?.version || 1 };
+}
+
 export function decisionPayload(action, input, choice, subject, recordedBy = 'human') {
   const room = input?.room;
   const task = input?.task;
@@ -178,9 +194,7 @@ export function cardTaskLine(card) {
 // group.tasks 为原 Task 投影；前端不建第二份 TODO、批准状态或分组规则。
 export function cardGroup(card) {
   const group = card?.group;
-  if (!group) return null;
-  if (typeof group === 'string') return { name: group, rooms: [], tasks: [] };
-  if (typeof group !== 'object') return null;
+  if (!group || typeof group !== 'object' || Array.isArray(group)) return null;
   return {
     name: typeof group.name === 'string' && group.name ? group.name : null,
     rooms: Array.isArray(group.rooms) ? group.rooms : [],

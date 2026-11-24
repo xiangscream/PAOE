@@ -2,10 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ChatView from '../src/components/ChatView.vue'
 
-// F87：一次业务按钮 = 一次决定。先 review 读准确 subject，再 confirm 带 decision；
-// 不打开第二个确认窗。F88：角色卡只映射后端 group/task，不在前端另存 TODO。
+// F87：一次业务按钮 = 一次决定。输入准备好时先 review 并在界面展示，
+// 按钮只提交与已显示快照相同的 subject；点击时不再取新 review。
+// F88：角色卡只映射后端 group/task，不在前端另存 TODO。
 
-afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
+const mounted: any[] = []
+afterEach(() => {
+  mounted.splice(0).forEach(wrapper => wrapper.unmount())
+  vi.unstubAllGlobals()
+  localStorage.clear()
+  history.replaceState(null, '', '/')
+})
 
 const room = () => ({
   ok: true, id: 'task-room', title: 'F87 联调', status: 'open',
@@ -15,15 +22,15 @@ const room = () => ({
   messages: [],
 })
 
-const team = () => ({
+const team = (revision: number, approved = false) => ({
   plan: {
     title: 'F87 联调', project: '3002', owner: 'S010', task: 'T-1', version: 1,
     members: ['S010', 'S040'], close_policy: 'human_confirm',
   },
-  revision: 3,
+  revision,
   roles: {
-    S010: { home: 'S010', revision: 1, approved: false, role: { duty: '后端桥', arrangement: '同批', deliverables: 'bridge.py' } },
-    S040: { home: 'S040', revision: 1, approved: false, role: { duty: '前端映射', arrangement: '同批', deliverables: 'TeamPanel.vue' } },
+    S010: { home: 'S010', revision: 1, approved, role: { duty: '后端桥', arrangement: '同批', deliverables: 'bridge.py' } },
+    S040: { home: 'S040', revision: 1, approved, role: { duty: '前端映射', arrangement: '同批', deliverables: 'TeamPanel.vue' } },
   },
   roles_receipt: null,
   accepted: null,
@@ -31,7 +38,7 @@ const team = () => ({
 
 const cards = () => ({
   S010: {
-    role: team().roles.S010,
+    role: team(3).roles.S010,
     task: { id: 'T-1', title: '后端桥', state: 'doing', artifact_ref: 'bridge.py' },
     group: {
       name: 'PAOE 0.1', rooms: ['room-a'],
@@ -39,7 +46,7 @@ const cards = () => ({
     },
   },
   S040: {
-    role: team().roles.S040,
+    role: team(3).roles.S040,
     task: { id: 'T-2', title: '前端映射', state: 'todo' },
     group: { name: 'PAOE 0.1', rooms: ['room-a'], tasks: [{ id: 'T-2', title: '前端映射', state: 'todo' }] },
   },
@@ -48,27 +55,44 @@ const cards = () => ({
 function mountRoom(overrides: {
   review?: (body: any) => unknown
   confirm?: (body: any) => unknown
+  approved?: boolean
+  noRoom?: boolean
+  plans?: any[]
 } = {}) {
+  let teamRevision = 3
+  let serverSubject = { revision: 3 }
+  let deferReview = false
+  let resolveDeferred: ((value: unknown) => void) | null = null
   const reviewBody: any[] = []
   const confirmBody: any[] = []
   const review = vi.fn(async (_path: string, options?: RequestInit) => {
     const body = JSON.parse(String(options?.body))
     reviewBody.push(body)
-    return overrides.review ? overrides.review(body) : { ok: true, action: body.action, input: body.input, subject: { revision: body.input.expected_revision ?? body.input.version }, explanation: '审阅原文' }
+    if (deferReview) return new Promise(resolve => { resolveDeferred = resolve })
+    if (overrides.review) return overrides.review(body)
+    const subject = body.action === 'accept-goal'
+      ? { room: body.input.room, task: body.input.task }
+      : body.action === 'save-role'
+        ? { room: body.input.room, home: body.input.home, revision: body.input.expected_revision }
+        : { revision: body.input.expected_revision ?? body.input.version }
+    return { ok: true, action: body.action, input: body.input, subject, explanation: '审阅原文：' + body.action }
   })
   const confirm = vi.fn(async (_path: string, options?: RequestInit) => {
     const body = JSON.parse(String(options?.body))
     confirmBody.push(body)
-    return overrides.confirm ? overrides.confirm(body) : { ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }
+    if (overrides.confirm) return overrides.confirm(body)
+    if (JSON.stringify(body.decision.subject) !== JSON.stringify(serverSubject)) {
+      return { ok: false, error_code: 'local_operation_failed', error: '决定对应的内容已变化，请先对齐受影响的差异' }
+    }
+    return { ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }
   })
-  let teamLoads = 0
   const fetch = vi.fn(async (path: string, options?: RequestInit) => {
     if (options?.method === 'POST' && path === '/api/team/review') return { ok: true, json: async () => review(path, options) }
     if (options?.method === 'POST' && path === '/api/team/confirm') return { ok: true, json: async () => confirm(path, options) }
-    if (path.startsWith('/api/team-plan')) return { ok: true, json: async () => ({ ok: true, plans: [] }) }
-    if (path === '/api/room/task-room/team') { teamLoads++; return { ok: true, json: async () => ({ ok: true, room: 'task-room', team: team(), cards: cards() }) } }
+    if (path.startsWith('/api/team-plan')) return { ok: true, json: async () => ({ ok: true, plans: overrides.plans || [] }) }
+    if (path === '/api/room/task-room/team') return { ok: true, json: async () => ({ ok: true, room: 'task-room', team: team(teamRevision, overrides.approved === true), cards: cards() }) }
     if (path === '/api/room/task-room') return { ok: true, json: async () => room() }
-    if (path.startsWith('/api/cat/rooms')) return { ok: true, json: async () => ({ ok: true, rooms: [{ id: 'task-room', title: 'F87 联调', status: 'open', created_at: '2026-11-24T00:00:00Z' }] }) }
+    if (path.startsWith('/api/cat/rooms')) return { ok: true, json: async () => ({ ok: true, rooms: overrides.noRoom ? [] : [{ id: 'task-room', title: 'F87 联调', status: 'open', created_at: '2026-11-24T00:00:00Z' }] }) }
     if (path === '/api/cat/people') return { ok: true, json: async () => ({ ok: true, people: [] }) }
     if (path.startsWith('/api/document')) return { ok: true, json: async () => ({ ok: true, path: '', body: '# INDEX' }) }
     return { ok: true, json: async () => ({ ok: true }) }
@@ -76,23 +100,44 @@ function mountRoom(overrides: {
   vi.stubGlobal('fetch', fetch)
   vi.stubGlobal('EventSource', vi.fn(function () { return { addEventListener: vi.fn(), close: vi.fn() } }))
   vi.stubGlobal('ResizeObserver', vi.fn(function () { return { observe: vi.fn(), disconnect: vi.fn() } }))
-  const wrapper = mount(ChatView, { props: { project: '3002', initialRoom: 'task-room' } })
-  const vm = wrapper.vm as unknown as { teamDecide: (arg: any) => Promise<void> }
-  return { wrapper, vm, review, confirm, reviewBody, confirmBody, teamLoads: () => teamLoads }
+  const wrapper = mount(ChatView, { props: { project: '3002', initialRoom: overrides.noRoom ? '' : 'task-room' } })
+  mounted.push(wrapper)
+  const vm = wrapper.vm as unknown as {
+    teamDecide: (arg: any) => Promise<void>
+    loadTeam: (state: any) => Promise<void>
+    roomStates: Record<string, any>
+  }
+  return {
+    wrapper, vm, review, confirm, reviewBody, confirmBody,
+    setRevision(value: number) { teamRevision = value },
+    setServerSubject(value: any) { serverSubject = value },
+    setDefer(value: boolean) { deferReview = value },
+    releaseReview(value: unknown) { resolveDeferred?.(value); resolveDeferred = null },
+  }
 }
 
-describe('F87 one-click UI decision', () => {
-  it('reviews the exact displayed input, then confirms once with the reviewed subject', async () => {
-    const { wrapper, review, confirm, reviewBody, confirmBody } = mountRoom()
-    await flushPromises()
-    await wrapper.get('[data-testid="btn-approve-roles"]').trigger('click')
-    await flushPromises()
+async function settle() { await flushPromises(); await flushPromises() }
 
-    expect(review).toHaveBeenCalledTimes(1)
+describe('F87 one-click UI decision', () => {
+  it('shows the reviewed snapshot and submits exactly it without re-reading at click', async () => {
+    const { wrapper, review, confirm, reviewBody, confirmBody } = mountRoom({
+      confirm: body => {
+        expect(reviewBody).toHaveLength(1)           // 提交时仍是此前已展示的那一份
+        return { ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }
+      },
+    })
+    await settle()
+    const box = wrapper.get('[data-testid="review-approve-roles"]')
+    expect(box.text()).toContain('审阅原文：approve-roles')
+    expect(box.text()).toContain('本次审阅版本 r3')
+
+    await wrapper.get('[data-testid="btn-approve-roles"]').trigger('click')
+    await settle()
+
+    expect(review.mock.calls.length).toBeGreaterThanOrEqual(1)
     expect(reviewBody[0]).toEqual({ action: 'approve-roles', input: { room: 'task-room', expected_revision: 3 } })
     expect(confirm).toHaveBeenCalledTimes(1)
     const body = confirmBody[0]
-    expect(body.action).toBe('approve-roles')
     expect(body.input).toEqual({ room: 'task-room', expected_revision: 3 })
     expect(body.receipt_id).toMatch(/^ha-[0-9a-f]{32}$/)
     expect(body.decision).toEqual({
@@ -103,34 +148,136 @@ describe('F87 one-click UI decision', () => {
     expect(wrapper.get('[data-testid="action-outcome"]').text()).toContain('已生效')
   })
 
-  it('does not confirm when the review has no accurate subject', async () => {
-    const { wrapper, confirm } = mountRoom({ review: () => ({ ok: true, explanation: '缺少版本' }) })
-    await flushPromises()
+  it('keeps the displayed subject when the source changes before the click', async () => {
+    const { wrapper, review, confirmBody, setServerSubject } = mountRoom()
+    await settle()
+    setServerSubject({ revision: 4 })                 // 页面仍显示 r3，后台已到 r4
     await wrapper.get('[data-testid="btn-approve-roles"]').trigger('click')
-    await flushPromises()
-    expect(confirm).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="action-outcome"]').text()).toContain('审阅结果缺少准确版本')
-  })
+    await settle()
 
-  it('shows a version change as conflict and keeps the decision unapplied', async () => {
-    const { wrapper } = mountRoom({
-      confirm: () => ({ ok: false, error_code: 'local_operation_failed', error: '决定对应的内容已变化，请先对齐受影响的差异' }),
-    })
-    await flushPromises()
-    await wrapper.get('[data-testid="btn-approve-roles"]').trigger('click')
-    await flushPromises()
+    expect(review).toHaveBeenCalledTimes(1)           // 点击不重新取 subject
+    expect(confirmBody[0].decision.subject).toEqual({ revision: 3 })
     const outcome = wrapper.get('[data-testid="action-outcome"]')
     expect(outcome.classes()).toContain('outcome-conflict')
     expect(outcome.text()).toContain('内容已变化')
+  })
+
+  it('keeps the same receipt id and subject for an unknown network result', async () => {
+    let first = true
+    const { wrapper, review, confirm, reviewBody, confirmBody } = mountRoom({
+      confirm: body => {
+        if (first) { first = false; throw new Error('socket closed') }
+        return { ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }
+      },
+    })
+    await settle()
+    await wrapper.get('[data-testid="btn-approve-roles"]').trigger('click')
+    await settle()
+    expect(wrapper.get('[data-testid="action-outcome"]').text()).toContain('请求未完成')
+    expect(review.mock.calls.length).toBe(1)          // 断网后保留原审阅
+    expect(reviewBody).toHaveLength(1)
+
+    await wrapper.get('[data-testid="btn-approve-roles"]').trigger('click')
+    await settle()
+    expect(confirm).toHaveBeenCalledTimes(2)
+    expect(confirmBody[0].receipt_id).toBe(confirmBody[1].receipt_id)
+    expect(confirmBody[0].decision.subject).toEqual(confirmBody[1].decision.subject)
+    expect(wrapper.get('[data-testid="action-outcome"]').text()).toContain('已生效')
+  })
+
+  it('clears the old snapshot and reloads when the displayed input changes', async () => {
+    const { wrapper, vm, review, setRevision, setDefer, releaseReview } = mountRoom()
+    await settle()
+    expect(wrapper.get('[data-testid="review-approve-roles"]').text()).toContain('本次审阅版本 r3')
+
+    setDefer(true)
+    setRevision(4)
+    await vm.loadTeam(vm.roomStates['task-room'])
+    await flushPromises()
+    const loading = wrapper.get('[data-testid="review-approve-roles"]')
+    expect(loading.text()).toContain('正在读取本次审阅内容…')
+    expect(wrapper.get('[data-testid="btn-approve-roles"]').attributes('disabled')).toBeDefined()
+
+    releaseReview({ ok: true, subject: { revision: 4 }, explanation: '审阅原文：approve-roles' })
+    await settle()
+    expect(wrapper.get('[data-testid="review-approve-roles"]').text()).toContain('本次审阅版本 r4')
+    expect(wrapper.get('[data-testid="btn-approve-roles"]').attributes('disabled')).toBeUndefined()
+    expect(review).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows the plan review before enabling the first release button', async () => {
+    const { wrapper, confirmBody } = mountRoom({
+      noRoom: true,
+      plans: [{ owner: 'S010', task: 'T-1', version: 2, title: 'F87 计划' }],
+      confirm: body => ({ ok: true, receipt_id: body.receipt_id, applied: {} }),
+    })
+    await settle()
+    const section = wrapper.get('[data-testid="plan-discovery"]')
+    expect(section.text()).toContain('F87 计划')
+    expect(section.text()).toContain('本次审阅版本 v2')
+    expect(section.text()).toContain('审阅原文：open-plan')
+    const button = section.get('button')
+    expect(button.attributes('disabled')).toBeUndefined()
+
+    await button.trigger('click')
+    await settle()
+    expect(confirmBody[0].action).toBe('open-plan')
+    expect(confirmBody[0].input).toEqual({ owner: 'S010', task: 'T-1', version: 2 })
+    expect(confirmBody[0].decision.subject).toEqual({ revision: 2 })
+  })
+
+  it('binds save-role to the reviewed edit content', async () => {
+    const { wrapper, reviewBody, confirmBody } = mountRoom({
+      confirm: body => ({ ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }),
+    })
+    await settle()
+    await wrapper.findAll('.edit-role')[0].trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 320))
+    await settle()
+    expect(wrapper.get('[data-testid="review-save-role"]').text()).toContain('审阅原文：save-role')
+    const input = reviewBody.at(-1)!.input
+    expect(input).toEqual({
+      room: 'task-room', home: 'S010', expected_revision: 1,
+      role: { duty: '后端桥', arrangement: '同批', deliverables: 'bridge.py' },
+    })
+
+    await wrapper.get('.edit-actions .primary-button').trigger('click')
+    await settle()
+    expect(confirmBody[0].input).toEqual(input)
+    expect(confirmBody[0].decision.subject).toEqual({ room: 'task-room', home: 'S010', revision: 1 })
+  })
+
+  it('binds accept-goal to the reviewed content shown for the filled form', async () => {
+    const { wrapper, reviewBody, confirmBody } = mountRoom({
+      approved: true,
+      confirm: body => ({ ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }),
+    })
+    await settle()
+    const inputs = wrapper.findAll('[data-testid="accept-goal-form"] input')
+    await inputs[0].setValue('result.md')
+    await inputs[1].setValue('basis.md')
+    await new Promise(resolve => setTimeout(resolve, 320))
+    await settle()
+    expect(wrapper.get('[data-testid="review-accept-goal"]').text()).toContain('审阅原文：accept-goal')
+    expect(reviewBody.at(-1)).toEqual({
+      action: 'accept-goal',
+      input: { room: 'task-room', task: 'T-1', artifact: 'result.md', basis: 'basis.md', remaining: 'none', read_to: 0 },
+    })
+
+    await wrapper.get('[data-testid="btn-accept-goal"]').trigger('click')
+    await settle()
+    expect(confirmBody[0].input).toEqual(reviewBody.at(-1)!.input)
+    expect(confirmBody[0].decision.subject).toEqual({ room: 'task-room', task: 'T-1' })
+    expect(confirmBody[0].decision.channel).toBe('ui')
   })
 
   it('records reject/revise/defer as explicit choices, never as applied', async () => {
     const { wrapper, vm, confirmBody } = mountRoom({
       confirm: body => ({ ok: true, receipt_id: body.receipt_id, state: 'rejected', applied: null, replayed: false }),
     })
-    await flushPromises()
+    await settle()
     await vm.teamDecide({ action: 'approve-roles', input: { room: 'task-room', expected_revision: 3 }, choice: 'reject' })
-    await flushPromises()
+    await settle()
     expect(confirmBody[0].decision.choice).toBe('reject')
     expect(wrapper.get('[data-testid="action-outcome"]').text()).toContain('已记录：拒绝')
     expect(wrapper.get('[data-testid="team-stage"]').text()).not.toContain('已验收')
@@ -140,7 +287,7 @@ describe('F87 one-click UI decision', () => {
 describe('F88 grouped TODO mapping', () => {
   it('renders the backend group name, tasks and rooms without a second TODO', async () => {
     const { wrapper } = mountRoom()
-    await flushPromises()
+    await settle()
     const group = wrapper.get('[data-testid="work-group"]')
     expect(group.text()).toContain('工作：PAOE 0.1')
     expect(group.text()).toContain('进行中 · bridge.py · 后端桥')

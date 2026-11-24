@@ -3,7 +3,7 @@ import {markRaw} from 'vue';
 import {readPage, acceptMessage, sendOutcome, errorText, seatLabels} from '../../../cat-state.mjs';
 import {findMessages, messagePreview} from '../../../cat-content.mjs';
 import {memberCandidates, outsideCandidates, presenceInfo, rosterEntry, observerNote, scopeText, staffId, roleLine} from '../../../mention-select.mjs';
-import {actionOutcome, decisionPayload, receiptKey} from '../../../team-select.mjs';
+import {actionOutcome, decisionPayload, planInput, receiptKey, reviewKey, reviewMatches} from '../../../team-select.mjs';
 import CatIcon from './ChatIcon.vue';
 import MessageContent from './ChatMessageContent.vue';
 import TeamPanel from './TeamPanel.vue';
@@ -46,6 +46,7 @@ export default {
       searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false,closeBusy:false,
       mention:{open:false,outside:false,query:'',index:0},previewTimer:0,
       teamActionBusy:'', teamActionOutcome:null, teamReceiptId:'', teamReceiptKey:'',
+      reviews:{}, reviewTokens:{},
       projectPlans:[], plansLoading:false, selectedPlan:null};
   },
   computed: {
@@ -518,19 +519,58 @@ export default {
       if (!owner || !task) { state.pendingPlan=null; return; }
       try {
         const value=await request('/api/team-plan?owner='+encodeURIComponent(owner)+'&task='+encodeURIComponent(task));
-        if (value && value.ok && value.plan) state.pendingPlan=value;
-        else state.pendingPlan=null;
+        if (value && value.ok && value.plan) {
+          state.pendingPlan=value;
+          this.loadReview({action:'open-plan', input:planInput(value.plan)});
+        } else state.pendingPlan=null;
       } catch(error) { state.pendingPlan=null; }
     },
     toggleTeam() { if (this.state) this.state.teamOpen=!this.state.teamOpen; },
+    async loadReview({action, input, force=false}) {
+      // F87：输入准备好就先读审阅内容；按钮只提交与已显示快照相同的 subject。
+      const key=reviewKey(action,input);
+      const current=this.reviews[key];
+      if (!force && current && (current.status==='loading'||current.status==='ready')) return current;
+      const token=(this.reviewTokens[key]||0)+1;
+      this.reviewTokens={...this.reviewTokens,[key]:token};
+      this.reviews={...this.reviews,[key]:{key,action,input,status:'loading'}};
+      try {
+        const value=await request('/api/team/review',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action, input})});
+        if (this.reviewTokens[key]!==token) return this.reviews[key];
+        if (value?.ok===true && value.subject && typeof value.subject==='object' &&
+            !Array.isArray(value.subject) && Object.keys(value.subject).length) {
+          this.reviews={...this.reviews,[key]:{key,action,input,status:'ready',
+            subject:value.subject,explanation:value.explanation||''}};
+        } else {
+          this.reviews={...this.reviews,[key]:{key,action,input,status:'error',
+            error:value?.error||'审阅结果缺少准确版本'}};
+        }
+      } catch(error) {
+        if (this.reviewTokens[key]!==token) return this.reviews[key];
+        this.reviews={...this.reviews,[key]:{key,action,input,status:'error',error:error.message}};
+      }
+      return this.reviews[key];
+    },
+    forgetReview(action,input) {
+      const key=reviewKey(action,input);
+      if (!this.reviews[key]) return;
+      const next={...this.reviews}; delete next[key];
+      this.reviews=next;
+    },
+    planInput(plan) { return planInput(plan); },
+    planReview(plan) { return this.reviews[reviewKey('open-plan',planInput(plan))]; },
+    planReady(plan) { return reviewMatches(this.planReview(plan),'open-plan',planInput(plan)); },
     async teamDecide({action, input, choice='approve'}) {
-      // F87 Human 操作入口：一次业务按钮完成决定。
-      // 1) POST /api/team/review {action,input} 读当前输入的准确 subject；
-      // 2) POST /api/team/confirm {action, receipt_id, input, decision} 直接记录，
-      //    decision 带 choice/channel=ui/recorded_by/source_ref/quote/subject。
-      // receipt_id 严格 ha- + 32 位小写十六进制；绑定 action+input+choice。
-      // open-plan 成功后 applied.room_id 是新房——刷新列表并进入。
+      // F87 Human 操作入口：一次业务按钮完成决定，不再请求 review。
+      // 按钮只提交与当前界面已显示快照绑定的 subject；提交时源变化由后台报冲突，
+      // 不刷新 subject 后自动批准。
       const state=this.state;
+      const review=this.reviews[reviewKey(action,input)];
+      if (!reviewMatches(review,action,input)) {
+        this.teamActionOutcome={kind:'failed', text:'审阅内容未就绪，未提交决定'};
+        return;
+      }
       const key=receiptKey(action,input,choice);
       if (this.teamReceiptKey!==key) {
         this.teamReceiptKey=key;
@@ -539,22 +579,13 @@ export default {
       this.teamActionBusy=action;
       this.teamActionOutcome=null;
       try {
-        const review=await request('/api/team/review',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({action, input})});
-        const subject=review?.subject;
-        if (review?.ok!==true || !subject || typeof subject!=='object' || Array.isArray(subject) ||
-            !Object.keys(subject).length) {
-          this.teamActionOutcome=review?.ok===false
-            ? actionOutcome(review)
-            : {kind:'failed', text:'审阅结果缺少准确版本，未提交决定'};
-          return;
-        }
-        const decision=decisionPayload(action,input,choice,subject,'human');
+        const decision=decisionPayload(action,input,choice,review.subject,'human');
         const value=await request('/api/team/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({action, receipt_id:this.teamReceiptId, input, decision})});
         this.teamActionOutcome=actionOutcome(value);
         if (this.teamActionOutcome.kind==='applied') {
           this.teamReceiptKey=''; this.teamReceiptId='';
+          this.forgetReview(action,input);
           if (action==='open-plan' && value.applied?.room_id) {
             // 开房成功：刷新列表并进入新建的专用房
             await this.loadRooms();
@@ -564,21 +595,18 @@ export default {
             this.loadPendingPlan();
           }
         } else if (this.teamActionOutcome.kind==='recorded') {
-          // 非通过决定已记录；下一次决定用新编号，不自动视为通过。
+          // 非通过决定已记录；保留同一审阅快照，下一次决定用新编号。
           this.teamReceiptKey=''; this.teamReceiptId='';
         }
+        // 冲突/失败/断网：保留原编号与原 subject，供同一请求核对；不改取新版本。
       } catch(error) {
         this.teamActionOutcome={kind:'failed', text:'请求未完成：'+error.message};
       } finally { this.teamActionBusy=''; }
     },
-    openPlan() {
-      const plan=this.state?.pendingPlan?.plan || this.selectedPlan;
-      if (!plan) return;
-      this.teamDecide({action:'open-plan', input:{
-        owner: plan.owner || '',
-        task: plan.task || '',
-        version: plan.version || 1,
-      }, choice:'approve'});
+    openPlan(plan=null) {
+      const target=plan || this.state?.pendingPlan?.plan || this.selectedPlan;
+      if (!target) return;
+      this.teamDecide({action:'open-plan', input:planInput(target), choice:'approve'});
     },
     // 正常起点：没有房也能发现计划——从项目负责人的 pending 提案列表读取。
     async discoverProjectPlans() {
@@ -587,8 +615,10 @@ export default {
       try {
         // 尝试从项目协调者读 pending 计划提案（GET /api/team-plan 不带 task 返回列表）
         const value=await request('/api/team-plan?project='+encodeURIComponent(this.project));
-        if (value && value.ok && Array.isArray(value.plans)) this.projectPlans=value.plans;
-        else this.projectPlans=[];
+        if (value && value.ok && Array.isArray(value.plans)) {
+          this.projectPlans=value.plans;
+          this.projectPlans.forEach(plan => this.loadReview({action:'open-plan', input:planInput(plan)}));
+        } else this.projectPlans=[];
       } catch(error) { this.projectPlans=[]; }
       finally { this.plansLoading=false; }
     },
@@ -739,8 +769,18 @@ export default {
         <div class="plan-discovery-text">
           <strong>{{plan.title || plan.task}}</strong>
           <small v-if="plan.owner">负责人 {{name(plan.owner)}} · v{{plan.version || 1}}</small>
+          <div class="plan-review" data-testid="plan-review">
+            <small v-if="planReview(plan)?.status==='loading'">正在读取本次审阅内容…</small>
+            <small v-else-if="planReview(plan)?.status==='error'" class="review-error">审阅失败：{{planReview(plan).error}}
+              <button class="text-button" @click="loadReview({action:'open-plan',input:planInput(plan),force:true})">重试</button></small>
+            <template v-else-if="planReady(plan)">
+              <small>本次审阅版本 v{{plan.version || 1}}</small>
+              <pre v-if="planReview(plan).explanation">{{planReview(plan).explanation}}</pre>
+            </template>
+            <small v-else>审阅内容未就绪</small>
+          </div>
         </div>
-        <button class="primary-button small" :disabled="!!teamActionBusy" :data-task="plan.task" @click="selectedPlan=plan; openPlan()">
+        <button class="primary-button small" :disabled="!!teamActionBusy || !planReady(plan)" :data-task="plan.task" @click="openPlan(plan)">
           {{teamActionBusy==='open-plan'?'提交中…':'通过计划并建房'}}
         </button>
       </div>
@@ -754,9 +794,19 @@ export default {
         <strong>待确认计划</strong>
         <span>{{state.pendingPlan.plan?.title || state.pendingPlan.plan?.task || '未命名计划'}}</span>
         <small v-if="state.pendingPlan.plan?.owner">负责人 {{name(state.pendingPlan.plan.owner)}} · v{{state.pendingPlan.plan?.version || 1}}</small>
+        <div class="plan-review" data-testid="pending-plan-review">
+          <small v-if="planReview(state.pendingPlan.plan)?.status==='loading'">正在读取本次审阅内容…</small>
+          <small v-else-if="planReview(state.pendingPlan.plan)?.status==='error'" class="review-error">审阅失败：{{planReview(state.pendingPlan.plan).error}}
+            <button class="text-button" @click="loadReview({action:'open-plan',input:planInput(state.pendingPlan.plan),force:true})">重试</button></small>
+          <template v-else-if="planReady(state.pendingPlan.plan)">
+            <small>本次审阅版本 v{{state.pendingPlan.plan?.version || 1}}</small>
+            <pre v-if="planReview(state.pendingPlan.plan).explanation">{{planReview(state.pendingPlan.plan).explanation}}</pre>
+          </template>
+          <small v-else>审阅内容未就绪</small>
+        </div>
       </div>
       <div class="plan-preview-actions">
-        <button class="primary-button small" :disabled="!!teamActionBusy" data-testid="btn-open-plan" @click="openPlan">
+        <button class="primary-button small" :disabled="!!teamActionBusy || !planReady(state.pendingPlan.plan)" data-testid="btn-open-plan" @click="openPlan()">
           {{teamActionBusy==='open-plan'?'提交中…':'通过计划并建房（第一次放行）'}}
         </button>
       </div>
@@ -764,7 +814,7 @@ export default {
     <section v-if="state?.teamError && !state?.team" class="connection-banner" role="alert" data-testid="team-error">
       <div><strong>团队数据读取失败</strong><span>{{state.teamError}}</span></div>
     </section>
-    <team-panel v-if="state?.team" :team="state.team" :cards="state.cards" :people="people" :room="state.id" :readTo="state.cursor" :open="state.teamOpen" :actionBusy="teamActionBusy" :actionOutcome="teamActionOutcome" @toggle="toggleTeam" @confirm="teamDecide"></team-panel>
+    <team-panel v-if="state?.team" :team="state.team" :cards="state.cards" :people="people" :room="state.id" :readTo="state.cursor" :reviews="reviews" :open="state.teamOpen" :actionBusy="teamActionBusy" :actionOutcome="teamActionOutcome" @toggle="toggleTeam" @confirm="teamDecide" @review="loadReview"></team-panel>
     <section v-if="indexAvailable" class="task-index" :class="{collapsed:!state.indexOpen}" aria-label="任务 INDEX" data-testid="task-index">
       <header class="task-index-head">
         <button type="button" class="task-index-toggle" :aria-expanded="state.indexOpen" @click="toggleIndex"><cat-icon name="room"></cat-icon><span>任务 INDEX</span><small v-if="state.context.goal">{{state.context.goal}}</small><cat-icon class="chevron" name="latest"></cat-icon></button>
@@ -1140,6 +1190,11 @@ button:focus-visible,a:focus-visible,select:focus-visible,[tabindex]:focus-visib
 .plan-discovery-text strong{font-size:13px;font-weight:600;line-height:1.5}
 .plan-discovery-text small{font-size:11px;opacity:.6}
 .plan-discovery-item .primary-button{flex-shrink:0}
+.plan-review{display:grid;gap:4px;margin-top:4px;min-width:0}
+.plan-review small{font-size:10.5px;opacity:.6}
+.plan-review pre{margin:0;max-height:140px;overflow:auto;padding:6px 8px;border-radius:7px;background:var(--surface);font:inherit;font-size:10.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.plan-review .review-error{color:#c62828;opacity:1}
+.plan-review .text-button{margin-left:6px;font-size:10.5px}
 @media(max-width:900px){.plan-discovery{margin:12px}.plan-discovery-item{flex-direction:column;align-items:flex-start}}
 
 /* ---- 任务房：关闭确认 / 任务 INDEX / 负责人 / 在线计数 ---- */
