@@ -45,7 +45,7 @@ export default {
       connection:'正在连接',connectionError:false,unseen:0,highlight:'',checking:false,atLatest:true,
       searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false,closeBusy:false,
       mention:{open:false,outside:false,query:'',index:0},previewTimer:0,
-      teamActionBusy:'', teamActionOutcome:null, teamReceiptId:'', teamReceiptKey:'',
+      teamActionBusy:'', teamActionName:'', teamActionOutcome:null, teamReceiptId:'', teamReceiptKey:'',
       reviews:{}, reviewTokens:{},
       projectPlans:[], plansLoading:false, selectedPlan:null};
   },
@@ -568,6 +568,7 @@ export default {
       const state=this.state;
       const review=this.reviews[reviewKey(action,input)];
       if (!reviewMatches(review,action,input)) {
+        this.teamActionName=action;
         this.teamActionOutcome={kind:'failed', text:'审阅内容未就绪，未提交决定'};
         return;
       }
@@ -577,6 +578,7 @@ export default {
         this.teamReceiptId='ha-'+crypto.randomUUID().replace(/-/g,'').slice(0,32);
       }
       this.teamActionBusy=action;
+      this.teamActionName=action;
       this.teamActionOutcome=null;
       try {
         const decision=decisionPayload(action,input,choice,review.subject,'human');
@@ -814,7 +816,7 @@ export default {
     <section v-if="state?.teamError && !state?.team" class="connection-banner" role="alert" data-testid="team-error">
       <div><strong>团队数据读取失败</strong><span>{{state.teamError}}</span></div>
     </section>
-    <team-panel v-if="state?.team" :team="state.team" :cards="state.cards" :people="people" :room="state.id" :readTo="state.cursor" :reviews="reviews" :open="state.teamOpen" :actionBusy="teamActionBusy" :actionOutcome="teamActionOutcome" @toggle="toggleTeam" @confirm="teamDecide" @review="loadReview"></team-panel>
+    <team-panel v-if="state?.team" :team="state.team" :cards="state.cards" :people="people" :room="state.id" :readTo="state.cursor" :reviews="reviews" :open="state.teamOpen" :actionBusy="teamActionBusy" :actionName="teamActionName" :actionOutcome="teamActionOutcome" @toggle="toggleTeam" @confirm="teamDecide" @review="loadReview"></team-panel>
     <section v-if="indexAvailable" class="task-index" :class="{collapsed:!state.indexOpen}" aria-label="任务 INDEX" data-testid="task-index">
       <header class="task-index-head">
         <button type="button" class="task-index-toggle" :aria-expanded="state.indexOpen" @click="toggleIndex"><cat-icon name="room"></cat-icon><span>任务 INDEX</span><small v-if="state.context.goal">{{state.context.goal}}</small><cat-icon class="chevron" name="latest"></cat-icon></button>

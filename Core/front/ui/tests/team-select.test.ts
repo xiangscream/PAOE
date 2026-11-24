@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  HUMAN_ACTIONS, actionOutcome, cardGroup, cardTaskLine, confirmInput, decisionPayload,
+  HUMAN_ACTIONS, actionOutcome, canShowAcceptGoal, cardGroup, cardTaskLine, confirmInput, decisionPayload,
   planInput, planMembers, planSummary, receiptKey, reviewKey, reviewMatches,
   roleCardState, roleLine, teamStage,
 } from '../../team-select.mjs'
@@ -169,6 +169,24 @@ describe('F87 displayed review snapshot', () => {
     expect(planInput({ owner: 'S010', task: 'T-1', version: 3 }))
       .toEqual({ owner: 'S010', task: 'T-1', version: 3 })
     expect(planInput(null)).toEqual({ owner: '', task: '', version: 1 })
+  })
+})
+
+describe('canShowAcceptGoal (第二次放行回执成立后才显示)', () => {
+  const base = () => ({
+    accepted: null, owner_acceptance: null,
+    plan: { close_policy: 'human_confirm' },
+    roles: { S010: { role: { duty: 'x' }, approved: true } },
+  })
+  it('shows the accept entry only after a valid roles receipt exists', () => {
+    expect(canShowAcceptGoal({ ...base(), roles_receipt: 'ha-' + '1'.repeat(32) })).toBe(true)
+    expect(canShowAcceptGoal({ ...base(), roles_receipt: null })).toBe(false)
+    expect(canShowAcceptGoal({ ...base(), roles_receipt: '' })).toBe(false)
+  })
+  it('keeps the accepted and owner-policy exclusions after the receipt exists', () => {
+    expect(canShowAcceptGoal({ ...base(), roles_receipt: 'ha-1', accepted: {} })).toBe(false)
+    expect(canShowAcceptGoal({ ...base(), roles_receipt: 'ha-1', owner_acceptance: 'oa-1' })).toBe(false)
+    expect(canShowAcceptGoal({ ...base(), roles_receipt: 'ha-1', plan: { close_policy: 'owner' } })).toBe(false)
   })
 })
 

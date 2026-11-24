@@ -44,8 +44,11 @@ export function allSeatRoles(team) {
 }
 
 // accept-goal 仅 human_confirm 房可走；owner 房由负责人原 task accept CLI 收口。
+// F87 收口修正：按后台就绪事实映射——第二次放行的有效回执（roles_receipt）未成立前，
+// 不显示最终验收入口；回执成立后按原规则出现，不改后台判定。
 export function canShowAcceptGoal(team, viewerIsOwner) {
   if (!team || team.accepted || team.owner_acceptance) return false;
+  if (!team.roles_receipt) return false;
   // 只有 human_confirm 关房政策的专用房才走 accept-goal
   if (team.plan?.close_policy !== 'human_confirm') return false;
   // Human 面板：human_confirm 房始终可见（Human 就是最终验收人）
