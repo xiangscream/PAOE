@@ -101,8 +101,17 @@ class StageCliTests(unittest.TestCase):
         return json.loads(p.stdout or p.stderr)
 
     def test_delivery_replay_and_consume_after_later_edits(self):
+        large_original = "Current business\n" * 20000
+        (self.project / "INDEX.md").write_text(large_original, encoding="utf8")
         got = self.cli(*self.args)
-        self.assertTrue(got["context"]["ok"])
+        self.assertTrue(got["ok"])
+        self.assertEqual(got["schema"], "paoe-stage-delivery/v1")
+        self.assertNotIn("context", got)
+        self.assertLess(len(json.dumps(got)), 2048)
+        context = self.cli("context", "read", "S010", "--task", "EX", "--reason", "stage")
+        self.assertTrue(context["ok"])
+        self.assertTrue(all("body" in original for original in context["documents"]))
+        self.assertIn(large_original, [original["body"] for original in context["documents"]])
         doc = parse_todo(self.todo.read_text(encoding="utf8"))
         self.assertEqual(doc["tasks"][0]["state"], "doing")
         self.assertEqual(doc["current"]["next_action"], "Review it")

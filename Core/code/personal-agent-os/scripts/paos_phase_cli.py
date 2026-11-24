@@ -147,7 +147,7 @@ def execute_phase(args, installation, identity, cat_client):
     checked = phase()
     if not checked["ok"]:
         return {"ok": False, "error_code": "stage_context_incomplete", "context": checked}
-    received = deliver(
+    return deliver(
         data,
         home,
         task_id=args.task,
@@ -159,5 +159,3 @@ def execute_phase(args, installation, identity, cat_client):
         waiting=args.waiting,
         current=args.current,
     )
-    received["context"] = phase()
-    return received
