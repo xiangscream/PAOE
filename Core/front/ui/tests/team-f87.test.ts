@@ -6,7 +6,13 @@ import ChatView from '../src/components/ChatView.vue'
 // 按钮只提交与已显示快照相同的 subject；点击时不再取新 review。
 // F88：角色卡只映射后端 group/task，不在前端另存 TODO。
 
-afterEach(() => { vi.unstubAllGlobals(); localStorage.clear() })
+const mounted: any[] = []
+afterEach(() => {
+  mounted.splice(0).forEach(wrapper => wrapper.unmount())
+  vi.unstubAllGlobals()
+  localStorage.clear()
+  history.replaceState(null, '', '/')
+})
 
 const room = () => ({
   ok: true, id: 'task-room', title: 'F87 联调', status: 'open',
@@ -50,6 +56,8 @@ function mountRoom(overrides: {
   review?: (body: any) => unknown
   confirm?: (body: any) => unknown
   approved?: boolean
+  noRoom?: boolean
+  plans?: any[]
 } = {}) {
   let teamRevision = 3
   let serverSubject = { revision: 3 }
@@ -81,10 +89,10 @@ function mountRoom(overrides: {
   const fetch = vi.fn(async (path: string, options?: RequestInit) => {
     if (options?.method === 'POST' && path === '/api/team/review') return { ok: true, json: async () => review(path, options) }
     if (options?.method === 'POST' && path === '/api/team/confirm') return { ok: true, json: async () => confirm(path, options) }
-    if (path.startsWith('/api/team-plan')) return { ok: true, json: async () => ({ ok: true, plans: [] }) }
+    if (path.startsWith('/api/team-plan')) return { ok: true, json: async () => ({ ok: true, plans: overrides.plans || [] }) }
     if (path === '/api/room/task-room/team') return { ok: true, json: async () => ({ ok: true, room: 'task-room', team: team(teamRevision, overrides.approved === true), cards: cards() }) }
     if (path === '/api/room/task-room') return { ok: true, json: async () => room() }
-    if (path.startsWith('/api/cat/rooms')) return { ok: true, json: async () => ({ ok: true, rooms: [{ id: 'task-room', title: 'F87 联调', status: 'open', created_at: '2026-11-24T00:00:00Z' }] }) }
+    if (path.startsWith('/api/cat/rooms')) return { ok: true, json: async () => ({ ok: true, rooms: overrides.noRoom ? [] : [{ id: 'task-room', title: 'F87 联调', status: 'open', created_at: '2026-11-24T00:00:00Z' }] }) }
     if (path === '/api/cat/people') return { ok: true, json: async () => ({ ok: true, people: [] }) }
     if (path.startsWith('/api/document')) return { ok: true, json: async () => ({ ok: true, path: '', body: '# INDEX' }) }
     return { ok: true, json: async () => ({ ok: true }) }
@@ -92,7 +100,8 @@ function mountRoom(overrides: {
   vi.stubGlobal('fetch', fetch)
   vi.stubGlobal('EventSource', vi.fn(function () { return { addEventListener: vi.fn(), close: vi.fn() } }))
   vi.stubGlobal('ResizeObserver', vi.fn(function () { return { observe: vi.fn(), disconnect: vi.fn() } }))
-  const wrapper = mount(ChatView, { props: { project: '3002', initialRoom: 'task-room' } })
+  const wrapper = mount(ChatView, { props: { project: '3002', initialRoom: overrides.noRoom ? '' : 'task-room' } })
+  mounted.push(wrapper)
   const vm = wrapper.vm as unknown as {
     teamDecide: (arg: any) => Promise<void>
     loadTeam: (state: any) => Promise<void>
@@ -194,6 +203,48 @@ describe('F87 one-click UI decision', () => {
     expect(wrapper.get('[data-testid="review-approve-roles"]').text()).toContain('本次审阅版本 r4')
     expect(wrapper.get('[data-testid="btn-approve-roles"]').attributes('disabled')).toBeUndefined()
     expect(review).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows the plan review before enabling the first release button', async () => {
+    const { wrapper, confirmBody } = mountRoom({
+      noRoom: true,
+      plans: [{ owner: 'S010', task: 'T-1', version: 2, title: 'F87 计划' }],
+      confirm: body => ({ ok: true, receipt_id: body.receipt_id, applied: {} }),
+    })
+    await settle()
+    const section = wrapper.get('[data-testid="plan-discovery"]')
+    expect(section.text()).toContain('F87 计划')
+    expect(section.text()).toContain('本次审阅版本 v2')
+    expect(section.text()).toContain('审阅原文：open-plan')
+    const button = section.get('button')
+    expect(button.attributes('disabled')).toBeUndefined()
+
+    await button.trigger('click')
+    await settle()
+    expect(confirmBody[0].action).toBe('open-plan')
+    expect(confirmBody[0].input).toEqual({ owner: 'S010', task: 'T-1', version: 2 })
+    expect(confirmBody[0].decision.subject).toEqual({ revision: 2 })
+  })
+
+  it('binds save-role to the reviewed edit content', async () => {
+    const { wrapper, reviewBody, confirmBody } = mountRoom({
+      confirm: body => ({ ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }),
+    })
+    await settle()
+    await wrapper.findAll('.edit-role')[0].trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 320))
+    await settle()
+    expect(wrapper.get('[data-testid="review-save-role"]').text()).toContain('审阅原文：save-role')
+    const input = reviewBody.at(-1)!.input
+    expect(input).toEqual({
+      room: 'task-room', home: 'S010', expected_revision: 1,
+      role: { duty: '后端桥', arrangement: '同批', deliverables: 'bridge.py' },
+    })
+
+    await wrapper.get('.edit-actions .primary-button').trigger('click')
+    await settle()
+    expect(confirmBody[0].input).toEqual(input)
+    expect(confirmBody[0].decision.subject).toEqual({ room: 'task-room', home: 'S010', revision: 1 })
   })
 
   it('binds accept-goal to the reviewed content shown for the filled form', async () => {
