@@ -31,6 +31,7 @@ from paos_home import HomeProblem, project_agent_home, rooter_home
 from paos_installation import InstallationProblem, effective_data_root, load_installation_descriptor
 from paos_library import LibraryProblem, load_library_roots, scan_skills, scan_workflows
 from paos_registry import ProjectRegistry, RegistryProblem
+from paos_team import PLAN, plan_view
 from paos_workstation import posix_windows_drive_locator
 from paos_agent_numbers import (NumbersProblem, agent_id_for_staff_number,
                                 load_numbers, resolve_numbers_path, staff_number)
@@ -629,6 +630,27 @@ class Board:
             _check_team_scope(project, result["plan"]["project"])
         return result
 
+    def team_plans(self, project: str) -> dict:
+        records = [self.registry.read_record(project)] if project else self.projects()
+        plans = []
+        for record in records:
+            for home_id in record["homes"]:
+                home = self.home(home_id)
+                todo = read_home_state(home)["todo"]
+                staff = staff_number(home_id, installation_path=self.installation_file,
+                                     installation=self.installation) or home_id
+                for task in todo["tasks"]:
+                    if task["state"] in {"done", "cancelled"}:
+                        continue
+                    if not any(ref.startswith(PLAN) for ref in task["source_refs"]):
+                        continue
+                    try:
+                        view = plan_view(home, staff, task)
+                    except ValueError as exc:
+                        raise BoardProblem("team_plan_invalid", f"{home_id} / {task['id']}：{exc}") from exc
+                    plans.append({**view["plan"], "body": view["body"]})
+        return {"ok": True, "plans": plans}
+
     def room_team(self, room_id: str, project: str) -> dict:
         if not self.cat_url:
             raise BoardProblem("cat_not_configured", "当前画板没有配置 CAT。")
@@ -785,8 +807,9 @@ def dispatch_request(board: Board, method: str, path: str,
                 value = board.rooms(query.get("project", [""])[0], query.get("home_id", [""])[0])
             elif url.path == "/api/team-plan":
                 query = parse_qs(url.query)
-                value = board.team_plan(query.get("owner", [""])[0], query.get("task", [""])[0],
-                                        query.get("project", [""])[0])
+                owner, task = query.get("owner", [""])[0], query.get("task", [""])[0]
+                project = query.get("project", [""])[0]
+                value = board.team_plan(owner, task, project) if owner or task else board.team_plans(project)
             elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "team":
                 value = board.room_team(unquote(parts[2]), parse_qs(url.query).get("project", [""])[0])
             elif url.path == "/api/cat/people":

@@ -8,8 +8,9 @@ from unittest.mock import Mock
 import test_board
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from front.paos_front_server import dispatch_request
+from front.paos_front_server import Board, dispatch_request
 from front.paos_obsidian_bridge import handle_request
+from paos_installation import write_installation_descriptor
 
 
 class TeamBoardTests(unittest.TestCase):
@@ -37,6 +38,28 @@ class TeamBoardTests(unittest.TestCase):
         self.assertEqual(self.plugin("GET", "/api/room/r/team"), (200, members))
         self.board.run_paos.assert_called_with(["team-plan", "members", "--room", "r",
                                                 "--cat-url", self.board.cat_url])
+
+    def test_proposed_plan_is_discoverable_before_any_room_exists(self):
+        numbers = self.fixture.base / "numbers.json"
+        numbers.write_text(json.dumps({"1001-s001": "S841", "1001-s002": "S842", "2001-s009": "S849"}),
+                           encoding="utf-8")
+        write_installation_descriptor(self.fixture.install, source_root=self.board.installation["source_root"],
+                                       library_roots_config=str(self.fixture.libs),
+                                       agent_numbers_config=str(numbers))
+        self.board = Board(self.fixture.install, cat_url=self.board.cat_url)
+        root = self.fixture.roots["1001"]
+        (root / "plan.md").write_text("# First plan\nRead the current source", encoding="utf-8")
+        made = self.board.run_paos(["team-plan", "propose", "1001-s001", "--task", "T-001",
+                                    "--plan", "plan.md", "--member", "1001-s001",
+                                    "--member", "1001-s002"])
+        self.assertTrue(made["ok"], made)
+        status, shown = self.plugin("GET", "/api/team-plan")
+        self.assertEqual(status, 200)
+        self.assertEqual(shown["plans"], [{**made["plan"], "body": made["body"]}])
+        self.assertEqual(dispatch_request(self.board, "GET", "/api/team-plan?project=1001"),
+                         (status, shown))
+        self.assertEqual(self.plugin("GET", "/api/team-plan?project=2001")[1]["error_code"],
+                         "project_scope_mismatch")
 
     def test_only_ordinary_room_means_no_panel(self):
         self.board.run_paos = Mock(return_value={"ok": False, "error_code": "not_dedicated_room"})
