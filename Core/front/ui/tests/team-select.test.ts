@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  HUMAN_ACTIONS, actionOutcome, cardTaskLine, confirmInput,
-  planMembers, planSummary, roleCardState, roleLine, teamStage,
+  HUMAN_ACTIONS, actionOutcome, cardGroup, cardTaskLine, confirmInput, decisionPayload,
+  planMembers, planSummary, receiptKey, roleCardState, roleLine, teamStage,
 } from '../../team-select.mjs'
 
 describe('roleCardState', () => {
@@ -90,25 +90,55 @@ describe('confirmInput (四种正式合同)', () => {
   })
 })
 
-describe('actionOutcome (applied / cancelled / conflict / failed)', () => {
+describe('actionOutcome (applied / recorded / cancelled / conflict / failed)', () => {
   it('marks applied on ok+applied (object or boolean)', () => {
     expect(actionOutcome({ ok: true, applied: true })).toMatchObject({ kind: 'applied', text: '已生效' })
     expect(actionOutcome({ ok: true, applied: { room_id: 'r1', state: 'open' } })).toMatchObject({ kind: 'applied' })
+  })
+  it('shows explicit non-approve decisions as recorded, never applied', () => {
+    expect(actionOutcome({ ok: true, state: 'rejected', applied: null }))
+      .toMatchObject({ kind: 'recorded', text: '已记录：拒绝' })
+    expect(actionOutcome({ ok: true, state: 'changes_requested', applied: null }))
+      .toMatchObject({ kind: 'recorded', text: '已记录：要求修改' })
+    expect(actionOutcome({ ok: true, state: 'deferred', applied: null }))
+      .toMatchObject({ kind: 'recorded', text: '已记录：稍后决定' })
   })
   it('marks cancelled on cancelled flag', () => {
     expect(actionOutcome({ ok: false, cancelled: true })).toMatchObject({ kind: 'cancelled', text: 'Human 取消了操作' })
     expect(actionOutcome({ state: 'cancelled' })).toMatchObject({ kind: 'cancelled' })
   })
-  it('marks conflict on revision/conflit/stale error codes', () => {
+  it('marks conflict on revision/conflict/stale codes or changed content text', () => {
     expect(actionOutcome({ ok: false, error_code: 'revision_mismatch' }))
       .toMatchObject({ kind: 'conflict', text: expect.stringContaining('版本冲突') })
     expect(actionOutcome({ ok: false, error_code: 'stale_revision' }))
       .toMatchObject({ kind: 'conflict' })
+    expect(actionOutcome({ ok: false, error_code: 'local_operation_failed', error: '决定对应的内容已变化，请先对齐受影响的差异' }))
+      .toMatchObject({ kind: 'conflict', text: expect.stringContaining('内容已变化') })
   })
   it('marks failed on other errors and unknown results', () => {
     expect(actionOutcome({ ok: false, error: '拒绝' })).toMatchObject({ kind: 'failed', text: '拒绝' })
     expect(actionOutcome(null)).toMatchObject({ kind: 'failed' })
     expect(actionOutcome({ ok: true })).toMatchObject({ kind: 'failed', text: '结果未确认' })
+  })
+})
+
+describe('F87 decision payload and receipt key', () => {
+  it('binds the reviewed subject with choice/channel/recorded_by/source_ref/quote', () => {
+    const subject = { revision: 3, roles: { S040: { approved: false } } }
+    expect(decisionPayload('approve-roles', { room: 'room-a', expected_revision: 3 }, 'approve', subject))
+      .toEqual({
+        choice: 'approve', channel: 'ui', recorded_by: 'human',
+        source_ref: 'paoe://ui/room/room-a/approve-roles', quote: '通过', subject,
+      })
+    expect(decisionPayload('open-plan', { owner: 'S010', task: 'T-1', version: 2 }, 'defer', subject).source_ref)
+      .toBe('paoe://ui/team-plan/T-1/open-plan')
+    expect(decisionPayload('accept-goal', { room: 'r' }, 'reject', subject).quote).toBe('拒绝')
+  })
+  it('keeps one id per action+input+choice and changes it for another decision', () => {
+    const input = { room: 'r', expected_revision: 1 }
+    expect(receiptKey('approve-roles', input)).toBe(receiptKey('approve-roles', input, 'approve'))
+    expect(receiptKey('approve-roles', input, 'approve')).not.toBe(receiptKey('approve-roles', input, 'reject'))
+    expect(receiptKey('approve-roles', input)).not.toBe(receiptKey('approve-roles', { ...input, expected_revision: 2 }))
   })
 })
 
@@ -121,5 +151,22 @@ describe('cardTaskLine', () => {
     expect(cardTaskLine(null)).toBe('')
     expect(cardTaskLine({})).toBe('')
     expect(cardTaskLine({ task: null })).toBe('')
+  })
+})
+
+describe('cardGroup (F88 read-only mapping of todo.groups)', () => {
+  it('maps the backend group name, rooms and original tasks', () => {
+    const tasks = [{ id: 'T-1', title: '前端交付', state: 'doing', artifact_ref: 'ui.ts' }]
+    expect(cardGroup({ group: { name: 'PAOE 0.1', rooms: ['room-a'], tasks } }))
+      .toEqual({ name: 'PAOE 0.1', rooms: ['room-a'], tasks })
+  })
+  it('keeps loose items with a null name and tolerates a plain name', () => {
+    expect(cardGroup({ group: { name: null, tasks: [] } })).toEqual({ name: null, rooms: [], tasks: [] })
+    expect(cardGroup({ group: 'PAOE 0.1' })).toEqual({ name: 'PAOE 0.1', rooms: [], tasks: [] })
+  })
+  it('returns null when the card has no group', () => {
+    expect(cardGroup(null)).toBeNull()
+    expect(cardGroup({ task: { id: 'T-1' } })).toBeNull()
+    expect(cardGroup({ group: null })).toBeNull()
   })
 })

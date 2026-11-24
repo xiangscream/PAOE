@@ -3,14 +3,16 @@
 // 数据来源 GET /api/rooms/{room}/team → {team, cards}；
 // Human 操作 POST /api/team/confirm {action, receipt_id, input}，由 Core 受信确认流一次生效。
 // 本组件不做第二次确认弹窗；错误/冲突/取消分别可见。
-import { roleCardState, teamStage, planSummary, planMembers, roleLine, confirmInput, actionOutcome, cardTaskLine, allSeatRoles, canShowAcceptGoal } from '../../../team-select.mjs';
+import { roleCardState, teamStage, planSummary, planMembers, roleLine, confirmInput, actionOutcome, cardTaskLine, cardGroup, allSeatRoles, canShowAcceptGoal } from '../../../team-select.mjs';
 
 export default {
   name: 'TeamPanel',
   props: {
     team: { type: Object, default: null },
-    cards: { type: Object, default: null },       // {HOME: {home, role, task:{state,artifact_ref,title,...}}}
+    cards: { type: Object, default: null },       // {HOME: {role, task, current, group?}}
     people: { type: Array, default: () => [] },
+    room: { type: String, default: '' },          // 当前任务房；由页面显式传入
+    readTo: { type: Number, default: 0 },         // 当前已读游标
     open: { type: Boolean, default: true },
     actionBusy: { type: String, default: '' },     // 当前在途的 action 名（'approve-roles' 等）
     actionOutcome: { type: Object, default: null }, // {kind, text} 最近一次操作结果
@@ -26,6 +28,7 @@ export default {
         memberName: this.nameOf(entry.home),
         line: roleLine(entry?.role),
         taskLine: cardTaskLine(this.cards?.[entry.home]),
+        group: cardGroup(this.cards?.[entry.home]),
       }));
     },
     canApproveRoles() {
@@ -52,26 +55,26 @@ export default {
       const person = this.people.find(p => p.staff_number === id || p.home_id === id || p.number === id);
       return person?.name || id;
     },
+    taskLine(task) { return cardTaskLine({ task }); },
     emitConfirm(action, context) {
       const input = confirmInput(action, context);
-      if (input) this.$emit('confirm', { action, input });
+      if (input) this.$emit('confirm', { action, input, choice: 'approve' });
     },
     approveRoles() {
       this.emitConfirm('approve-roles', {
-        room: this.team?.plan?.task ? this.$parent?.state?.id || '' : '',
+        room: this.room,
         expected_revision: this.team?.revision || 0,
       });
     },
     acceptGoal() {
-      const state = this.$parent?.state;
       if (!this.acceptArtifact?.trim() || !this.acceptBasis?.trim()) return;
       this.emitConfirm('accept-goal', {
-        room: state?.id || '',
+        room: this.room,
         task: this.team?.plan?.task || '',
         artifact: this.acceptArtifact.trim(),
         basis: this.acceptBasis.trim(),
         remaining: this.acceptRemaining?.trim() || 'none',
-        read_to: state?.cursor || 0,
+        read_to: this.readTo,
       });
     },
     startEdit(home) {
@@ -86,7 +89,7 @@ export default {
       if (!this.editHome) return;
       const entry = this.team?.roles?.[this.editHome];
       this.emitConfirm('save-role', {
-        room: this.$parent?.state?.id || '',
+        room: this.room,
         home: this.editHome,
         expected_revision: entry?.revision || 0,
         role: { duty: this.editDuty.trim(), arrangement: this.editArrangement.trim(), deliverables: this.editDeliverables.trim() },
@@ -124,7 +127,7 @@ export default {
         <label>验收依据<input v-model="acceptBasis" type="text" placeholder="如 basis.md（必填）"/></label>
         <label>剩余事项<input v-model="acceptRemaining" type="text" placeholder="无则留空"/></label>
         <button class="primary-button small" :disabled="!!actionBusy || !acceptArtifact.trim() || !acceptBasis.trim()" data-testid="btn-accept-goal"
-                @click="acceptGoal">{{actionBusy==='accept-goal'?'等待确认…':'验收目标'}}</button>
+                @click="acceptGoal">{{actionBusy==='accept-goal'?'提交中…':'验收目标'}}</button>
       </div>
 
       <div v-if="roleEntries.length" class="role-grid" role="list">
@@ -154,7 +157,15 @@ export default {
               <div v-if="entry.role.deliverables"><dt>交付物</dt><dd>{{entry.role.deliverables}}</dd></div>
             </dl>
             <p v-else class="role-empty">{{entry.state.hint}}</p>
-            <p v-if="entry.taskLine" class="task-line" data-testid="task-line">{{entry.taskLine}}</p>
+            <!-- F88：直接映射后端 todo.groups 的同名组；不在前端另存 TODO。 -->
+            <div v-if="entry.group" class="work-group" data-testid="work-group">
+              <small class="group-name">工作：{{entry.group.name || '零散事项'}}</small>
+              <ul v-if="entry.group.tasks.length" class="group-tasks">
+                <li v-for="task in entry.group.tasks" :key="task.id || task.title">{{taskLine(task)}}</li>
+              </ul>
+              <small v-if="entry.group.rooms.length" class="group-rooms">CAT {{entry.group.rooms.join(' · ')}}</small>
+            </div>
+            <p v-else-if="entry.taskLine" class="task-line" data-testid="task-line">{{entry.taskLine}}</p>
             <button v-if="team.accepted!==true" class="text-button edit-role" :data-home="entry.home" @click="startEdit(entry.home)">调整角色</button>
           </template>
         </article>
@@ -199,6 +210,7 @@ button{cursor:pointer}
 .text-button:hover{text-decoration:underline}
 .action-outcome{padding:8px 12px;border-radius:8px;font-size:12px;line-height:1.5}
 .outcome-applied{background:#e8f5e9;color:#1b7a3d}
+.outcome-recorded{background:#fff8e1;color:#8d6e00}
 .outcome-cancelled{background:#fff3e0;color:#b47923}
 .outcome-conflict{background:#fce4ec;color:#c62828}
 .outcome-failed{background:#ffebee;color:#c62828}
@@ -217,6 +229,10 @@ button{cursor:pointer}
 .role-card dd{margin:0;min-width:0;word-break:break-word}
 .role-empty{margin:0;font-size:11px;opacity:.55;line-height:1.5}
 .task-line{margin:0;font-size:10.5px;opacity:.6;line-height:1.5}
+.work-group{display:grid;gap:4px;padding:7px 9px;border-radius:8px;background:var(--surface)}
+.group-name{font-size:10.5px;font-weight:600;opacity:.7}
+.group-tasks{margin:0;padding-left:15px;font-size:10.5px;opacity:.65;line-height:1.55}
+.group-rooms{font-size:10px;opacity:.5}
 .edit-role{align-self:flex-start}
 .role-edit{display:flex;flex-direction:column;gap:8px}
 .role-edit label{display:grid;gap:4px;font-size:11px;font-weight:600;opacity:.7}

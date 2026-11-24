@@ -3,7 +3,7 @@ import {markRaw} from 'vue';
 import {readPage, acceptMessage, sendOutcome, errorText, seatLabels} from '../../../cat-state.mjs';
 import {findMessages, messagePreview} from '../../../cat-content.mjs';
 import {memberCandidates, outsideCandidates, presenceInfo, rosterEntry, observerNote, scopeText, staffId, roleLine} from '../../../mention-select.mjs';
-import {actionOutcome} from '../../../team-select.mjs';
+import {actionOutcome, decisionPayload, receiptKey} from '../../../team-select.mjs';
 import CatIcon from './ChatIcon.vue';
 import MessageContent from './ChatMessageContent.vue';
 import TeamPanel from './TeamPanel.vue';
@@ -24,16 +24,14 @@ function newConversation(id) {
 }
 async function request(path, options={}) {
   const controller = new AbortController();
-  // Human 确认（/api/team/confirm）等待真人读确认框并按按钮，不能自动中止；
-  // 其他请求保持正常超时（POST 20s / GET 15s）。
-  const humanConfirm = options.method === 'POST' && path === '/api/team/confirm';
-  const timeout = humanConfirm ? null : setTimeout(() => controller.abort(), options.method==='POST' ? 20000 : 15000);
+  // F87：UI 决定不再等待第二个确认窗，所有请求恢复普通超时。
+  const timeout = setTimeout(() => controller.abort(), options.method==='POST' ? 20000 : 15000);
   try {
     const response = await requestTransport(path, {...options,signal:controller.signal,cache:'no-store'});
     const value = await response.json();
     if (!response.ok && value.status===undefined) value.status=response.status;
     return value;
-  } finally { if (timeout) clearTimeout(timeout); }
+  } finally { clearTimeout(timeout); }
 }
 function checked(value) { if (!value.ok) throw new Error(errorText(value)); return value; }
 
@@ -525,21 +523,35 @@ export default {
       } catch(error) { state.pendingPlan=null; }
     },
     toggleTeam() { if (this.state) this.state.teamOpen=!this.state.teamOpen; },
-    async teamConfirm({action, input}) {
-      // Human 操作入口：POST /api/team/confirm {action, receipt_id, input}
-      // receipt_id 严格 ha- + 32 位小写十六进制；绑定 action+input 主体。
+    async teamDecide({action, input, choice='approve'}) {
+      // F87 Human 操作入口：一次业务按钮完成决定。
+      // 1) POST /api/team/review {action,input} 读当前输入的准确 subject；
+      // 2) POST /api/team/confirm {action, receipt_id, input, decision} 直接记录，
+      //    decision 带 choice/channel=ui/recorded_by/source_ref/quote/subject。
+      // receipt_id 严格 ha- + 32 位小写十六进制；绑定 action+input+choice。
       // open-plan 成功后 applied.room_id 是新房——刷新列表并进入。
       const state=this.state;
-      const requestKey=action+':'+JSON.stringify(input);
-      if (this.teamReceiptKey!==requestKey) {
-        this.teamReceiptKey=requestKey;
+      const key=receiptKey(action,input,choice);
+      if (this.teamReceiptKey!==key) {
+        this.teamReceiptKey=key;
         this.teamReceiptId='ha-'+crypto.randomUUID().replace(/-/g,'').slice(0,32);
       }
       this.teamActionBusy=action;
       this.teamActionOutcome=null;
       try {
+        const review=await request('/api/team/review',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action, input})});
+        const subject=review?.subject;
+        if (review?.ok!==true || !subject || typeof subject!=='object' || Array.isArray(subject) ||
+            !Object.keys(subject).length) {
+          this.teamActionOutcome=review?.ok===false
+            ? actionOutcome(review)
+            : {kind:'failed', text:'审阅结果缺少准确版本，未提交决定'};
+          return;
+        }
+        const decision=decisionPayload(action,input,choice,subject,'human');
         const value=await request('/api/team/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({action, receipt_id:this.teamReceiptId, input})});
+          body:JSON.stringify({action, receipt_id:this.teamReceiptId, input, decision})});
         this.teamActionOutcome=actionOutcome(value);
         if (this.teamActionOutcome.kind==='applied') {
           this.teamReceiptKey=''; this.teamReceiptId='';
@@ -551,6 +563,9 @@ export default {
             await this.loadTeam(state);
             this.loadPendingPlan();
           }
+        } else if (this.teamActionOutcome.kind==='recorded') {
+          // 非通过决定已记录；下一次决定用新编号，不自动视为通过。
+          this.teamReceiptKey=''; this.teamReceiptId='';
         }
       } catch(error) {
         this.teamActionOutcome={kind:'failed', text:'请求未完成：'+error.message};
@@ -559,11 +574,11 @@ export default {
     openPlan() {
       const plan=this.state?.pendingPlan?.plan || this.selectedPlan;
       if (!plan) return;
-      this.teamConfirm({action:'open-plan', input:{
+      this.teamDecide({action:'open-plan', input:{
         owner: plan.owner || '',
         task: plan.task || '',
         version: plan.version || 1,
-      }});
+      }, choice:'approve'});
     },
     // 正常起点：没有房也能发现计划——从项目负责人的 pending 提案列表读取。
     async discoverProjectPlans() {
@@ -726,7 +741,7 @@ export default {
           <small v-if="plan.owner">负责人 {{name(plan.owner)}} · v{{plan.version || 1}}</small>
         </div>
         <button class="primary-button small" :disabled="!!teamActionBusy" :data-task="plan.task" @click="selectedPlan=plan; openPlan()">
-          {{teamActionBusy==='open-plan'?'等待确认…':'通过计划并建房'}}
+          {{teamActionBusy==='open-plan'?'提交中…':'通过计划并建房'}}
         </button>
       </div>
     </section>
@@ -742,14 +757,14 @@ export default {
       </div>
       <div class="plan-preview-actions">
         <button class="primary-button small" :disabled="!!teamActionBusy" data-testid="btn-open-plan" @click="openPlan">
-          {{teamActionBusy==='open-plan'?'等待确认…':'通过计划并建房（第一次放行）'}}
+          {{teamActionBusy==='open-plan'?'提交中…':'通过计划并建房（第一次放行）'}}
         </button>
       </div>
     </section>
     <section v-if="state?.teamError && !state?.team" class="connection-banner" role="alert" data-testid="team-error">
       <div><strong>团队数据读取失败</strong><span>{{state.teamError}}</span></div>
     </section>
-    <team-panel v-if="state?.team" :team="state.team" :cards="state.cards" :people="people" :open="state.teamOpen" :actionBusy="teamActionBusy" :actionOutcome="teamActionOutcome" @toggle="toggleTeam" @confirm="teamConfirm"></team-panel>
+    <team-panel v-if="state?.team" :team="state.team" :cards="state.cards" :people="people" :room="state.id" :readTo="state.cursor" :open="state.teamOpen" :actionBusy="teamActionBusy" :actionOutcome="teamActionOutcome" @toggle="toggleTeam" @confirm="teamDecide"></team-panel>
     <section v-if="indexAvailable" class="task-index" :class="{collapsed:!state.indexOpen}" aria-label="任务 INDEX" data-testid="task-index">
       <header class="task-index-head">
         <button type="button" class="task-index-toggle" :aria-expanded="state.indexOpen" @click="toggleIndex"><cat-icon name="room"></cat-icon><span>任务 INDEX</span><small v-if="state.context.goal">{{state.context.goal}}</small><cat-icon class="chevron" name="latest"></cat-icon></button>
