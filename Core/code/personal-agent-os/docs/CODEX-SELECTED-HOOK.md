@@ -47,6 +47,43 @@ config.toml inline PAOE registrations are checked at prepare and apply; trust-on
 records are not registrations. Other plugin/project/managed sources remain visible
 in the host hook browser: Rooter must check those for duplicate registrations.
 
+## Upgrade an already installed selection once
+
+The installer and router already accept repeated `--session`; twelve employees
+share **one** handler per event. Obtain their current sessions from the existing
+Contact and Home/number registration, then supply those exact IDs. The adapter
+still resolves each native event to its one registered Home. An unselected or
+non-PAOE event receives no injected context. No additional employee registry is
+created by this command.
+
+To upgrade the installed S031 selection to a reviewed larger selection, add
+`--upgrade-from <retained-installation-packet>` to `prepare`:
+
+```powershell
+python scripts/paos_codex_hook_install.py prepare --hooks-file C:/Users/USER/.codex/hooks.json --packet D:/review/codex-global --installation-file D:/review/installation.global.json --upgrade-from D:/review/codex-selected/configuration --session THREAD-1 --session THREAD-2
+```
+
+The retained packet's original/candidate and plan must reconstruct the exact
+three previously generated definitions. Those definitions must still match the
+live file at their recorded positions. Only those slots are replaced. Original
+preparation definitions and unrelated groups retain their values and positions;
+no per-employee handlers are appended. Unknown/duplicate adapters, changed owned
+definitions or altered prior packet data fail explicitly. Without this option,
+the existing conflict refusal remains in effect.
+
+The new packet records its source packet and three managed positions. Subsequent
+upgrades use that new packet. Apply revalidates source definitions and refuses
+concurrent changes. Restore recovers the immediate pre-upgrade file byte for byte,
+including its previous selected sessions and unrelated edits. Retain all packets
+needed to roll back each installation step. New definitions require normal host
+review; the original preparation commands remain unchanged during that window.
+
+Rooter uses the installation descriptor paired to the actual deployment's Store
+layout. A packet built against the new centralized Contact code does not migrate
+old production Contact files; follow the approved Data cutover before adopting
+that source. Preparing a configuration is not evidence twelve native sessions
+have consumed it.
+
 ## Rooter applies or restores
 
 ```powershell

@@ -19,13 +19,70 @@ def encode(value):
     return (json.dumps(value, ensure_ascii=False, indent=2) + '\n').encode('utf8')
 
 
-def build(original, sessions, installation, cat_url=None):
+def selected_groups(sessions, installation, cat_url, router=ROUTER):
     if not sessions or any(not re.fullmatch(r'[A-Za-z0-9_-]+', s) for s in sessions) or len(set(sessions)) != len(sessions):
         raise ValueError('Provide distinct exact native session IDs')
+    args = [sys.executable, '-X', 'utf8', '-B', str(router),
+            '--installation-file', str(installation)]
+    for session in sessions:
+        args.extend(['--session', session])
+    if cat_url:
+        args.extend(['--cat-url', cat_url])
+    groups = {}
+    for event in ('SessionStart', 'UserPromptSubmit', 'Stop'):
+        handler = dict(type='command', command=subprocess.list2cmdline(args), timeout=30)
+        if event != 'Stop':
+            handler['additionalContextLimit'] = 0
+        group = {'hooks': [handler]}
+        if event == 'SessionStart':
+            group['matcher'] = '^(startup|resume|compact)$'
+        groups[event] = group
+    return groups
+
+
+def previous_slots(packet):
+    """Identify only the three definitions produced by a retained installation packet."""
+    packet = Path(packet)
+    plan = json.loads((packet / 'plan.json').read_bytes())
+    if plan.get('schema') != 'paoe-codex-selected-install/v1':
+        raise ValueError('Unknown previous installation packet')
+    original = json.loads((packet / 'original.json').read_bytes())
+    installed = json.loads((packet / 'candidate.json').read_bytes())
+    expected = selected_groups(plan['sessions'], plan['installation_file'], plan['cat_url'], plan['router'])
+    slots = plan.get('managed_slots')
+    if slots is None:  # Existing 2cf6327 packet appended one group to each event.
+        slots = {event: len(original['hooks'].get(event, [])) for event in expected}
+    if set(slots) != set(expected) or any(type(i) is not int or i < 0 for i in slots.values()):
+        raise ValueError('Previous packet has invalid managed definition positions')
+    rebuilt = copy.deepcopy(original)
+    for event, group in expected.items():
+        groups = rebuilt['hooks'].setdefault(event, [])
+        index = slots[event]
+        if index == len(groups):
+            groups.append(group)
+        elif index < len(groups):
+            groups[index] = group
+        else:
+            raise ValueError('Previous packet has invalid definition position')
+    if rebuilt != installed:
+        raise ValueError('Previous candidate differs from its recorded selection')
+    return slots, expected
+
+
+def build(original, sessions, installation, cat_url=None, *, upgrade_from=None):
+    new_groups = selected_groups(sessions, installation, cat_url)
     candidate = copy.deepcopy(original)
     hooks = candidate.get('hooks')
     if not isinstance(hooks, dict):
         raise ValueError('Expected hooks.json object')
+    slots = {}
+    if upgrade_from:
+        slots, previous = previous_slots(upgrade_from)
+        for event, index in slots.items():
+            groups = hooks.get(event, [])
+            if index >= len(groups) or groups[index] != previous[event]:
+                raise ValueError(f'Installed PAOE definition conflict: {event}:{index}')
+            groups[index] = {'hooks': []}  # Replace in place; other definitions never move.
     found = {}
     for event, groups in hooks.items():
         for group in groups:
@@ -52,20 +109,11 @@ def build(original, sessions, installation, cat_url=None):
                 found[event] = (python, script)
     if set(found) != {'SessionStart', 'UserPromptSubmit'}:
         raise ValueError('Both original receiver handlers must exist exactly once')
-    args = [sys.executable, '-X', 'utf8', '-B', str(ROUTER),
-            '--installation-file', str(installation)]
-    for session in sessions:
-        args.extend(['--session', session])
-    if cat_url:
-        args.extend(['--cat-url', cat_url])
-    for event in ('SessionStart', 'UserPromptSubmit', 'Stop'):
-        handler = dict(type='command', command=subprocess.list2cmdline(args), timeout=30)
-        if event != 'Stop':
-            handler['additionalContextLimit'] = 0
-        group = {'hooks': [handler]}
-        if event == 'SessionStart':
-            group['matcher'] = '^(startup|resume|compact)$'
-        hooks.setdefault(event, []).append(group)
+    for event, group in new_groups.items():
+        if event in slots:
+            hooks[event][slots[event]] = group
+        else:
+            hooks.setdefault(event, []).append(group)
     return candidate
 
 
@@ -79,20 +127,24 @@ def check_inline_conflict(hooks_file):
             raise ValueError('Duplicate PAOE hooks in sibling config.toml; resolve source conflict first')
 
 
-def prepare(hooks_file, packet, sessions, installation, cat_url=None):
+def prepare(hooks_file, packet, sessions, installation, cat_url=None, *, upgrade_from=None):
     hooks_file, packet = Path(hooks_file).resolve(), Path(packet).resolve()
     installation = Path(installation).resolve()
     if not installation.is_file():
         raise ValueError('Explicit selected installation is missing')
     check_inline_conflict(hooks_file)
     original = hooks_file.read_bytes()
-    candidate = build(json.loads(original), sessions, installation, cat_url)
+    upgrade_from = str(Path(upgrade_from).resolve()) if upgrade_from else None
+    candidate = build(json.loads(original), sessions, installation, cat_url, upgrade_from=upgrade_from)
+    slots = (previous_slots(upgrade_from)[0] if upgrade_from else
+             {event: len(json.loads(original)['hooks'].get(event, []))
+              for event in ('SessionStart', 'UserPromptSubmit', 'Stop')})
     packet.mkdir(parents=True, exist_ok=False)
     (packet / 'original.json').write_bytes(original)
     (packet / 'candidate.json').write_bytes(encode(candidate))
     (packet / 'plan.json').write_bytes(encode(dict(schema='paoe-codex-selected-install/v1',
         hooks_file=str(hooks_file), sessions=sessions, installation_file=str(installation),
-        cat_url=cat_url, router=str(ROUTER))))
+        cat_url=cat_url, router=str(ROUTER), upgrade_from=upgrade_from, managed_slots=slots)))
     return {'ok': True, 'packet': str(packet), 'action': 'prepared', 'trust_review_required': True}
 
 
@@ -122,7 +174,8 @@ def apply(packet, *, restore=False):
         check_inline_conflict(Path(plan['hooks_file']))
         if not Path(plan['installation_file']).is_file():
             raise ValueError('Selected installation disappeared')
-        rebuilt = build(json.loads(original), plan['sessions'], plan['installation_file'], plan['cat_url'])
+        rebuilt = build(json.loads(original), plan['sessions'], plan['installation_file'], plan['cat_url'],
+                        upgrade_from=plan.get('upgrade_from'))
         if json.loads(candidate) != rebuilt or plan['router'] != str(ROUTER):
             raise ValueError('Candidate or executable location changed; prepare a new packet')
     expected, replacement = (candidate, original) if restore else (original, candidate)
@@ -140,11 +193,13 @@ def main():
     make.add_argument('--session', action='append', required=True)
     make.add_argument('--installation-file', required=True)
     make.add_argument('--cat-url')
+    make.add_argument('--upgrade-from', help='Retained packet identifying the three installed PAOE definitions')
     for action in ('apply', 'restore'):
         sub.add_parser(action).add_argument('--packet', required=True)
     args = parser.parse_args()
     try:
-        result = (prepare(args.hooks_file, args.packet, args.session, args.installation_file, args.cat_url)
+        result = (prepare(args.hooks_file, args.packet, args.session, args.installation_file, args.cat_url,
+                          upgrade_from=args.upgrade_from)
                   if args.action == 'prepare' else apply(args.packet, restore=args.action == 'restore'))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         result = {'ok': False, 'error': str(exc)}
