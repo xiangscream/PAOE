@@ -139,7 +139,7 @@ CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。
 ### 任务房、负责人与关房边界
 
 - **专用目标房与共享讨论房的关房区别**：
-  - **目标专用房（为单一目标单独建立且唯一关联该目标）**：登记目标、负责人已有 Task/计划关联、共同口径（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面）与验收负责人。房间持续开放，即使成员全部离线也继续保留；当约定验收人读到最新 Human 房内输入、明确交付与剩余事项去向并通过验收后，由系统自动关闭（PAOE 0.1 候选沿 `task accept` 完成，待正式采用；Human 保留的验收仍由 Human 确认）。
+  - **目标专用房（为单一目标单独建立且唯一关联该目标）**：登记目标、负责人已有 Task/计划关联、共同口径（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面）与验收负责人。房间持续开放，即使成员全部离线也继续保留；当约定验收人读到最新 Human 房内输入、明确交付与剩余事项去向并通过验收后，由系统自动关闭（沿 `task accept` 完成；Human 保留的验收仍由 Human 确认）。
   - **共享讨论房 / Agent 小房（`--close-policy owner`）**：承载多项议题的共享房或 Agent 自行发起的小房，不被单一目标验收自动关闭，由负责人或发起人在结论归位后正常关闭；关闭后历史可读。
   - **Human 手动关房（`--close-policy human_confirm`）**：如仍显式指定需 Human 手动关房，沿既有 `cat close --action request|confirm|continue` 执行。
 - **房间 INDEX 与负责人**：任务房负责人沿 [Coordinator 工作循环](wf-coordinator-governance-cycle.md#4-项目口径收口与阶段归并) 维护任务 INDEX（目标与交付、Human 当前要求、待定问题、下一步与负责人）；任务结束后稳定结论归入项目 INDEX 或成果原件。
@@ -331,20 +331,20 @@ Windows/WSL 共用安装描述，定位看 `paos install show`。已批准的候
 
 Library 源文件变化后用 `paos library catalog workflow --root <Workflow根>` 重建目录，保留使用记录。运行切换和回退见 [升级与采用](guide-upgrade-adoption.md)，安装异常见 [Rooter 安装](guide-rooter-installation.md)。
 
-## PAOE 0.1 共用动作速查（已按候选实参核对，待正式发布采用）
+## PAOE 0.1 共用动作速查
 
-以下接口均已按 System Core 候选（`0e24d83`、`3eb2939`、`b04531a`）与 CAT 候选（`825792d`）实际 `--help` 核对，待同批工程正式发布后采用：
+以下接口随 System 0.3.0 与配对 CAT 正式发布。本机版本与定位用 `paos install show` 读取，详细参数以当前安装的 `--help` 为准：
 
 | 入口与状态 | 适用时机 | 命令与关键边界 |
 | --- | --- | --- |
-| `context read`（候选已实现） | 会话启动、恢复、压缩后或显式补读 | `paos context read <本人Sxxx> [--task <TaskID>] [--reason startup\|resume\|compact\|stage\|request] [--source <原件>]`；返回原文、版本与缺项，不凭读取就记录请求已装载 |
-| `context stop`（候选已实现） | 回合停止或中断时处理 CAT 离线与至多一轮纠偏 | `paos context stop <本人Sxxx> --event <宿主事件ID> [--task <TaskID>] [--cat-url <URL>] [--interrupted\|--reentry\|--waiting-human]`；返回 `action=stop\|continue`、`rooms_offline` 等，不作任务验收 |
-| `team-plan`（候选已实现） | 0 类团队计划、两次放行、角色卡草案与历史回执核验 | `propose <负责人Sxxx> --task <ID> --plan <原件> --member <负责人Sxxx> --member <成员Sxxx> [--close-policy human_confirm\|owner]`（逐人重复 `--member` 且包含负责人；按 `#Scope` 选章批准时将 `Progress` 放独立章节）；`role <本人Sxxx> --room <room> --duty ... --arrangement ... --deliverables ... --expected-revision <rev>`；`enroll <本人Sxxx> --room <room> [--task <ID>]`；`members --room <room>`；`confirm {open-plan\|approve-roles\|save-role\|accept-goal} --id ha-<32位小写hex> --input <JSON\|@file\|->`（`--id` 同一操作幂等复用、不手填放行记录）；历史回执查验用 `receipt <receipt_id> [--verify] [--archived-artifact <归档成果路径>] [--archived-basis <归档依据路径>]`（均可选 `--cat-url`） |
-| `stage deliver`（候选已实现） | 显式交付一阶段成果 | `paos stage deliver <本人Sxxx> --task <TaskID> --id <稳定交付ID> --artifact <成果路径> --intent <意图来源> --result "<结果>" (--next "<下一步>" \| --waiting "<等待>") [--current] [--cat-url <URL>]`（隔离联调可传 `--cat-url`）；写前核必需原件，成功只返回阶段回执；进入下一阶段时由原生接线或显式 `context read` 取回原文。**默认不结束整项 Task**，且不替代本目标的最终验收（整项完结时，有原 Mail 的任务走 `mail result`，普通 Task 按验收条件收口） |
-| `task accept`（候选已实现） | 约定验收人完成整项目标验收并关闭专用房 | `paos task accept <验收人Sxxx> --task <TaskID> --artifact <项目内成果文件> --basis <项目内验收依据文件> --remaining "<剩余事项去向>" [--room <room> --read-to <实际已读seq>] [--carry HOME/TASK=continuation] [--cat-url <URL>]`；收口当前明确指向该任务的工位责任，`--artifact`/`--basis` 均指向项目内已有文件；普通 Task 可省 `--room`，专用房须同时给 `--room` 与实际读到的 `--read-to`（首次关房由适配器核验）；`human_confirm` 策略须先由 Human 完成 `accept-goal`，再由负责人收口本人 Task |
-| `content changes / consume`（候选已实现） | EXM 整理者拉取变化清单并登记消费位置 | `paos content changes [--after <N>] [--limit <N>]`；`paos content consume <本人Sxxx> --through <N> --result-ref <整理结果路径>`；按同一原件版本合并去重，索引失败不回滚正文 |
-| `context search / collections`（已验证候选） | 新目标或方向调整，按项目/方法/经历三库筛选检索，或只读查看集合注册命令 | `paos context search <本人Sxxx> "<查询>" [--scope project\|methods\|experience]... [--project <项目ID>] [--mode lexical\|semantic\|hybrid] [--limit <N>]`（`--scope` 可重复）；`paos context collections <本人Sxxx> [--project <项目ID>]` 只读给出每一集合的注册命令。缺集合会清楚报告覆盖不足且已有结果仍可读，日期只用原件声明 |
-| `content watch`（已验证候选） | 整机单一本地内容观察进程 | `paos --installation-file <安装描述> --json content watch`（不传 Home）；启动先订阅目录，再补录停机期间的变化，`ready` 表示两步均已完成，`Ctrl+C` / Windows 控制台 break 协同停止，同安装第二实例明确失败；仅管本地文件（云端原件走既有工具 `read / refresh`），正式登录启用由 Rooter 负责 |
+| `context read` | 会话启动、恢复、压缩后或显式补读 | `paos context read <本人Sxxx> [--task <TaskID>] [--reason startup\|resume\|compact\|stage\|request] [--source <原件>]`；返回原文、版本与缺项，不凭读取就记录请求已装载 |
+| `context stop` | 回合停止或中断时处理 CAT 离线与至多一轮纠偏 | `paos context stop <本人Sxxx> --event <宿主事件ID> [--task <TaskID>] [--cat-url <URL>] [--interrupted\|--reentry\|--waiting-human]`；返回 `action=stop\|continue`、`rooms_offline` 等，不作任务验收 |
+| `team-plan` | 0 类团队计划、两次放行、角色卡草案与历史回执核验 | `propose <负责人Sxxx> --task <ID> --plan <原件> --member <负责人Sxxx> --member <成员Sxxx> [--close-policy human_confirm\|owner]`（逐人重复 `--member` 且包含负责人；按 `#Scope` 选章批准时将 `Progress` 放独立章节）；`role <本人Sxxx> --room <room> --duty ... --arrangement ... --deliverables ... --expected-revision <rev>`；`enroll <本人Sxxx> --room <room> [--task <ID>]`；`members --room <room>`；`confirm {open-plan\|approve-roles\|save-role\|accept-goal} --id ha-<32位小写hex> --input <JSON\|@file\|->`（`--id` 同一操作幂等复用、不手填放行记录）；历史回执查验用 `receipt <receipt_id> [--verify] [--archived-artifact <归档成果路径>] [--archived-basis <归档依据路径>]`（均可选 `--cat-url`） |
+| `stage deliver` | 显式交付一阶段成果 | `paos stage deliver <本人Sxxx> --task <TaskID> --id <稳定交付ID> --artifact <成果路径> --intent <意图来源> --result "<结果>" (--next "<下一步>" \| --waiting "<等待>") [--current] [--cat-url <URL>]`（隔离联调可传 `--cat-url`）；写前核必需原件，成功只返回阶段回执；进入下一阶段时由原生接线或显式 `context read` 取回原文。**默认不结束整项 Task**，且不替代本目标的最终验收（整项完结时，有原 Mail 的任务走 `mail result`，普通 Task 按验收条件收口） |
+| `task accept` | 约定验收人完成整项目标验收并关闭专用房 | `paos task accept <验收人Sxxx> --task <TaskID> --artifact <项目内成果文件> --basis <项目内验收依据文件> --remaining "<剩余事项去向>" [--room <room> --read-to <实际已读seq>] [--carry HOME/TASK=continuation] [--cat-url <URL>]`；收口当前明确指向该任务的工位责任，`--artifact`/`--basis` 均指向项目内已有文件；普通 Task 可省 `--room`，专用房须同时给 `--room` 与实际读到的 `--read-to`（首次关房由适配器核验）；`human_confirm` 策略须先由 Human 完成 `accept-goal`，再由负责人收口本人 Task |
+| `content changes / consume` | EXM 整理者拉取变化清单并登记消费位置 | `paos content changes [--after <N>] [--limit <N>]`；`paos content consume <本人Sxxx> --through <N> --result-ref <整理结果路径>`；按同一原件版本合并去重，索引失败不回滚正文 |
+| `context search / collections` | 新目标或方向调整，按项目/方法/经历三库筛选检索，或只读查看集合注册命令 | `paos context search <本人Sxxx> "<查询>" [--scope project\|methods\|experience]... [--project <项目ID>] [--mode lexical\|semantic\|hybrid] [--limit <N>]`（`--scope` 可重复）；`paos context collections <本人Sxxx> [--project <项目ID>]` 只读给出每一集合的注册命令。缺集合会清楚报告覆盖不足且已有结果仍可读，日期只用原件声明 |
+| `content watch` | 整机单一本地内容观察进程 | `paos --installation-file <安装描述> --json content watch`（不传 Home）；启动先订阅目录，再补录停机期间的变化，`ready` 表示两步均已完成，`Ctrl+C` / Windows 控制台 break 协同停止，同安装第二实例明确失败；仅管本地文件（云端原件走既有工具 `read / refresh`），正式登录启用由 Rooter 负责 |
 
 ## 问题定位
 
