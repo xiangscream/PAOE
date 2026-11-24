@@ -42,7 +42,7 @@ EXAMPLE_PATHS = {
         'D:' + '/path/to/paired/Core/code/personal-agent-os/adapters/opencode',
         'D:' + '/path/to/installation.selected.json'},
     'Core/code/personal-agent-os/docs/CODEX-SELECTED-HOOK.md': {
-        'C:' + '/Users/USER/.codex/hooks.json',
+        'C:' + '/Users/' + 'USER/.codex/hooks.json',
         'D:' + '/review/codex-selected', 'D:' + '/review/installation.selected.json'},
     'Core/code/personal-agent-os/docs/CONTENT-WATCH.md': {'C:' + '/path/installation.json'},
     'Core/obsidian/types/obsidian.d.ts': {
