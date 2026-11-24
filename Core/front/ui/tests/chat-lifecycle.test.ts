@@ -19,7 +19,7 @@ it('leaving CAT while the list is loading cannot reopen a room or change the cur
   roomsDone({ok:true,json:async()=>({ok:true,rooms:[{id:'original',status:'open'}]})})
   peopleDone({ok:true,json:async()=>({ok:true,people:[]})})
   await flushPromises()
-  expect(fetch).toHaveBeenCalledTimes(2)
+  expect(fetch).toHaveBeenCalledTimes(3)   // rooms + people + project plan discovery
   expect(events).not.toHaveBeenCalled()
   expect(location.href).toBe(before)
 })
