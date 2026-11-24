@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 101
+version: 102
 ---
 
 # PAOS 操作指南
@@ -134,12 +134,12 @@ S号寻址和跨Project参数查安装 `agent send --help`。普通消息使用�
 
 CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。Room与同事从现行Project/联系入口取得。
 
-单点事实或二选一授权（答案只在发件人一人手里）沿原信带 `--remind` 一次问清即可。涉及**三方及以上角色对焦**，或**方案开放、一方回答会立刻改变另一方拆解与措辞**（如长程共写、碰撞场景或解决分歧）时，任何参与者都可主动发起 CAT，优先复用同题房间，使用已登记 S号入座。形成行动或决定后回本人 TODO 和项目正文，正式交接用 Mail。
+单点事实或二选一授权（答案只在发件人一人手里）沿原信带 `--remind` 一次问清即可。**组织一项 Work 即必须建并关联 CAT**（不再等 4 人；普通零散任务仍直接进个人 TODO，不变成 Work）；其他涉及多方角色对焦、方案开放共写或解决分歧的场景，任何参与者也可主动发起 CAT，优先复用同题房间，使用已登记 S号入座。形成行动或决定后回本人 TODO 和项目正文，正式交接用 Mail。
 
 ### 任务房、负责人与关房边界
 
 - **专用目标房与共享讨论房的关房区别**：
-  - **目标专用房（为单一目标单独建立且唯一关联该目标）**：登记目标、负责人已有 Task/计划关联、共同口径（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面）与验收负责人。房间持续开放，即使成员全部离线也继续保留；当约定验收人读到最新 Human 房内输入、明确交付与剩余事项去向并通过验收后，由系统自动关闭（沿 `task accept` 完成；Human 保留的验收仍由 Human 确认）。
+  - **目标专用房（为单一目标单独建立且唯一关联该目标）**：登记目标、负责人已有 Task/计划关联、共同口径（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面）与验收负责人。房间持续开放，即使成员全部离线也继续保留；当约定验收人读到最新 Human 房内输入、明确交付与剩余事项去向并通过验收后，由系统自动关闭（沿 `task accept` 完成；Human 保留的验收仍由 Human 确认）。面向 Human 验收的整体协作，按“成员将与 Human 直接对话中收到的本工作介入原话与来源带回本房 CAT（房内已有不重复转帖，转述不伪装 Human）→ 成员交清本段成果、经历与未完交接即可 `left` 离席（早期已顺利交付且无待答者不再唤醒，必要时负责人依已交付事实更新席位，离席不丢成果、原身份或再邀请能力）→ 临时负责人沿 CAT 介入与已有成果统一形成一份本工作意图稿/述职 → Human 在对话或可选界面明确通过（`accept-goal` 直接记录、不重复弹窗）→ 结束整体任务并关闭专用房 → 意图稿与成果原件直接供 EXM 与日结复用”收口；临时负责人完整工作法见项目级 `WORK-LEAD.md`（仅被指派为临时负责人时载入）。普通工具调用、已授权子任务与中间阶段交付照常按原授权推进，不设为 Human 审批门。
   - **共享讨论房 / Agent 小房（`--close-policy owner`）**：承载多项议题的共享房或 Agent 自行发起的小房，不被单一目标验收自动关闭，由负责人或发起人在结论归位后正常关闭；关闭后历史可读。
   - **Human 手动关房（`--close-policy human_confirm`）**：如仍显式指定需 Human 手动关房，沿既有 `cat close --action request|confirm|continue` 执行。
 - **房间 INDEX 与负责人**：任务房负责人沿 [Coordinator 工作循环](wf-coordinator-governance-cycle.md#4-项目口径收口与阶段归并) 维护任务 INDEX（目标与交付、Human 当前要求、待定问题、下一步与负责人）；任务结束后稳定结论归入项目 INDEX 或成果原件。
@@ -147,7 +147,8 @@ CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。
 ### 0 类综合工作与临时角色卡（PAOE 0.1）
 
 - **两次 Human 放行**：Human 以 `0` 开头的真实新输入（不从引用、正文或历史消息触发）由临时负责人按四步推进：① 拟团队计划（仅登记规划责任）→ ② **Human 第一次放行**后建本目标专用 CAT 并邀请同事 → ③ 成员在房内完善临时角色卡（放行前拟职责与拟 TODO 安排仅存房间/计划原件，不提前写入正式执行 Task）→ ④ **Human 第二次放行**后按已批准版本接入本人正式执行 Task 并全员开工。普通非 0 类任务按原授权直接执行。
-- **临时角色卡**：每张卡对应一名已有员工（姓名/员工号、Harness、本轮临时职责、本轮 TODO 安排、协作关系与成果链接），放行后直接从本人 Task 与业务原件投影，不另抄第二份进度。Human 保存修改后系统直接提醒对应成员，继续该房任务时在下一次请求或动作边界带入变化（不波及无关任务、不增加手动确认），负责人后续汇总同步即可。Agent 在原授权内更新进展照常进行，仅实质改动已批准的目标、参与人、职责或交付范围时交受影响差异。
+- **对话决定不重复弹窗（F87）**：`open-plan`、`approve-roles`、`save-role`、`accept-goal`、`close-room` 五项 PAOE 业务决定共用同一机制——Human 在原对话或可选界面（Web/Obsidian 直接单选决定入口）明确表态一次即可，不再叠加二次确认弹窗（`close-room` 记录普通房间的明确结束决定，普通 UI 关房一次直接点击不叠加窗口；有 `team_plan` 的专用目标房必须走 `accept-goal`）。执行者先用 `team-plan review` 核对精确版本与 `subject`，Human 明确表态后再用 `team-plan confirm --decision` 原文记录（`choice` 为 `approve|reject|revise|defer`，含 `channel`、`recorded_by`、`source_ref`、`quote` 与对应 `subject`），仅明确 `approve` 且匹配当前内容时生效；`reject/revise/defer` 仅记结果与后续责任，不建房、不放行、不关房，且不得作为 CAT 批准凭据。模糊表态不得自行推定为同意，改版内容不可沿用旧批准。原生窗口仅保留给显式 `--interactive` 直接决定，默认不再弹出。Hook 信任提示与操作系统权限弹窗不属 PAOE 业务节点，不在取消范围内。
+- **唯一个人 TODO 分组与临时角色卡映射（F88）**：仍只维护一份个人 `TODO.md`——Task 可在现有 `source_refs` 内写 `work-group:<工作名称>` 归组，未写即零散事项；CAT 沿已有 `cat-role:<room>` 读取，非角色房可写 `cat-room:<room>`。这些均为可编辑的归组与定位标签（正常接单、发信、恢复不以其存在为前提；不自动为旧任务猜分组，也不迁移本人 TODO 到多个正文；Work 保持软流程概念，不新增 Work 对象、编号、登记库或生命周期）。只读投影 `todo.groups` 为 `[{name: string|null, rooms: [...], tasks: [...原Task]}]`（零散事项 `name=null`）；每张临时角色卡对应一名已有员工（姓名/员工号、Harness、本轮临时职责、本轮 TODO 安排、协作关系与成果链接），放行后沿本 Task 的同名组返回 `group` 并直接映射后端该组安排、来源与成果，不在前端另存可写 TODO、批准状态或业务规则（角色卡已有编辑能力沿同一正式写回入口）；收尾只取本组，其他并行组保持。Human 保存修改后系统直接提醒对应成员，继续该房任务时在下一次请求或动作边界带入变化（不波及无关任务、不增加手动确认），负责人后续汇总同步即可。Agent 在原授权内更新进展照常进行，仅实质改动已批准的目标、参与人、职责或交付范围时交受影响差异。
 
 ### 在线循环、离线语义与恢复扫房
 
@@ -333,13 +334,13 @@ Library 源文件变化后用 `paos library catalog workflow --root <Workflow根
 
 ## PAOE 0.1 共用动作速查
 
-以下接口随 System 0.3.0 与配对 CAT 正式发布。本机版本与定位用 `paos install show` 读取，详细参数以当前安装的 `--help` 为准：
+以下为 System 0.3.2 与配对 CAT 的正式接口。本机版本与定位用 `paos install show` 读取，详细参数以当前安装的 `--help` 为准：
 
 | 入口与状态 | 适用时机 | 命令与关键边界 |
 | --- | --- | --- |
 | `context read` | 会话启动、恢复、压缩后或显式补读 | `paos context read <本人Sxxx> [--task <TaskID>] [--reason startup\|resume\|compact\|stage\|request] [--source <原件>]`；返回原文、版本与缺项，不凭读取就记录请求已装载 |
 | `context stop` | 回合停止或中断时处理 CAT 离线与至多一轮纠偏 | `paos context stop <本人Sxxx> --event <宿主事件ID> [--task <TaskID>] [--cat-url <URL>] [--interrupted\|--reentry\|--waiting-human]`；返回 `action=stop\|continue`、`rooms_offline` 等，不作任务验收 |
-| `team-plan` | 0 类团队计划、两次放行、角色卡草案与历史回执核验 | `propose <负责人Sxxx> --task <ID> --plan <原件> --member <负责人Sxxx> --member <成员Sxxx> [--close-policy human_confirm\|owner]`（逐人重复 `--member` 且包含负责人；按 `#Scope` 选章批准时将 `Progress` 放独立章节）；`role <本人Sxxx> --room <room> --duty ... --arrangement ... --deliverables ... --expected-revision <rev>`；`enroll <本人Sxxx> --room <room> [--task <ID>]`；`members --room <room>`；`confirm {open-plan\|approve-roles\|save-role\|accept-goal} --id ha-<32位小写hex> --input <JSON\|@file\|->`（`--id` 同一操作幂等复用、不手填放行记录）；历史回执查验用 `receipt <receipt_id> [--verify] [--archived-artifact <归档成果路径>] [--archived-basis <归档依据路径>]`（均可选 `--cat-url`） |
+| `team-plan` | 0 类团队计划、两次放行、角色卡草案与历史回执核验 | `propose <负责人Sxxx> --task <ID> --plan <原件> --member <负责人Sxxx> --member <成员Sxxx> [--close-policy human_confirm\|owner]`（逐人重复 `--member` 且包含负责人；按 `#Scope` 选章批准时将 `Progress` 放独立章节）；`role <本人Sxxx> --room <room> --duty ... --arrangement ... --deliverables ... --expected-revision <rev>`；`enroll <本人Sxxx> --room <room> [--task <ID>]`；`members --room <room>`；`review {open-plan\|approve-roles\|save-role\|accept-goal\|close-room} --input <JSON\|@file\|->`（只读返回 `action/input/subject/explanation`，供对话或界面展示精确版本）；`confirm {open-plan\|approve-roles\|save-role\|accept-goal\|close-room} --id ha-<32位小写hex> --input <JSON\|@file\|-> --decision <JSON\|@file\|->`（按已作出的决定直接落盘并应用、不弹窗；`decision` 含 `choice=approve\|reject\|revise\|defer`、`channel=conversation\|ui`、`recorded_by`、`source_ref`、`quote` 与精确 `subject`；仅明确 `approve` 生效，非 `approve` 不得作 CAT 批准凭据；同 `--id` 同输入幂等，改版不可复用旧决定；显式 `--interactive` 仅作可选本地直接决定窗口，默认不弹）；历史回执查验用 `receipt <receipt_id> [--verify] [--archived-artifact <归档成果路径>] [--archived-basis <归档依据路径>]`（均可选 `--cat-url`） |
 | `stage deliver` | 显式交付一阶段成果 | `paos stage deliver <本人Sxxx> --task <TaskID> --id <稳定交付ID> --artifact <成果路径> --intent <意图来源> --result "<结果>" (--next "<下一步>" \| --waiting "<等待>") [--current] [--cat-url <URL>]`（隔离联调可传 `--cat-url`）；写前核必需原件，成功只返回阶段回执；进入下一阶段时由原生接线或显式 `context read` 取回原文。**默认不结束整项 Task**，且不替代本目标的最终验收（整项完结时，有原 Mail 的任务走 `mail result`，普通 Task 按验收条件收口） |
 | `task accept` | 约定验收人完成整项目标验收并关闭专用房 | `paos task accept <验收人Sxxx> --task <TaskID> --artifact <项目内成果文件> --basis <项目内验收依据文件> --remaining "<剩余事项去向>" [--room <room> --read-to <实际已读seq>] [--carry HOME/TASK=continuation] [--cat-url <URL>]`；收口当前明确指向该任务的工位责任，`--artifact`/`--basis` 均指向项目内已有文件；普通 Task 可省 `--room`，专用房须同时给 `--room` 与实际读到的 `--read-to`（首次关房由适配器核验）；`human_confirm` 策略须先由 Human 完成 `accept-goal`，再由负责人收口本人 Task |
 | `content changes / consume` | EXM 整理者拉取变化清单并登记消费位置 | `paos content changes [--after <N>] [--limit <N>]`；`paos content consume <本人Sxxx> --through <N> --result-ref <整理结果路径>`；按同一原件版本合并去重，索引失败不回滚正文 |

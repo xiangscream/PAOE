@@ -1,6 +1,7 @@
 """Explicit installations own both dispatch and cross-Home recipient resolution."""
 import json
 import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -12,7 +13,7 @@ sys.path.insert(0,str(SCRIPTS))
 from paos_attention_service import send_mail_source, request_mail_activation, resolve_home_by_registry, read_source_status, AttentionServiceProblem
 from paos_installation import write_installation_descriptor
 from paos_registry import ProjectRegistry
-from paos_todo import render_todo, write_todo
+from paos_todo import parse_todo, render_todo, write_todo
 from paos_mail_tracking import handoff_status
 
 
@@ -91,6 +92,28 @@ class MailInstallationScopeTests(unittest.TestCase):
         self.send('default-not-read')
         self.assertTrue((self.explicit['homes']['rooter-001']/'mailbox/default-not-read.md').exists())
         self.assertEqual(self.snapshot(self.default['base']),before)
+
+    def test_normal_cli_status_track_and_task_status_use_the_resolved_installation(self):
+        b = self.explicit
+        self.send()
+        sender = b['homes']['S010'] / 'TODO.md'
+        todo = parse_todo(sender.read_text(encoding='utf-8'))
+        todo['tasks'] = [{'id': 'T1', 'title': 'Existing sender responsibility', 'state': 'doing'}]
+        write_todo(sender, render_todo(home_kind=todo['home_kind'], home_id=todo['home_id'],
+            project_id=todo['project_id'], pinned=todo['pinned'], tasks=todo['tasks'], **todo['current']))
+        before = self.snapshot(self.default['base'])
+        env = {**os.environ, 'PAOS_INSTALLATION_FILE': str(b['install'])}
+        for args in [('status', '1001', 'scope-001'),
+                     ('track', '1001', 'S010', 'scope-001', '--task', 'T1'),
+                     ('task-status', '1001', 'S010', 'T1')]:
+            with self.subTest(args=args):
+                result = subprocess.run([sys.executable, '-X', 'utf8', '-B', str(SCRIPTS/'paos.py'),
+                    '--json', 'mail', *args], capture_output=True, text=True, encoding='utf8', env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                value = json.loads(result.stdout)
+                self.assertTrue(value['ok'])
+        self.assertEqual(self.snapshot(self.default['base']), before)
+        self.assertFalse((Path(b['project']['root_path']) / '.paos/mail/dispatch').exists())
 
 
 if __name__=='__main__':unittest.main()

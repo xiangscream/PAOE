@@ -25,26 +25,19 @@ function processFixture() {
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => { vi.useRealTimers(); vi.clearAllMocks() })
 
-describe('Human confirmation bridge waiting', () => {
-  it('keeps the same confirmation pending beyond 45 seconds and returns its actual result', async () => {
-    const child = processFixture()
+describe('bridge request timeout', () => {
+  it.each([
+    { method: 'POST', path: '/api/team/confirm' },
+    { method: 'GET', path: '/api/context' },
+    { method: 'POST', path: '/api/messages' },
+  ])('ends $method $path at 45 seconds', async request => {
+    processFixture()
     let finished = false
-    const pending = runBridge(config, { method: 'POST', path: '/api/team/confirm', body: { action: 'open-plan' } })
+    const pending = runBridge(config, request)
     pending.then(() => { finished = true })
-    await vi.advanceTimersByTimeAsync(60000)
+    await vi.advanceTimersByTimeAsync(44999)
     expect(finished).toBe(false)
-    expect(spawn).toHaveBeenCalledTimes(1)
-    child.stdout.emit('data', new TextEncoder().encode('{"status":200,"body":{"ok":true,"state":"cancelled"}}'))
-    child.emit('close', 0)
-    expect(await pending).toEqual({ status: 200, body: { ok: true, state: 'cancelled' } })
+    await vi.advanceTimersByTimeAsync(1)
+    expect((await pending).body.error_code).toBe('bridge_timeout')
   })
-
-  it.each([{ method: 'GET', path: '/api/context' }, { method: 'POST', path: '/api/messages' }])(
-    'retains the timeout for ordinary $method $path', async request => {
-      processFixture()
-      const pending = runBridge(config, request)
-      await vi.advanceTimersByTimeAsync(45000)
-      expect((await pending).body.error_code).toBe('bridge_timeout')
-    },
-  )
 })

@@ -79,4 +79,12 @@ python paos_agents_common.py --installation-file /path/to/installation.json --te
 
 `in-sync` 为正文一致；`stale` 为签名正确的旧派生区或与母本逐字一致的新复制未签名区，可显式更新；`conflict` 为公共区人工改动、标记/签名异常或未纳管的旧 AGENTS，必须人工合并；`unavailable` 为登记根或文件不可读。首次纳管人工保留旧项目约定，在原 AGENTS 内植入完整公共区及指纹，不允许工具静默覆盖整页。脚本按原文件换行与权限写回，仅替换已受管理的公共区；更新时检查中途修改。
 
-此机制不覆盖 `~/.codex/AGENTS.md`、Core 开发 AGENTS 或未登记项目；Rooter 全局 AGENTS 若需要采用，另按其现有安装权限检查。按 `[公共正文编辑 → --diff → 显式 --apply → --check]` 采用即可，无后台轮询、第二份名册或签收账本。
+负责人指南复用同一分发入口；仅 `WORK-LEAD.md` 缺失时可按母本创建，已存在的公共区仍保留本地补充。新建项目带入这份母本。Rooter 使用显式 `--rooter` 纳入登记工位，只有此项而无 `--all/--project` 时仅处理 Rooter：
+
+```sh
+python paos_agents_common.py --installation-file /path/to/installation.json --template /path/to/Project-Template/WORK-LEAD.md --document WORK-LEAD.md --all --rooter --apply
+```
+
+规划负责 Task 的 `team-plan:` 关联会让 `context read` 返回项目 `WORK-LEAD.md` 全文；其他临时负责人在对应 Task 的 `source_refs` 挂载 `WORK-LEAD.md`，或用 `paos context read <本人Sxxx> --source WORK-LEAD.md` 补读。普通成员不默认载入。分发工位公共 AGENTS 时，将该项目链接展开到登记项目根；Rooter 链到其本人工位的同名指南，避免相对链接落到错误目录。
+
+此机制不覆盖 `~/.codex/AGENTS.md`、Core 开发 AGENTS 或未登记项目。按 `[公共正文编辑 → --diff → 显式 --apply → --check]` 采用即可，无后台轮询、第二份名册或签收账本。

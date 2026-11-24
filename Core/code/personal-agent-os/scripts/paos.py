@@ -3013,7 +3013,8 @@ def execute_mail(
             }
 
         if args.mail_command in {"status", "track", "task-status"}:
-            installation_file = getattr(args, "installation_file", None)
+            installation_file = installation_path or resolve_installation_path(
+                getattr(args, "installation_file", None))
             lookup = _registry_authoritative_or_none(installation_file)
             if args.mail_command == "status":
                 return {"ok": True, **handoff_status(root, args.message_id, lookup, installation_file)}

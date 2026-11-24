@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 from pathlib import Path
 import shutil
 import sys
@@ -108,6 +109,34 @@ class AgentsCommonTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('unavailable', out)
         self.assertFalse(self.target.exists())
+
+    def test_work_lead_distribution_initializes_only_its_document_and_preserves_local_prose(self):
+        template = self.fixture.root / 'WORK-LEAD.md'
+        template.write_text('# Project <project-id>\n' + sync.START + '\nLead rule A.\n' + sync.END + '\nLocal notes\n', encoding='utf8')
+        rooter = self.fixture.root / 'Rooter'
+        rooter.mkdir(exist_ok=True)
+        descriptor = json.loads(self.fixture.install.read_text(encoding='utf8'))
+        descriptor['rooter_home'] = str(rooter)
+        self.fixture.install.write_text(json.dumps(descriptor), encoding='utf8')
+        args = ['--installation-file', str(self.fixture.install), '--template', str(template),
+                '--document', 'WORK-LEAD.md', '--all', '--rooter']
+        original_agents = self.target.read_bytes()
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(sync.main([*args, '--check']), 1)
+            self.assertFalse((self.fixture.vault / 'WORK-LEAD.md').exists())
+            self.assertEqual(sync.main([*args, '--apply']), 0)
+        self.assertEqual(self.target.read_bytes(), original_agents)
+        paths = [self.fixture.vault / 'WORK-LEAD.md', rooter / 'WORK-LEAD.md']
+        for path in paths:
+            self.assertIn('Lead rule A.', path.read_text(encoding='utf8'))
+            path.write_bytes(path.read_bytes() + 'Human local notes\n'.encode())
+        template.write_text(template.read_text(encoding='utf8').replace('rule A.', 'rule B.'), encoding='utf8')
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(sync.main([*args, '--apply']), 0)
+            self.assertEqual(sync.main([*args, '--check']), 0)
+        for path in paths:
+            self.assertIn('Lead rule B.', path.read_text(encoding='utf8'))
+            self.assertTrue(path.read_bytes().endswith(b'Human local notes\n'))
 
     def test_symlink_is_unavailable_not_replaced(self):
         self.target.unlink()

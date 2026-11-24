@@ -68,10 +68,12 @@ external Runtime, and a successful transport receipt is **not** task completion.
 | `paos_installation.py`, `paos_registry.py`, `paos_agent_numbers.py` | Installed paths, minimum Project/member location | Read-only operations do not create files |
 | `paos_home.py`, `paos_workstation.py` | Stable Home path and new ENTRY/TODO | Never overwrite handwritten existing files |
 | `paos_todo.py`, `paos_write_owner.py` | TODO parsing, writer ownership, lock/fingerprint safety | Only one canonical current task fact |
+| `paos_todo_groups.py` | Project the original Tasks by optional work-group/CAT labels | Read only; no Work registry or second TODO |
+| `paos_context.py`, `paos_team.py`, `paos_human_action.py` | Load responsible-role sources and apply attributable Human decisions | Exact reviewed content, one decision; ordinary members do not load the lead guide |
 | `paos_mail.py`, `paos_notice.py` | Immutable Mail and durable Notice | Input handled != task finished |
 | `paos_attention_service.py`, `paos_agent_activation.py` | Compose Home, Mail, Notice and explicit activation | Do not invent an execution-state database |
 | `paos_library.py`, `paos_guide.py` | Discover independent Workflow/Skill/Tool and support Guide diffs | Does not own the method documents |
-| `paos_agents_common.py` | Verify/distribute one marked AGENTS public region | Keep project-specific text verbatim |
+| `paos_agents_common.py` | Verify/distribute marked AGENTS and WORK-LEAD regions | Keep project-specific text verbatim; explicit targets only |
 | `paos_team_overview.py` | Derive PROJECTS/TEAM overview from Registry and files | Read-derived, not manually duplicated roster |
 | `paos.py` team/peers `--summary` | Explicit compact structured roster for colleague lookup | Default full JSON/text unchanged; summary omits history and points to original paths |
 | `paos_cat_cli.py`, `paos_cat_activation.py`, `paos_external_contact.py` | Explicit CAT/cross-agent communication adapter | No implicit CAT server |

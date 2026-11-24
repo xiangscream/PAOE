@@ -665,7 +665,7 @@ class Board:
             _check_team_scope(project, result["team"]["plan"]["project"])
         return result
 
-    def confirm_team(self, payload: dict) -> dict:
+    def confirm_team(self, payload: dict, *, review: bool = False) -> dict:
         _human_sender(payload)
         if not self.cat_url:
             raise BoardProblem("cat_not_configured", "当前画板没有配置 CAT。")
@@ -674,7 +674,7 @@ class Board:
         subject = payload.get("input")
         if action not in ("open-plan", "approve-roles", "save-role", "accept-goal"):
             raise BoardProblem("team_action_unknown", "请选择相应的团队操作。")
-        if not isinstance(ident, str) or not ident or not isinstance(subject, dict):
+        if not isinstance(subject, dict) or (not review and (not isinstance(ident, str) or not ident)):
             raise BoardProblem("team_action_input_invalid", "请提供本次操作的编号和审阅对象。")
         project = payload.get("project")
         if project:
@@ -688,10 +688,16 @@ class Board:
                     return room
                 # The public room context is fixed by the approved plan. Core verifies each action.
                 _check_team_scope(project, (room.get("task_context") or {}).get("project_id"))
-        # Core displays the reviewed originals and applies the receipt on a real Human decision.
+        if review:
+            return self.run_paos(["team-plan", "review", action, "--input", "-",
+                                  "--cat-url", self.cat_url], input_text=json.dumps(subject, ensure_ascii=False))
+        decision = payload.get("decision")
+        if not isinstance(decision, dict) or decision.get("channel") != "ui":
+            raise BoardProblem("human_decision_required", "当前页面缺少明确决定及所见版本，请刷新后继续。")
+        # The UI click is the decision; Core must not ask for a second window click.
         return self.run_paos(["team-plan", "confirm", action, "--id", ident, "--input", "-",
-                              "--cat-url", self.cat_url], input_text=json.dumps(subject, ensure_ascii=False),
-                             timeout=None)
+                              "--decision", json.dumps(decision, ensure_ascii=False),
+                              "--cat-url", self.cat_url], input_text=json.dumps(subject, ensure_ascii=False))
 
     @staticmethod
     def _context_args(context: dict | None) -> list[str]:
@@ -856,7 +862,9 @@ def dispatch_request(board: Board, method: str, path: str,
                 return 404, {"ok": False, "error": "未找到此入口。", "error_code": "not_found"}
             return 200, value
         if method == "POST":
-            if url.path == "/api/team/confirm":
+            if url.path == "/api/team/review":
+                value = board.confirm_team(payload, review=True)
+            elif url.path == "/api/team/confirm":
                 value = board.confirm_team(payload)
             elif url.path == "/api/room":
                 members = payload.get("members")

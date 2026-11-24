@@ -11,6 +11,7 @@
 ```text
 <Project Vault>/
 ├── AGENTS.md           # 生效公共运行区（底座契约） + 本项目特殊约定
+├── WORK-LEAD.md        # 仅临时负责人载入的组织与述职指南
 ├── INDEX.md            # 项目最新业务口径、成果导航与外部原件稳定链接
 ├── TEAM.md             # 项目在队成员、职责、专长、Harness 与工位入口
 ├── HISTORY.md          # 按业务主题归并的阶段成果与关键经验
@@ -33,6 +34,7 @@
 | 母版 / 文件 | 原件职责 | 维护与更新方式 |
 | --- | --- | --- |
 | [AGENTS](AGENTS.md) | 公共运行区唯一母本；项目特殊约定留在公共区外 | 统一分发公共区；保留项目原有特殊约定 |
+| [WORK-LEAD](WORK-LEAD.md) | 临时负责人对齐、组织和收尾的方法 | 同一公共区分发；在负责 Task 中关联或显式 context read，普通成员不默认载入 |
 | [INDEX](INDEX.md) | 项目最新业务口径、业务原件与外部权威链接 | 由项目合成人维护；不以母版覆盖业务内容 |
 | [TEAM](TEAM.md) | 项目成员职责、专长、Harness 与工位索引 | 按真实分工维护，修改后刷新 PROJECTS 聚合 |
 | [HISTORY](HISTORY.md) | 按业务主题汇总的阶段成果、关键判断与经验 | 由合成人从成员已完成 TODO 和成果归并 |
@@ -52,7 +54,7 @@
 
 ## 新项目和工位的创建
 
-1. **建立 Vault**：Human 明确授权建立目录与 Obsidian 库，使用母版初始化 AGENTS、INDEX、TEAM、HISTORY。
+1. **建立 Vault**：Human 明确授权建立目录与 Obsidian 库，使用母版初始化 AGENTS、WORK-LEAD、INDEX、TEAM、HISTORY。
 2. **登记项目与成员**：
    - 为新成员选定全局未使用的员工号（如 S070）。
    - 新项目执行 `paos project register`，加入已有项目执行 `paos project home-add`。
