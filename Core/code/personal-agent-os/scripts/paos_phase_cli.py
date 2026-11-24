@@ -1,6 +1,9 @@
 """Command contracts shared by the four user-facing Harness adapters."""
 
+import os
+
 from paos_attention_service import resolve_home_by_registry
+from paos_cat_activation import CatActivationProblem
 from paos_content import consume, list_changes
 from paos_content_watch_cli import add_watch_parser, execute_watch
 from paos_context import read_context
@@ -10,6 +13,12 @@ from paos_phase_stop import on_stop
 from paos_stage import deliver
 from paos_stage import task_snapshot
 from paos_team import ROLE, live_role
+
+DEFAULT_CAT_URL = "http://127.0.0.1:8870"
+
+
+def _default_cat_url() -> str:
+    return (os.environ.get("CAT_BASE_URL") or DEFAULT_CAT_URL).rstrip("/")
 
 
 def add_phase_parsers(sub):
@@ -26,7 +35,12 @@ def add_phase_parsers(sub):
     read.add_argument(
         "--source", action="append", default=[], help="Required local text source (repeatable)"
     )
-    read.add_argument("--cat-url", help="CAT endpoint for a governed role in this Task")
+    read.add_argument(
+        "--cat-url",
+        default=_default_cat_url(),
+        help="CAT endpoint for a governed role in this Task; default CAT_BASE_URL or "
+             "http://127.0.0.1:8870",
+    )
     stop = ctx.add_parser("stop", help="End room presence and decide on one continuation")
     stop.add_argument("home")
     stop.add_argument("--event", required=True)
@@ -49,7 +63,12 @@ def add_phase_parsers(sub):
     send.add_argument("--intent", action="append", required=True)
     send.add_argument("--result", required=True)
     send.add_argument("--current", action="store_true", help="Make this Task the Home's current focus")
-    send.add_argument("--cat-url", help="CAT endpoint for a governed role in this Task")
+    send.add_argument(
+        "--cat-url",
+        default=_default_cat_url(),
+        help="CAT endpoint for a governed role in this Task; default CAT_BASE_URL or "
+             "http://127.0.0.1:8870",
+    )
     next_step = send.add_mutually_exclusive_group(required=True)
     next_step.add_argument("--next", dest="next_action", default="")
     next_step.add_argument("--waiting", default="")
@@ -65,6 +84,40 @@ def add_phase_parsers(sub):
     done.add_argument("home")
     done.add_argument("--through", type=int, required=True)
     done.add_argument("--result-ref", required=True)
+
+
+def _context_sources(context):
+    return [
+        {key: value for key, value in document.items() if key != "body"}
+        for document in context.get("documents", [])
+        if isinstance(document, dict)
+    ]
+
+
+def _stage_failure(context, args):
+    """Keep the normal failure receipt small; full text stays explicit."""
+    sources = _context_sources(context)
+    compact = {
+        "schema": context.get("schema"),
+        "home_id": context.get("home_id"),
+        "task_id": context.get("task_id"),
+        "missing": list(context.get("missing") or []),
+        "omitted": list(context.get("omitted") or []),
+        "documents": sources,
+    }
+    cat_url = str(getattr(args, "cat_url", "") or "").strip()
+    hint = (
+        f"paos context read {args.home} --task {args.task} --reason stage"
+        + (f" --cat-url {cat_url}" if cat_url else "")
+    )
+    return {
+        "ok": False,
+        "error_code": "stage_context_incomplete",
+        "missing": compact["missing"],
+        "sources": sources,
+        "read_hint": hint,
+        "context": context if getattr(args, "full_result", False) else compact,
+    }
 
 
 def execute_phase(args, installation, identity, cat_client):
@@ -107,20 +160,20 @@ def execute_phase(args, installation, identity, cat_client):
         if not result["task_id"] or not any(d["kind"] == "task" for d in result["documents"]):
             return result
         _, _, _, task = task_snapshot(home, result["task_id"])
+        cat_url = str(getattr(args, "cat_url", "") or _default_cat_url()).rstrip("/")
         for ref in task["source_refs"]:
             if ref.startswith(ROLE):
-                if not args.cat_url:
-                    result["missing"].append(
-                        {"kind": "active_role", "path": ref, "reason": "cat_url_required"}
-                    )
-                    continue
-                client = cat_client(args.cat_url, service="CAT")
                 try:
+                    client = cat_client(cat_url, service="CAT")
                     team, role = live_role(
                         client,
                         ref[len(ROLE) :],
                         staff,
                         lambda h: resolve_home_by_registry(h, installation_file=str(installation)),
+                    )
+                except CatActivationProblem as exc:
+                    result["missing"].append(
+                        {"kind": "active_role", "path": ref, "reason": exc.code}
                     )
                 except ValueError as exc:
                     result["missing"].append({"kind": "active_role", "path": ref, "reason": str(exc)})
@@ -146,7 +199,7 @@ def execute_phase(args, installation, identity, cat_client):
         return phase()
     checked = phase()
     if not checked["ok"]:
-        return {"ok": False, "error_code": "stage_context_incomplete", "context": checked}
+        return _stage_failure(checked, args)
     return deliver(
         data,
         home,
