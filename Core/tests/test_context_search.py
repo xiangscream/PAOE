@@ -26,7 +26,7 @@ class OriginalSearchTests(unittest.TestCase):
                                               coordinator_home_id="S841")
         self.descriptor = load_installation_descriptor(self.install)
         self.args = SimpleNamespace(query="公开资料", scope=["project", "experience"], mode="hybrid",
-                                    limit=5, project=None)
+                                    limit=5, project=None, experience_view="all")
         self.home = {"project_id": "3997"}
 
     def search(self, result_by_collection):
@@ -76,6 +76,28 @@ class OriginalSearchTests(unittest.TestCase):
         answer = self.search({})
         self.assertFalse(answer["ok"])
         self.assertEqual(answer["coverage"][0]["source"], "method-catalog")
+
+    def test_topic_view_reads_current_experience_sources_separately(self):
+        self.args.scope = ["experience"]
+        self.args.experience_view = "topics"
+        root = self.project.parent / "Experience"
+        topic = root / "心得" / "PAOE哲学.md"
+        topic.parent.mkdir(parents=True)
+        topic.write_text("---\nstatus: current\n---\n# PAOE哲学\nCurrent understanding", encoding="utf-8")
+        with patch("paos_context_search.qmd_collection_root", return_value=root):
+            got = self.search({"exm-topics": [{"file": str(topic), "title": "PAOE哲学"}]})
+        self.assertTrue(got["ok"])
+        self.assertEqual(got["results"][0]["status"], "current")
+        self.assertEqual(got["results"][0]["sources"], ["exm-topics"])
+        self.assertEqual(got["experience_view"], "topics")
+
+    def test_unregistered_selected_view_is_not_replaced_by_the_whole_archive(self):
+        self.args.scope = ["experience"]
+        self.args.experience_view = "originals"
+        got = self.search({"exm-originals": QmdUnavailable("collection not registered")})
+        self.assertFalse(got["ok"])
+        self.assertEqual(got["coverage"][0]["source"], "exm-originals")
+        self.assertEqual(got["results"], [])
 
     def test_experience_archive_is_relative_to_its_registered_collection(self):
         self.args.scope = ["experience"]
