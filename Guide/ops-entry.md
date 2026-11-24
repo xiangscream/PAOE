@@ -69,6 +69,8 @@ $targetProject = '3004'  # 接手人所在项目，查对方唤醒状态时用
 
 Codex、OpenCode 和 Antigravity 需 `--origins <JSON>` 按原生消息 ID 给出已核的 `kind`、`evidence_ref`，不以 user 外观认定本人发言；DSH 沿原生 source.kind。来源不明或正文被裁剪时返回具体缺口，不写正文或推进游标。只读选定范围，不扫描全账号；Codex/Antigravity 可用 `--start-line`、`--end-line`，OpenCode 可用 `--select-message`。
 
+Codex JSONL 选择 `event_msg/item_completed` 中的 `UserMessage` 行与原生消息 ID；同文字的相邻 `response_item` 行不作为本入口的原话记录。`saved=0` 本身不表示已经收录；目标来源页中已有这份原话及对应修订，才记为幂等复读。
+
 来源页追加完整文字、修订和附件定位，游标留 Data。用同一会话、项目、工作归组和页续读；`saved=0` 不改页面。正常中断后复跑会识别已落盘的修订，先保存原话再提交位置。保护已有人工文字，并保留来源页的修订标记以便恢复。没有新材料不造新稿，主题归类仍由 EXM 整理者判断。
 
 ### 派工与唤醒
