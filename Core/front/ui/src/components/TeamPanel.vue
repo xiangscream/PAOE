@@ -97,10 +97,14 @@ export default {
       // 其他动作的旧成功结果不当作本次保存成功。
       handler(outcome) {
         if (this.actionName !== 'save-role' || !outcome) return;
-        if (outcome.kind === 'applied' && this.editHome && this.editHome === this.savingHome) {
+        const saved = this.savingInput, current = this.saveInput;
+        // A successful older save must not discard text entered while it was pending.
+        if (outcome.kind === 'applied' && saved && current &&
+            saved.room === current.room && saved.home === current.home &&
+            JSON.stringify(saved.role) === JSON.stringify(current.role)) {
           this.editHome = '';
         }
-        this.savingHome = '';
+        this.savingInput = null;
       },
     },
   },
@@ -110,7 +114,7 @@ export default {
       editDuty: '', editArrangement: '', editDeliverables: '',
       acceptArtifact: '', acceptBasis: '', acceptRemaining: '',
       reviewTimer: 0,
-      savingHome: '',
+      savingInput: null,
     };
   },
   beforeUnmount() { clearTimeout(this.reviewTimer); },
@@ -145,7 +149,7 @@ export default {
     saveRole() {
       if (!this.saveReady) return;
       // 提交后保留编辑对象与已填字段；仅本次保存明确 applied 后由 actionOutcome 关闭。
-      this.savingHome = this.editHome;
+      this.savingInput = this.saveInput;
       this.$emit('confirm', { action: 'save-role', input: this.saveInput, choice: 'approve' });
     },
   },

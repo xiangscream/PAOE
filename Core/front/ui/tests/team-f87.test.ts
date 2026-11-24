@@ -299,6 +299,26 @@ describe('F88 grouped TODO mapping', () => {
 })
 
 describe('final UI fixes (roles receipt gate + role draft retention)', () => {
+  it('keeps edits made while the submitted draft is still saving', async () => {
+    let finishSave: ((value: unknown) => void) | undefined
+    const { wrapper } = mountRoom({
+      confirm: () => new Promise(resolve => { finishSave = resolve }),
+    })
+    await settle()
+    await wrapper.findAll('.edit-role')[0].trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 320))
+    await settle()
+    await wrapper.get('.edit-actions .primary-button').trigger('click')
+    await settle()
+    expect(finishSave).toBeTypeOf('function')
+    await wrapper.get('[data-testid="role-edit"] input').setValue('保存期间补充的新职责')
+    finishSave!({ ok: true, applied: { room_id: 'task-room' } })
+    await settle()
+    expect(wrapper.find('[data-testid="role-edit"]').exists()).toBe(true)
+    expect((wrapper.get('[data-testid="role-edit"] input').element as HTMLInputElement).value)
+      .toBe('保存期间补充的新职责')
+  })
+
   it('hides accept-goal until the roles receipt is established and shows it after', async () => {
     const before = mountRoom({ approved: true })
     await settle()
