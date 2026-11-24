@@ -19,6 +19,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from paos_contact import load_native_targets, save_native_targets
+from paos_installation import effective_data_root, load_installation_descriptor
 from runtime_injection import InjectionError, inject as native_inject
 
 
@@ -185,10 +186,12 @@ def bind_wakeup(
         target["receiver_file"] = locator
         target["mode"] = mode
         previous = targets.get(agent_id) if isinstance(targets.get(agent_id), dict) else {}
-        if (previous.get("runtime") == "dsh"
-                and previous.get("session_id") == native_session_id
-                and not target.get("stop_file")):
-            target["stop_file"] = previous.get("stop_file")
+        if not target.get("stop_file"):
+            if previous.get("runtime") == "dsh" and previous.get("stop_file"):
+                target["stop_file"] = previous["stop_file"]
+            elif installation_path is not None:
+                data = effective_data_root(load_installation_descriptor(Path(installation_path)))
+                target["stop_file"] = str(data / "runtime/dsh-context" / agent_id / "STOP")
     targets[agent_id] = target
     store = save_native_targets(root, targets, installation_path=installation_path)
     return {

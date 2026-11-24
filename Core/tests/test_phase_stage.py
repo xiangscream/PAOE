@@ -1,5 +1,6 @@
 """Round trip through the public CLI, including a replay after later work."""
 
+import argparse
 import json
 from pathlib import Path
 import sqlite3
@@ -7,11 +8,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "code/personal-agent-os/scripts"
 sys.path.insert(0, str(SCRIPTS))
+from paos_cat_activation import CatActivationProblem
 from paos_installation import write_installation_descriptor
+from paos_phase_cli import DEFAULT_CAT_URL, add_phase_parsers, execute_phase
 from paos_registry import ProjectRegistry
 from paos_stage import deliver
 from paos_todo import parse_todo, render_todo
@@ -99,6 +103,92 @@ class StageCliTests(unittest.TestCase):
         )
         self.assertEqual(p.returncode, expected, p.stderr + p.stdout)
         return json.loads(p.stdout or p.stderr)
+
+    def _execute_args(self, **overrides):
+        values = dict(
+            command="stage",
+            stage_command="deliver",
+            home="S010",
+            task="EX",
+            operation="example",
+            artifact=["out.md"],
+            intent=["original.md"],
+            result="First result",
+            next_action="Review it",
+            waiting="",
+            current=False,
+            cat_url=DEFAULT_CAT_URL,
+            full_result=False,
+        )
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    def _add_cat_role(self):
+        doc = parse_todo(self.todo.read_text(encoding="utf8"))
+        doc["tasks"][0]["source_refs"] = ["cat-role:room-one"]
+        self.todo.write_text(
+            render_todo(
+                home_kind=doc["home_kind"],
+                home_id=doc["home_id"],
+                project_id=doc["project_id"],
+                pinned=doc["pinned"],
+                tasks=doc["tasks"],
+                **doc["current"],
+            ),
+            encoding="utf8",
+        )
+
+    def test_stage_and_context_read_default_existing_cat_endpoint(self):
+        parser = argparse.ArgumentParser()
+        sub = parser.add_subparsers(dest="command", required=True)
+        add_phase_parsers(sub)
+        stage = parser.parse_args(
+            ["stage", "deliver", "S010", "--task", "EX", "--id", "example",
+             "--artifact", "out.md", "--intent", "original.md",
+             "--result", "r", "--next", "n"]
+        )
+        read = parser.parse_args(["context", "read", "S010", "--task", "EX"])
+        self.assertEqual(stage.cat_url, DEFAULT_CAT_URL)
+        self.assertEqual(read.cat_url, DEFAULT_CAT_URL)
+
+    def test_stage_cat_failure_returns_missing_and_sources_without_bodies(self):
+        self._add_cat_role()
+        before = self.todo.read_bytes()
+        args = self._execute_args()
+        failure = CatActivationProblem(
+            "cat_unreachable", "CAT unreachable", {"path": "/api/rooms/room-one/team"}
+        )
+        with patch("paos_phase_cli.live_role", side_effect=failure):
+            result = execute_phase(
+                args,
+                self.install,
+                lambda home, installation_path: {"staff_number": "S010"},
+                lambda url, service: None,
+            )
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "stage_context_incomplete")
+        self.assertEqual(result["missing"][0]["reason"], "cat_unreachable")
+        self.assertTrue(result["read_hint"].startswith("paos context read S010"))
+        self.assertFalse(result["context"]["ok"])
+        self.assertEqual(result["context"]["reason"], "stage")
+        self.assertIn("references", result["context"])
+        self.assertNotIn("body", result["context"]["documents"][0])
+        self.assertTrue(all("body" not in source for source in result["sources"]))
+        self.assertEqual(before, self.todo.read_bytes())
+
+    def test_stage_full_result_keeps_full_context_only_when_requested(self):
+        self._add_cat_role()
+        args = self._execute_args(full_result=True)
+        failure = CatActivationProblem("cat_unreachable", "CAT unreachable")
+        with patch("paos_phase_cli.live_role", side_effect=failure):
+            result = execute_phase(
+                args,
+                self.install,
+                lambda home, installation_path: {"staff_number": "S010"},
+                lambda url, service: None,
+            )
+        self.assertIn("body", result["context"]["documents"][0])
+        self.assertTrue(all("body" not in source for source in result["sources"]))
 
     def test_delivery_replay_and_consume_after_later_edits(self):
         large_original = "Current business\n" * 20000

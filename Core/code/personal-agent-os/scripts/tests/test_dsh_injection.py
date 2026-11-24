@@ -18,6 +18,7 @@ sys.path.insert(0, str(SCRIPTS))
 import paos_wakeup
 import runtime_injection as injection
 from paos_contact import runtime_contact, save_native_targets
+from paos_installation import write_installation_descriptor
 
 
 class DshInjectionTests(unittest.TestCase):
@@ -338,6 +339,51 @@ class DshInjectionTests(unittest.TestCase):
         self.assertEqual(stored["agent-original"]["receiver_file"], str(self.receiver))
         self.assertNotIn(self.secret, json.dumps(stored))
         self.assertNotIn("fixture-token", json.dumps(stored))
+
+    def _installed_bind_kwargs(self):
+        project = self.root / "project"
+        project.mkdir()
+        installation = self.root / "installation.json"
+        write_installation_descriptor(
+            installation, source_root=str(SCRIPTS.parent),
+            data_root=str(self.root / "data"),
+            library_roots_config=str(self.root / "libraries.json"),
+        )
+        return dict(
+            root=project, project_id="3002", agent_id="S999", runtime_id=None,
+            native_session_id="session-original", driver_name="dsh",
+            installation_path=installation,
+        )
+
+    def test_installed_bind_registers_data_stop_locator_without_creating_marker(self):
+        kwargs = self._installed_bind_kwargs()
+        result = paos_wakeup.bind_wakeup(
+            **kwargs, driver_config={"receiver_file": str(self.receiver)},
+        )
+        stop = self.root / "data/runtime/dsh-context/S999/STOP"
+        self.assertEqual(result["target"]["stop_file"], str(stop))
+        self.assertFalse(stop.parent.exists())
+        stored = paos_wakeup.load_native_targets(
+            kwargs["root"], installation_path=kwargs["installation_path"],
+        )
+        self.assertEqual(stored["S999"]["stop_file"], str(stop))
+        self.assertFalse((kwargs["root"] / "private-data").exists())
+
+    def test_rebind_preserves_custom_stop_across_native_session_change(self):
+        kwargs = self._installed_bind_kwargs()
+        stop = self.root / "custom/STOP"
+        stop.parent.mkdir()
+        stop.write_text("Human paused this Agent", encoding="utf8")
+        paos_wakeup.bind_wakeup(
+            **kwargs, driver_config={"receiver_file": str(self.receiver), "stop_file": str(stop)},
+        )
+        kwargs["native_session_id"] = "session-new"
+        result = paos_wakeup.bind_wakeup(
+            **kwargs, driver_config={"receiver_file": str(self.receiver)},
+        )
+        self.assertEqual(result["target"]["stop_file"], str(stop))
+        self.assertEqual(stop.read_text(encoding="utf8"), "Human paused this Agent")
+        self.assertEqual(result["target"]["session_id"], "session-new")
 
     def test_contact_status_reads_discovery_not_secret_and_declares_stop_scope(self):
         project_root = self.root / "project"

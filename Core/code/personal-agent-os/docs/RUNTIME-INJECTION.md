@@ -22,7 +22,7 @@ receipt = inject(target, message)  # scripts 已在 Python 模块路径中
 | opencode v2 | `session_id`、`base_url`、`api_version:2`、`auth_file`；使用已启动服务的正常Basic授权 |
 | workbuddy | `session_id`、`runtime_file`；正常加载的本地扩展须已授权该目标 |
 | antigravity | `session_id`、`runtime_file`；Antigravity App 内启用 Sidecar，并授权同一个已有会话 |
-| dsh | `session_id`、`receiver_file`、可选 `mode`（`queue`/`steer`）；DSH `wake-receiver` 已加载且固定 Session 的工作目录为项目根 |
+| dsh | `session_id`、`receiver_file`、`stop_file`（0.1 插件执行前要求已证 STOP 定位，只登记路径不建暂停文件）、可选 `mode`（`queue`/`steer`）；DSH `wake-receiver` 已加载 |
 
 各目标均可提供显式 `stop_file`。文件存在即停止发送；不从 Project 或 Work 推导停止路径。OpenCode/WorkBuddy/Antigravity/DSH HTTP 可用 `timeout_seconds` 设置原生调用超时，默认 30 秒。Windows locator 在 WSL 按已有路径解析合同处理。
 
@@ -57,19 +57,18 @@ Antigravity 启动已启用的 Sidecar，为它提供 `agentapi` 和独立数据
 
 ## DSH 固定 Session 接入
 
-DSH 的 `wake-receiver` 插件在 DSH 进程内监听本机回环，并把一条消息准入到已有 Session。PAOE 只登记接收器发现文件和固定 Session，不保存 secret：
+DSH 的 `wake-receiver` 插件在 DSH 进程内监听本机回环，并把一条消息准入到已有 Session。PAOE 只登记接收器发现文件、固定 Session 与 STOP 路径定位，不保存 secret。当前 0.1 DSH 插件（`paos-core.mjs`）在模型执行前要求 Contact 具备非空 `stop_file`（否则报 `PAOE Contact has no verified STOP location`），正常安装的 `wake bind` 在省略 `stop_file` 时沿用本人原有 DSH 定位，首次绑定则从当前安装的 `data_root` 登记 `<data_root>/runtime/dsh-context/<本人Sxxx>/STOP`。原生 Session 改变不清除既有暂停定位；调用方仍可显式指定其他绝对路径。绑定只登记定位，**不创建或删除 `STOP` 暂停标记文件**。正常入职的私有配置可写为：
 
 ```json
 {
   "runtime": "dsh",
   "session_id": "session-<正常接口返回的完整ID>",
   "receiver_file": "<本机DSH_HOME>/wake-receiver/receiver.json",
-  "mode": "queue",
-  "stop_file": "C:/原目标的STOP路径"
+  "mode": "queue"
 }
 ```
 
-`receiver_file` 必须是本机绝对路径，指向 DSH 正常写出的 `dsh-wake-receiver/v1` 记录；其中 `url` 只能为 `127.0.0.1` 回环，`secretFile` 由驱动在发送时读取。`session_id` 使用正常接口实际返回的完整 ID（形如 `session-<uuid>`）；不要剥掉前缀，也不要把裸 UUID 自动猜补成另一个 ID。Session 的 cwd 由 Human 的实际工作区决定，可以不是 Project 根；Project 工作材料按 ENTRY/Registry 定位，不因 cwd 不同而搬工作区。绑定错误 Session ID 会得到 `session/not-found`，本工具不自动创建或换 Session。`mode` 省略时为 `queue`，`steer` 只在目标会话正在运行时由 DSH 自身处理。
+独立 Python 调用没有安装描述时不推断全局 Data；使用 0.1 上下文插件需显式提供 `stop_file`。`receiver_file` 与显式 `stop_file` 均使用本机绝对路径，`receiver_file` 指向 DSH 正常写出的 `dsh-wake-receiver/v1` 记录；其中 `url` 只能为 `127.0.0.1` 回环，`secretFile` 由驱动在发送时读取。`session_id` 使用正常接口实际返回的完整 ID（形如 `session-<uuid>`）；不要剥掉前缀，也不要把裸 UUID 自动猜补成另一个 ID。Session 的 cwd 由 Human 的实际工作区决定，可以不是 Project 根；Project 工作材料按 ENTRY/Registry 定位，不因 cwd 不同而搬工作区。绑定与补齐沿原本人会话与现有模型办理，保留原账号与已有绑定，普通安装不重置其他员工。绑定错误 Session ID 会得到 `session/not-found`，本工具不自动创建或换 Session。`mode` 省略时为 `queue`，`steer` 只在目标会话正在运行时由 DSH 自身处理。
 
 一次提醒生成一个本次 `requestId`，随请求提交并在受理回执中核对。传输超时或回执丢失时保留该 ID 并返回 unknown；不自动重发，也不生成第二个 UUID 冒充同一次幂等提交。`paos wake status` 的 DSH `receiver` 视图只读发现文件、PID 与 heartbeat，不连接接收器。`prepared=true` 只表示记录、secret 存在，PID 未被确认死亡，且 heartbeat 存在并新鲜；heartbeat 缺失、不可解析或过期均使 `prepared=false`，且任何 `prepared=true` 都不等于在线或已消费。记录可用时清空默认的未注册 `reason`/`next_action`，只在真正缺记录、缺 secret、heartbeat 异常或 PID 已死时给出对应修复提示；不会把健康读面误报成需要重新 bind。在线事实仍由 DSH 侧 `dsh_wake.py status` 或真实受理验证。
 
