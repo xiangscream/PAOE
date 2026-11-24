@@ -2277,6 +2277,7 @@ def send_mail_source(
     sender_id: str = "",
     message_id: str = "",
     request_activation: bool,
+    installation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Persist Mail, then Notice; optionally persist one activation intent.
 
@@ -2285,6 +2286,8 @@ def send_mail_source(
     activation request identity.
     """
     root = _runtime_root(root)
+    lookup = resolve_home_by_registry if installation_path is None else (
+        lambda agent: resolve_home_by_registry(agent, installation_file=str(installation_path)))
     try:
         persisted = send_mail(
             root=root,
@@ -2296,7 +2299,8 @@ def send_mail_source(
             sender_kind=sender_kind,
             sender_id=sender_id,
             message_id=message_id,
-            registry_lookup=resolve_home_by_registry,
+            registry_lookup=lookup,
+            installation_path=installation_path,
         )
         request_id = ""
         if request_activation:
@@ -2319,7 +2323,7 @@ def send_mail_source(
                     require_existing=True,
                 )
             except HomeProblem:
-                home_ref = resolve_home_by_registry(agent_text)
+                home_ref = lookup(agent_text)
             recipient_homes[agent_text] = _assert_home_current(home_ref)
             if not _same_project_home(home_ref, project, root):
                 external_routes.append(
@@ -2415,17 +2419,21 @@ def request_mail_activation(
     message_id: str,
     agents: Iterable[str] | None = None,
     activation_request_id: str = "",
+    installation_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Persist one activation intent for an existing durable Mail source (durable only; target Runtime wakes via an independent legitimate caller trigger)."""
     root = _runtime_root(root)
     project_id = str(project.get("id") or "").strip()
+    lookup = resolve_home_by_registry if installation_path is None else (
+        lambda agent: resolve_home_by_registry(agent, installation_file=str(installation_path)))
     if not project_id:
         raise AttentionServiceProblem(
             "attention_project_id_missing",
             "Project 缺少 id。",
         )
     try:
-        status = dispatch_status(root, message_id)
+        status = dispatch_status(root, message_id, installation_path=installation_path, project_id=project_id,
+                                 registry_lookup=lookup if installation_path is not None else None)
     except MailProblem as problem:
         raise _map_problem(problem) from problem
     if str(status.get("project_id") or "") != project_id:
@@ -2483,7 +2491,7 @@ def request_mail_activation(
                 raise _map_problem(problem) from problem
         else:
             try:
-                ref = _assert_home_current(resolve_home_by_registry(agent_id))
+                ref = _assert_home_current(lookup(agent_id))
             except (HomeProblem, AttentionServiceProblem) as problem:
                 raise AttentionServiceProblem(
                     "attention_recipient_home_unresolved",
@@ -2525,7 +2533,8 @@ def request_mail_activation(
             )
         # 内容级核验沿既有 Mail 合同（dispatch expected sha 唯一事实，二 ID 不足以证原件）：不一致=源被改，诚实拒绝。
         actual_sha = _sha256_text(mail_text)
-        expected_sha = expected_mail_sha(root, message_id, agent_id)
+        expected_sha = expected_mail_sha(root, message_id, agent_id,
+            installation_path=installation_path, project_id=project_id)
         if expected_sha and actual_sha != expected_sha:
             raise AttentionServiceProblem(
                 "attention_source_mail_content_conflict",

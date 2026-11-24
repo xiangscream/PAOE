@@ -38,6 +38,15 @@ def validate_path(name: str) -> None:
 # Exact, reviewed examples only; no directory-wide Core exception.
 # Split drive literals keep this table from being mistaken for deployed paths.
 EXAMPLE_PATHS = {
+    'Core/code/personal-agent-os/adapters/opencode/README.md': {
+        'D:' + '/path/to/paired/Core/code/personal-agent-os/adapters/opencode',
+        'D:' + '/path/to/installation.selected.json'},
+    'Core/code/personal-agent-os/docs/CODEX-SELECTED-HOOK.md': {
+        'C:' + '/Users/' + 'USER/.codex/hooks.json',
+        'D:' + '/review/codex-selected', 'D:' + '/review/installation.selected.json',
+        'D:' + '/review/codex-global', 'D:' + '/review/installation.global.json',
+        'D:' + '/review/codex-selected/configuration'},
+    'Core/code/personal-agent-os/docs/CONTENT-WATCH.md': {'C:' + '/path/installation.json'},
     'Core/obsidian/types/obsidian.d.ts': {
         'C:' + '/Users/' + 'John/Documents/ObsidianVault/foo/bar.md',
         'C:' + r'\Users\John\Documents\ObsidianVault\foo\bar.md'},

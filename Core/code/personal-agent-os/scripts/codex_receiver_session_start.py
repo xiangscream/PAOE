@@ -1,6 +1,6 @@
 """Prepare the caller's *own* registered Codex receiver.
 
-Manual prepare, SessionStart and UserPromptSubmit use the same Home/Contact and STOP
+Manual prepare, SessionStart (including compact) and UserPromptSubmit use the same Home/Contact and STOP
 checks. Current thread identity comes from the host environment; this module
 refuses a caller-supplied target override or another Home's credentials.
 """
@@ -32,14 +32,16 @@ def registered_target(thread_id, descriptor):
         registry = None  # An installation Rooter does not require a Project.
     matches = []
     projects = ProjectRegistry(Path(descriptor["path"])) if registry else None
-    for project_file in sorted(registry.glob("*.json")) if registry else ():
-        project = projects.read(project_file.stem)
+    project_views = [projects.read(p.stem) for p in sorted(registry.glob("*.json"))] if registry else []
+    targets = load_native_targets(Path(descriptor["source_root"]), installation_path=descriptor["path"]) or {}
+    for project in project_views:
         root_locator = project.get("root_path")
         if not root_locator:
             continue  # Unhoused projects have no Project Home or Contact root.
         root = Path(posix_windows_drive_locator(root_locator))
-        targets = load_native_targets(root) or {}
         for agent_id, target in targets.items():
+            if agent_id not in project.get("homes", []):
+                continue
             if target.get("runtime") == "codex" and target.get("session_id") == thread_id:
                 home = project_agent_home(project=project, agent_id=agent_id)
                 matches.append((home, target))
@@ -47,7 +49,7 @@ def registered_target(thread_id, descriptor):
     if rooter_locator:
         root = Path(posix_windows_drive_locator(rooter_locator)).expanduser()
         # Same Home id/root contract as the public Rooter Contact route.
-        target = (load_native_targets(root) or {}).get("rooter-001")
+        target = targets.get("rooter-001")
         if target and target.get("runtime") == "codex" and target.get("session_id") == thread_id:
             home = rooter_home(home_path=root, home_id="rooter-001")
             matches.append((home, target))
@@ -58,15 +60,15 @@ def registered_target(thread_id, descriptor):
 
 def _is_prepare_event(event):
     name = event.get("hook_event_name")
-    return name == "UserPromptSubmit" or name == "SessionStart" and event.get("source") in {"startup", "resume"}
+    return name == "UserPromptSubmit" or name == "SessionStart" and event.get("source") in {"startup", "resume", "compact"}
 
 
-def observe_hook_entry(event):
+def observe_hook_entry(event, *, installation_path=None):
     """Record that a registered hook reached Python before the Owner environment guard."""
     thread = event.get("session_id")
     if not _is_prepare_event(event) or not isinstance(thread, str) or not thread:
         return
-    descriptor = load_installation_descriptor(resolve_installation_path())
+    descriptor = load_installation_descriptor(installation_path or resolve_installation_path())
     try:
         home, target = registered_target(thread, descriptor)
     except ValueError as exc:
@@ -81,6 +83,7 @@ def observe_hook_entry(event):
         return home
     with runtime.with_name(runtime.name + ".lifecycle.jsonl").open("a", encoding="utf-8") as stream:
         record_lifecycle(stream, "owner_hook_entered", hook=event["hook_event_name"], parent_pid=os.getppid(),
+                         source=event.get("source") if event["hook_event_name"] == "SessionStart" else None,
                          owner_thread_matches=os.environ.get("CODEX_THREAD_ID") == thread,
                          desktop_connection_present=bool(os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")))
     return home

@@ -66,7 +66,7 @@ python notices/dsh.py status
 
 ### Antigravity App
 
-本流程已在 Windows 上的 Antigravity App 2.33.0 实测。System 0.2.29 起支持该驱动。从本人 [ENTRY](../ENTRY.md) 取 PAOE 命令前缀。用 `paos wake bind --help` 核对 `antigravity`，用 `paos install show` 核对该安装的 `source_root`。下文的 `antigravity_sidecar.py` 位于此 Source 的 `scripts/wakeup_native/`。
+本流程已在 Windows 上的 Antigravity App 2.33.0（Sidecar 唤醒）与 2.34.0（工作区 Hook 接入）实测。System 0.2.29 起支持该驱动。从本人 [ENTRY](../ENTRY.md) 取 PAOE 命令前缀。用 `paos wake bind --help` 核对 `antigravity`，用 `paos install show` 核对该安装的 `source_root`。下文的 `antigravity_sidecar.py` 位于此 Source 的 `scripts/wakeup_native/`。
 
 #### 确认本人 App 会话
 
@@ -114,6 +114,25 @@ paos --json wake status '<项目ID>' '<本人S号>'
 ```
 
 回读 `runtime=antigravity`、`native_session_id` 和 STOP，再按本页 [使用与验收](#使用与验收) 发一封测试信，核对原 App 会话实读回告。复工时回到同一个 App 会话。App 重新加载时端口可以变化，Contact 继续读取固定路径下的登记。登记缺失或拒连时查本人 Sidecar 的启用状态和 `sidecar_data/<ID>/logs/`。提醒已受理但没有回告时，沿原信和 `sidecar_data/<ID>/events/` 核对。
+
+#### 工作区 Hook 接入与核验
+
+在 Antigravity App 中接入 PAOE 工作区 Hook（`PreInvocation` 自动注入必读原文与 `Stop` 回合收口），以已实测路径为准：
+
+1. **选择真实项目目录（`@` 引用不是选项目）**：在桌面 App 的项目选择器明确选中真实项目目录（本地模式选 Local），使会话实际归属该项目。在已有会话里用 `@` 引用其他目录不会切换会话归属，也不会触发该目录的 Hook。
+2. **定位脚本与模板，区分正式安装与限定配对**：从本人已采用的 Hook 安装描述定位 `source_root`（正式安装用 `paos install show` 与正式 `installation.json`；迁移前限定配对用限定包显式指定的安装描述与同包 `source_root`，不混用单个脚本），阅读 `<source_root>/docs/ANTIGRAVITY-HOOK.md` 并复用其中的 `PreInvocation` / `Stop` 模板，调用 `<source_root>/scripts/paos_antigravity_hook.py`。
+3. **合并写入工作区 `.agents/hooks.json`**：将模板按本机绝对路径和本人项目号/员工号（已用 CAT 的工位在两处配同一 `--cat-url`，未用 CAT 可省略）合并写入项目根目录 `.agents/hooks.json`；同项目多名成员各用独立 Hook 名称（如 `paoe-SXXX-context`），保留已有定义，各自沿同一安装描述核对自己的 Contact。部署只接 Hook，不改原会话、模型、STOP 或正式 Store。
+4. **按项目与原生记录核对加载**：核对项目根目录的 `.agents/hooks.json`、项目设置中的「文件夹」以及原会话的原生记录。菜单布局以所用 App 的实际版本为准。
+5. **原会话沿用与重绑目录后的验证边界**：已归属真实项目目录的现有员工接入 Hook 时保持原会话，不重建会话，实际加载以该原会话日志为准。仅在通过项目设置「文件夹」重绑项目目录 URI 后（如 24B 旧 URI 切换后在 24C 隔离验证中所见），既有旧会话可能仍保留创建时的工作区记录，需开新会话确认新登记生效。
+6. **分层核验**：把**配置就绪**（`.agents/hooks.json`、Contact 与脚本回读）、**原文实读与原生事件**（原会话转写与 Hook 日志中的注入/Stop）、**实际业务结果**（接手、产文与提交）分开记录，互不替代；隔离试件与原会话业务验证各自独立取证，当前项目进度沿项目采用记录维护。
+
+#### 后台提醒后的收信与公开回复习惯
+
+Antigravity App 的后台唤醒消息以系统提醒进入会话，Human 在聊天界面里不易直接看到原信内容。收到后台提醒后，应先实读工位原信（`paos mail read` 或读取对应 CAT 消息），再在原聊天公开回复中让 Human 一眼看懂协作脉络：
+
+- **短消息直接带原话，长信留核心原话与原件入口**：短消息在公开回复中直接显示发件人、主题和来信原话；长信保留核心请求原话与可点击的原件路径，不省略来信只报结果，同时隐去 token、凭据等敏感字段；
+- **结尾标明协作双方**：在回复末尾写清协作双方与原信/房间标识，方便追溯；
+- **三段状态分开判断**：原生提醒受理、本人实际读信与发件方收到回告三者各自独立核对，不把 Sidecar 受理当作已读，也不把本端公开回复当作对方已收到交接。
 
 #### 按本人回告查会话 ID
 

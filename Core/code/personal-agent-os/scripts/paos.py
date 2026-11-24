@@ -133,6 +133,11 @@ from paos_contact import (  # noqa: E402
     runtime_contact,
 )
 from paos_cat_cli import add_cat_parser, execute_cat  # noqa: E402
+from paos_phase_cli import add_phase_parsers, execute_phase  # noqa: E402
+from paos_data_cli import add_data_parsers, execute_data
+from paos_team_plan_cli import add_team_parsers, execute_team_actions
+from paos_todo import TodoProblem
+from sqlite3 import Error as SqliteError
 PEERS_SCHEMA = "paos-peers/v2"
 
 BODY_HELP = (
@@ -734,10 +739,11 @@ def execute_status(args, registry, installation_path):
                                root_override=args.root, installation_path=installation_path)
     root = Path(view["project"]["root_path"])
     result = {"ok": view["ok"], "schema": "paos-status/v2", "work": view,
-              "contact": runtime_contact(root, args.agent_id),
+              "contact": runtime_contact(root, args.agent_id, installation_path=installation_path),
               "backend": "local_files", "http_service_required": False}
     if args.message_id:
         result["delivery"] = dispatch_status(root, args.message_id,
+            installation_path=installation_path, project_id=args.project_id,
             registry_lookup=_registry_authoritative_or_none(str(installation_path)))
     return result
 
@@ -752,21 +758,14 @@ def _remind_via_native(
     subject: str,
     installation_path: Path | None = None,
 ) -> dict[str, Any]:
-    """既有 Contact native-target → 一次 runtime_inject 的显式去点。
-
-    Contact 目录取值使用 registry 解析（resolve_home_by_registry）所以跨
-    Project Home 的 Contact 原件在**接收者自己的 Project root**；不能让发信
-    方造另一份或误报未绑定；未解析 → manual_required 诚实。
-    本安装登记的 Rooter Home 按 Home 类型路由到本人正式 native-target store；
-    未登记的 Rooter Home → manual_required 诚实（不伪造 cross-Installation 目标）。
-    Prompt 由调用方（即本 CLI）拼好，注入失败/STOP/类别错误如实返回。"""
+    """按本安装的 Home 登记和中央 Contact 向原会话显式提醒一次。"""
     installation_path = installation_path or resolve_installation_path(None)
     route = _rooter_home_root(installation_path)
     if route and agent_id == route[0]:
-        # Rooter Home 是本安装登记的 installation Home：只取本人正式 Home 的
-        # native-target store（不查/建 Project Session，不借同事环境）。
+        # Rooter 身份来自本安装，运行入口走同一 Data Store。
         return _inject_from_contact_store(
             route[1],
+            installation_path=installation_path,
             agent_id=agent_id,
             message_id=message_id,
             sender_id=sender_id,
@@ -789,11 +788,11 @@ def _remind_via_native(
     is_cross_project = agent_id not in invoked_members
     contact_home_root = None
     if is_cross_project:
-        # 跨 Project Home 的 Contact 原件在**接收者自己的 Project root**。
+        # 先核对跨项目工位属于所选安装，再使用中央 Contact。
         # registry Home 提供真实 project_root（Windows C:/ 形态），按现有
         # posix_windows_drive_locator 转换为实际可读取的真实磁盘定位。
         try:
-            home_ref = resolve_home_by_registry(agent_id)
+            home_ref = resolve_home_by_registry(agent_id, installation_file=str(installation_path))
             project_root_text = str(home_ref.get("project_root") or "").strip()
             contact_home_root = (
                 Path(posix_windows_drive_locator(project_root_text))
@@ -816,6 +815,7 @@ def _remind_via_native(
         contact_home_root = Path(root)
     return _inject_from_contact_store(
         contact_home_root,
+        installation_path=installation_path,
         agent_id=agent_id,
         message_id=message_id,
         sender_id=sender_id,
@@ -855,20 +855,21 @@ def _inject_from_contact_store(
     message_id: str,
     sender_id: str,
     subject: str,
+    installation_path: Path | None = None,
 ) -> dict[str, Any]:
-    """One-shot native reminder from a Home's own Contact native-target store.
+    """One-shot native reminder through the selected installation's Contact store.
 
     Shared by Project Agents and the installation-registered Rooter Home so the
     same official target drives record, status and reminder. Missing target,
     STOP, uncertain/network/rejected outcomes stay honest; nothing is resent.
     """
-    target_map = load_native_targets(contact_home_root) or {}
-    target = _native_target_for_home(target_map, agent_id)
+    target_map = load_native_targets(contact_home_root, installation_path=installation_path) or {}
+    target = _native_target_for_home(target_map, agent_id, str(installation_path) if installation_path else None)
     if not isinstance(target, dict):
         return {
             "agent_id": agent_id,
             "state": "manual_required",
-            "reason": f"Contact native-target 未登记在 {contact_home_root}；请正常调用 wake bind",
+            "reason": f"本安装尚未登记 {agent_id} 的原生联系入口，请从本人工位配置 wake bind",
         }
     stop_file = str((target or {}).get("stop_file") or "")
     if stop_file and Path(posix_windows_drive_locator(stop_file)).exists():
@@ -882,12 +883,7 @@ def _inject_from_contact_store(
             "next_action": "尊重原STOP；只有原授权主体可解除，不自动重投。",
             "reason": "STOP file present; owner explicitly paused",
         }
-    message = (
-        f"mail message_id {message_id} 已由 {sender_id} 持久投递到 "
-        f"{agent_id} 工位 mailbox；主题为 {subject}。请实读该 durable mail，"
-        "先走 Current 后原输入合同，再由本人决定下一步；本提醒只是一个"
-        "原生跟进，不做业务解析。"
-    )
+    message = f"{sender_id} 发来新消息：{subject}\n请读原信，接着处理。\n（原信：{message_id}）"
     try:
         receipt = native_inject(target=target, message=message)
     except InjectionUncertain as problem:
@@ -1125,7 +1121,7 @@ def execute_team(
 ) -> Any:
     root, project = _roster_root(args, registry)
     numbers_map = _staff_numbers_map(args)
-    agents = build_team_rows(project, root, numbers_map=numbers_map)["agents"]
+    agents = build_team_rows(project, root, installation_path=registry.installation_path, numbers_map=numbers_map)["agents"]
     if bool(getattr(args, "summary", False)):
         statuses = team_member_statuses(
             str(root / "TEAM.md"), [str(entry.get("agent_id") or "") for entry in agents],
@@ -1172,7 +1168,7 @@ def execute_peers(args: argparse.Namespace, registry: ProjectRegistry) -> Any:
     # 排除请求本人；既有 JSON 读面键保留。Session 状态退为历史事实
     # （completed/abandoned 但正式 Home 在 → 仍列出）；名册在场不冒称在线
     # （无 --probe 不探测/启动模型、online 状态保持未知）。读面不写数据。
-    roster = build_team_rows(project, root, numbers_map=numbers_map)["agents"]
+    roster = build_team_rows(project, root, installation_path=registry.installation_path, numbers_map=numbers_map)["agents"]
     if bool(getattr(args, "summary", False)):
         statuses = team_member_statuses(
             str(root / "TEAM.md"), [str(entry.get("agent_id") or "") for entry in roster],
@@ -1829,6 +1825,7 @@ def execute_agent(
                 send_result = {
                     "ok": True,
                     **attention_send_mail_source(
+                        installation_path=installation_path,
                         root=root,
                         project=project,
                         subject=mail_subject,
@@ -1845,6 +1842,7 @@ def execute_agent(
                 send_result = {
                     "ok": True,
                     **send_agent_mail(
+                        installation_path=installation_path,
                         root=root,
                         project=project,
                         subject=mail_subject,
@@ -1996,7 +1994,7 @@ def execute_agent(
 
         if args.agent_command == "notify":
             if args.mail_message_id:
-                source = dispatch_status(root, str(args.mail_message_id), registry_lookup=_registry_authoritative_or_none(getattr(args, "installation_file", None)))
+                source = dispatch_status(root, str(args.mail_message_id), installation_path=installation_path, project_id=args.project_id, registry_lookup=_registry_authoritative_or_none(getattr(args, "installation_file", None)))
                 frozen = [
                     str(value)
                     for value in (source.get("recipients") or [])
@@ -2007,6 +2005,7 @@ def execute_agent(
                     return {
                         "ok": True,
                         **attention_request_mail_activation(
+                            installation_path=installation_path,
                             root=root,
                             project=project,
                             message_id=str(args.mail_message_id),
@@ -2019,6 +2018,7 @@ def execute_agent(
                 return {
                     "ok": True,
                     **activate_mail_dispatch(
+                        installation_path=installation_path,
                         root=root,
                         project_id=args.project_id,
                         message_id=str(args.mail_message_id),
@@ -2414,6 +2414,7 @@ def execute_attention(
             return {
                 "ok": True,
                 **attention_send_mail_source(
+                    installation_path=installation_path,
                     root=root,
                     project=project,
                     subject=text_arg(args.subject, "mail subject", required=True),
@@ -2431,6 +2432,7 @@ def execute_attention(
             return {
                 "ok": True,
                 **attention_request_mail_activation(
+                    installation_path=installation_path,
                     root=root,
                     project=project,
                     message_id=str(args.message_id),
@@ -2534,13 +2536,13 @@ def execute_wake(
             driver_config = load_driver_config(args.driver_config)
             return {
                 "ok": True,
-                **bind_wakeup(root=root, project_id=None if is_rooter_home else args.project_id,
+                **bind_wakeup(installation_path=installation_path, root=root, project_id=None if is_rooter_home else args.project_id,
                               agent_id=args.agent_id, runtime_id=runtime_id,
                               native_session_id=native_session_id, driver_name=args.driver,
                               driver_config=driver_config),
             }
         if args.wake_command == "unbind":
-            targets = load_native_targets(root) or {}
+            targets = load_native_targets(root, installation_path=installation_path) or {}
             if args.agent_id not in targets:
                 return {
                     "ok": True,
@@ -2550,7 +2552,7 @@ def execute_wake(
                     "agent_id": args.agent_id,
                 }
             targets.pop(args.agent_id, None)
-            store_path = save_native_targets(root, targets)
+            store_path = save_native_targets(root, targets, installation_path=installation_path)
             return {
                 "ok": True,
                 "schema": "paos-wake-action/v1",
@@ -2561,7 +2563,7 @@ def execute_wake(
             }
         if args.wake_command == "status":
             return {
-                **runtime_contact(root, args.agent_id),
+                **runtime_contact(root, args.agent_id, installation_path=installation_path),
                 "ok": True,
                 "schema": "paos-wake-status/v1",
                 "agent_id": args.agent_id,
@@ -2573,7 +2575,7 @@ def execute_wake(
         if args.wake_command == "recover":
             return {"ok": True, "schema": "paos-wake-action/v1", "action": "recover", "state": "retired", "note": "恢复重试退役；如需提醒请走独立注入工具。"}
         if args.wake_command == "stop":
-            targets = load_native_targets(root) or {}
+            targets = load_native_targets(root, installation_path=installation_path) or {}
             target = _native_target_for_home(targets, args.agent_id)
             if not target:
                 return {"ok": True, "schema": "paos-wake-action/v1", "action": "stop", "state": "not_configured", "agent_id": args.agent_id}
@@ -2610,7 +2612,7 @@ def execute_wake(
                     parsed = raw_model
                 native_model = parsed  # opencode expects dict(providerID/modelID); others expect str
             target = _native_target_for_home(
-                load_native_targets(root) or {}, args.agent_id,
+                load_native_targets(root, installation_path=installation_path) or {}, args.agent_id,
                 str(installation_path))
             if not isinstance(target, dict):
                 return {
@@ -2786,6 +2788,7 @@ def execute_mail(
                 return {
                     "ok": True,
                     **attention_send_mail_source(
+                        installation_path=installation_path,
                         root=root,
                         project=project,
                         subject=text_arg(args.subject, "mail subject", required=True),
@@ -2801,6 +2804,7 @@ def execute_mail(
             return {
                 "ok": True,
                 **send_mail(
+                    installation_path=installation_path,
                     root=root,
                     project=project,
                     subject=text_arg(args.subject, "mail subject", required=True),
@@ -2842,6 +2846,7 @@ def execute_mail(
                     + text_arg(args.body, "mail body", required=True)
                 )
                 reply = send_mail(
+                    installation_path=installation_path,
                     root=root,
                     project=project,
                     subject=subject,
@@ -2860,6 +2865,7 @@ def execute_mail(
                 )
                 try:
                     activation = activate_mail_dispatch(
+                        installation_path=installation_path,
                         root=root,
                         project_id=args.project_id,
                         message_id=str(reply["message_id"]),
@@ -2921,6 +2927,7 @@ def execute_mail(
                 + text_arg(args.body, "mail body", required=True)
             )
             reply = attention_send_mail_source(
+                installation_path=installation_path,
                 root=root,
                 project=project,
                 subject=subject,
@@ -3204,9 +3211,16 @@ def execute(
 
     if args.command == "workstation":
         return execute_workstation(args, registry, resolved_installation_path)
+    if args.command == "data":
+        return execute_data(args, resolved_installation_path)
 
     if args.command == "orient":
         return execute_orient(args, registry, resolved_installation_path)
+
+    if args.command in {"context", "stage", "content"}:
+        return execute_phase(args, resolved_installation_path, _resolve_agent_identity, RestClient)
+    if args.command in {"team-plan", "task"}:
+        return execute_team_actions(args, resolved_installation_path, _resolve_agent_identity, RestClient,text_arg)
 
     if args.command == "status":
         return execute_status(args, registry, resolved_installation_path)
@@ -3312,6 +3326,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     sub = p.add_subparsers(dest="command", required=True)
+    add_phase_parsers(sub)
+    add_data_parsers(sub)
+    add_team_parsers(sub)
     add_cat_parser(sub)
 
     sub.add_parser("health", help="Check local installation (not Runtime availability)")
@@ -4163,7 +4180,8 @@ def main(argv: list[str] | None = None) -> int:
         print(result if isinstance(result, str) else json.dumps(result, ensure_ascii=False, indent=2))
         return 1 if isinstance(result, dict) and result.get("ok") is False else 0
     except (CliError, RegistryProblem, InstallationProblem, LibraryProblem, NumbersProblem, WorkstationProblem,
-            HomeProblem, MailProblem, NoticeProblem, AttentionServiceProblem, OSError, ValueError) as exc:
+            HomeProblem, MailProblem, NoticeProblem, AttentionServiceProblem, TodoProblem,
+            SqliteError, OSError, ValueError) as exc:
         error = exc if isinstance(exc, CliError) else CliError(str(exc),
             error_code=getattr(exc, "code", "local_operation_failed"),
             details=getattr(exc, "details", {}))
