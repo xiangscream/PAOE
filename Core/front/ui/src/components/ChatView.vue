@@ -3,8 +3,10 @@ import {markRaw} from 'vue';
 import {readPage, acceptMessage, sendOutcome, errorText, seatLabels} from '../../../cat-state.mjs';
 import {findMessages, messagePreview} from '../../../cat-content.mjs';
 import {memberCandidates, outsideCandidates, presenceInfo, rosterEntry, observerNote, scopeText, staffId, roleLine} from '../../../mention-select.mjs';
+import {actionOutcome} from '../../../team-select.mjs';
 import CatIcon from './ChatIcon.vue';
 import MessageContent from './ChatMessageContent.vue';
+import TeamPanel from './TeamPanel.vue';
 import {readDraft, writeDraft} from '../state/chat-drafts.mjs';
 import {isLegacyHomeId} from '../state/team';
 import {renderMarkdown} from '../lib/markdown';
@@ -17,7 +19,8 @@ const roomStatusLabels = {open:'进行中的讨论', pending_close:'负责人已
 function newConversation(id) {
   return {id,title:'',status:'open',members:[],messages:[],cursor:0,draft:'',reply:'',targets:[],preview:null,pending:null,
           endedRequests:[],feedback:'',outcome:'',loaded:false,expanded:{},position:null,atLatest:true,firstUnseen:'',
-          ownerId:'',closePolicy:'',context:null,indexDoc:null,indexError:'',indexOpen:true,progressSent:-1,progressBusy:false,progressLag:false,presenceMarked:false};
+          ownerId:'',closePolicy:'',context:null,indexDoc:null,indexError:'',indexOpen:true,progressSent:-1,progressBusy:false,progressLag:false,presenceMarked:false,
+          team:null,teamOpen:true, cards:null, pendingPlan:null, teamError:''};
 }
 async function request(path, options={}) {
   const controller = new AbortController();
@@ -34,13 +37,14 @@ function checked(value) { if (!value.ok) throw new Error(errorText(value)); retu
 export default {
   props:{project:{type:String,required:true},initialRoom:{type:String,default:''},embedded:{type:Boolean,default:false},eventUrl:{type:Function,default:null},streamFactory:{type:Function,default:null}},
   emits:['new-discussion','board','room-selected'],
-  components:{CatIcon, MessageContent},
+  components:{CatIcon, MessageContent, TeamPanel},
   data() {
     return {rooms:[],people:[],roomStates:{},roomId:'',filter:'',roomScope:'open',relatedOnly:true,sidebar:false,roomsLoading:true,roomListRequest:0,
       seatLabels,selection:0,stream:null,storageError:'',active:true,endingWaiting:false,
       connection:'正在连接',connectionError:false,unseen:0,highlight:'',checking:false,atLatest:true,
       searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false,closeBusy:false,
-      mention:{open:false,outside:false,query:'',index:0},previewTimer:0};
+      mention:{open:false,outside:false,query:'',index:0},previewTimer:0,
+      teamActionBusy:'', teamActionOutcome:null, teamReceiptId:''};
   },
   computed: {
     state() { return this.roomStates[this.roomId] || null; },
@@ -370,6 +374,8 @@ export default {
           ownerId:room.owner_id||'',closePolicy:room.close_policy||'',context:room.task_context||null},readPage(state,room.messages));
         this.confirmPending(state);
         this.loadIndexDoc(state);
+        this.loadTeam(state);
+        this.loadPendingPlan();
         if (generation!==this.selection) return;
         this.roomScope=room.status;
         if(!this.embedded)document.title=(room.title||'圆桌')+' · CAT';
@@ -485,8 +491,66 @@ export default {
       this.endingWaiting=false;this.persistDraft(state);this.$nextTick(this.resizeComposer);
     },
     openCreator() {this.sidebar=false;this.$emit('new-discussion');},
-    // ---- 任务房完整交互：INDEX / 关房 / 已读游标 / 在线 ----
+    // ---- 任务房完整交互：INDEX / 关房 / 已读游标 / 在线 / 团队操作 ----
     md(source) { return renderMarkdown(source); },
+    async loadTeam(state) {
+      // 团队计划数据（GET /api/room/R/team → {ok, team, cards}）；单数路径，与桥一致。
+      try {
+        const value=await request(endpoint(state.id,'/team'));
+        if (value && value.ok && value.team) { state.team=value.team; state.cards=value.cards||null; state.teamError=''; }
+        else { state.team=null; state.cards=null; state.teamError=''; }
+      } catch(error) {
+        // 断连不是普通房：显示读取错误，勿把网络问题吞成 team=null。
+        state.team=null; state.cards=null;
+        state.teamError='团队数据读取失败：'+error.message;
+      }
+    },
+    // 前置计划发现：非专用房也应能找到第一次放行的入口（GET /api/team-plan）。
+    async loadPendingPlan() {
+      // 只在有明确 owner+task 线索时尝试（避免每次房选择都发无效请求）。
+      const state=this.state;
+      if (!state?.loaded || state.team) { state.pendingPlan=null; return; }
+      const owner=state.ownerId || '';
+      const task=state.context?.task || '';
+      if (!owner || !task) { state.pendingPlan=null; return; }
+      try {
+        const value=await request('/api/team-plan?owner='+encodeURIComponent(owner)+'&task='+encodeURIComponent(task));
+        if (value && value.ok && value.plan) state.pendingPlan=value;
+        else state.pendingPlan=null;
+      } catch(error) { state.pendingPlan=null; }
+    },
+    toggleTeam() { if (this.state) this.state.teamOpen=!this.state.teamOpen; },
+    async teamConfirm({action, input}) {
+      // Human 操作入口：POST /api/team/confirm {action, receipt_id, input}
+      // receipt_id 严格 ha- + 32 位小写十六进制；未知结果保留同一编号重试。
+      const state=this.state;
+      if (!state?.loaded) return;
+      if (!this.teamReceiptId) this.teamReceiptId='ha-'+crypto.randomUUID().replace(/-/g,'').slice(0,32);
+      this.teamActionBusy=action;
+      this.teamActionOutcome=null;
+      try {
+        const value=await request('/api/team/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action, receipt_id:this.teamReceiptId, input})});
+        this.teamActionOutcome=actionOutcome(value);
+        if (this.teamActionOutcome.kind==='applied') {
+          this.teamReceiptId='';   // 成功后下一次用新编号
+          await this.loadTeam(state);
+          this.loadPendingPlan();
+        }
+        // cancelled/failed/conflict 保留同一编号供 Human 重试
+      } catch(error) {
+        this.teamActionOutcome={kind:'failed', text:'请求未完成：'+error.message};
+      } finally { this.teamActionBusy=''; }
+    },
+    openPlan() {
+      const state=this.state;
+      if (!state?.pendingPlan?.plan) return;
+      this.teamConfirm({action:'open-plan', input:{
+        owner: state.pendingPlan.plan.owner || state.ownerId,
+        task: state.pendingPlan.plan.task || state.context?.task,
+        version: state.pendingPlan.plan.version || 1,
+      }});
+    },
     async loadIndexDoc(state) {
       const context=state.context;
       if (!context?.index_path) return;
@@ -631,6 +695,22 @@ export default {
       <div class="close-banner-text"><strong>负责人已提请关闭本任务房</strong><span>关闭后保留可读历史；若还有要补做的事，可选择继续讨论。</span></div>
       <div class="close-banner-actions"><button class="secondary-button small" :disabled="closeBusy" @click="closeRoom('continue')">继续讨论</button><button class="primary-button small" :disabled="closeBusy" @click="closeRoom('confirm')">{{closeBusy?'处理中…':'确认关闭'}}</button></div>
     </div>
+    <section v-if="state?.pendingPlan && !state?.team" class="pending-plan" aria-label="待确认计划" data-testid="pending-plan">
+      <div class="plan-preview-text">
+        <strong>待确认计划</strong>
+        <span>{{state.pendingPlan.plan?.title || state.pendingPlan.plan?.task || '未命名计划'}}</span>
+        <small v-if="state.pendingPlan.plan?.owner">负责人 {{name(state.pendingPlan.plan.owner)}} · v{{state.pendingPlan.plan?.version || 1}}</small>
+      </div>
+      <div class="plan-preview-actions">
+        <button class="primary-button small" :disabled="!!teamActionBusy" data-testid="btn-open-plan" @click="openPlan">
+          {{teamActionBusy==='open-plan'?'等待确认…':'通过计划并建房（第一次放行）'}}
+        </button>
+      </div>
+    </section>
+    <section v-if="state?.teamError && !state?.team" class="connection-banner" role="alert" data-testid="team-error">
+      <div><strong>团队数据读取失败</strong><span>{{state.teamError}}</span></div>
+    </section>
+    <team-panel v-if="state?.team" :team="state.team" :cards="state.cards" :people="people" :open="state.teamOpen" :actionBusy="teamActionBusy" :actionOutcome="teamActionOutcome" @toggle="toggleTeam" @confirm="teamConfirm"></team-panel>
     <section v-if="indexAvailable" class="task-index" :class="{collapsed:!state.indexOpen}" aria-label="任务 INDEX" data-testid="task-index">
       <header class="task-index-head">
         <button type="button" class="task-index-toggle" :aria-expanded="state.indexOpen" @click="toggleIndex"><cat-icon name="room"></cat-icon><span>任务 INDEX</span><small v-if="state.context.goal">{{state.context.goal}}</small><cat-icon class="chevron" name="latest"></cat-icon></button>
@@ -987,6 +1067,15 @@ button:focus-visible,a:focus-visible,select:focus-visible,[tabindex]:focus-visib
   .modal-box{padding:22px}
   .dialog-heading h2{font-size:20px}
 }
+/* ---- 任务房：待确认计划（非专用房的第一次放行入口） ---- */
+.pending-plan{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:12px 20px 0;padding:13px 16px;border:1.5px solid color-mix(in oklch,var(--color-primary) 30%,var(--color-base-300));border-radius:12px;background:color-mix(in oklch,var(--color-primary) 4%,var(--color-base-100))}
+.plan-preview-text{display:grid;gap:3px;min-width:0}
+.plan-preview-text strong{font-size:13.5px;color:var(--color-primary)}
+.plan-preview-text span{font-size:13px;font-weight:600;line-height:1.5}
+.plan-preview-text small{font-size:11px;opacity:.62}
+.plan-preview-actions{display:flex;gap:8px}
+@media(max-width:900px){.pending-plan{margin:10px 12px 0}}
+
 /* ---- 任务房：关闭确认 / 任务 INDEX / 负责人 / 在线计数 ---- */
 .close-banner{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:12px 20px 0;padding:13px 16px;border:1.5px solid color-mix(in oklch,var(--color-warning) 55%,var(--color-base-300));border-radius:12px;background:color-mix(in oklch,var(--color-warning) 7%,var(--color-base-100))}
 .close-banner-text{display:grid;gap:3px;min-width:0}
