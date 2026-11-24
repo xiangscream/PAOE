@@ -26,7 +26,7 @@ STATIC = Path(__file__).resolve().parent
 DIST = STATIC / "dist"
 sys.path.insert(0, str(PACKAGE / "code" / "personal-agent-os" / "scripts"))
 
-from paos_attention_service import AttentionServiceProblem, read_home_state
+from paos_attention_service import AttentionServiceProblem, read_home_state, resolve_home_by_registry
 from paos_home import HomeProblem, project_agent_home, rooter_home
 from paos_installation import InstallationProblem, effective_data_root, load_installation_descriptor
 from paos_library import LibraryProblem, load_library_roots, scan_skills, scan_workflows
@@ -106,7 +106,8 @@ class Board:
             aliases.setdefault(str(label), []).append(str(home_id))
         return aliases
 
-    def run_paos(self, args: list[str], *, input_text: str | None = None) -> dict:
+    def run_paos(self, args: list[str], *, input_text: str | None = None,
+                 timeout: float | None = 90) -> dict:
         """One existing CLI invocation. Never infer success from missing output."""
         source = runtime_path(self.installation["source_root"])
         env = dict(os.environ, PAOS_INSTALLATION_FILE=str(self.installation_file),
@@ -116,7 +117,7 @@ class Board:
             result = subprocess.run(
                 [sys.executable, "-X", "utf8", str(source / "scripts" / "paos.py"),
                  "--installation-file", str(self.installation_file), "--json", "--full-result", *args],
-                env=env, input=input_text, capture_output=True, text=True, encoding="utf-8", timeout=90,
+                env=env, input=input_text, capture_output=True, text=True, encoding="utf-8", timeout=timeout,
             )
         except subprocess.TimeoutExpired:
             return {"ok": False, "error_code": "cli_result_unknown", "retry": False,
@@ -620,6 +621,54 @@ class Board:
         result = self.cat(["show", room_id])
         return {"ok": True, **result["room"]} if result.get("ok") else result
 
+    def team_plan(self, owner: str, task: str, project: str) -> dict:
+        if not owner or not task:
+            raise BoardProblem("team_plan_input_missing", "请指定计划负责人和已有任务。")
+        result = self.run_paos(["team-plan", "plan", owner, "--task", task])
+        if result.get("ok"):
+            _check_team_scope(project, result["plan"]["project"])
+        return result
+
+    def room_team(self, room_id: str, project: str) -> dict:
+        if not self.cat_url:
+            raise BoardProblem("cat_not_configured", "当前画板没有配置 CAT。")
+        result = self.run_paos(["team-plan", "members", "--room", room_id, "--cat-url", self.cat_url])
+        if result.get("error_code") == "not_dedicated_room":
+            return {"ok": True, "room": room_id, "team": None, "cards": {}}
+        if result.get("ok"):
+            _check_team_scope(project, result["team"]["plan"]["project"])
+        return result
+
+    def confirm_team(self, payload: dict) -> dict:
+        _human_sender(payload)
+        if not self.cat_url:
+            raise BoardProblem("cat_not_configured", "当前画板没有配置 CAT。")
+        action = payload.get("action")
+        ident = payload.get("receipt_id")
+        subject = payload.get("input")
+        if action not in ("open-plan", "approve-roles", "save-role", "accept-goal"):
+            raise BoardProblem("team_action_unknown", "请选择相应的团队操作。")
+        if not isinstance(ident, str) or not ident or not isinstance(subject, dict):
+            raise BoardProblem("team_action_input_invalid", "请提供本次操作的编号和审阅对象。")
+        project = payload.get("project")
+        if project:
+            if action == "open-plan":
+                home = resolve_home_by_registry(str(subject.get("owner") or ""),
+                                                installation_file=str(self.installation_file))
+                _check_team_scope(project, home["project_id"])
+            else:
+                room = self.room(str(subject.get("room") or ""))
+                if not room.get("ok"):
+                    return room
+                team = room.get("team_plan")
+                if not team:
+                    raise BoardProblem("not_dedicated_room", "这间共享房没有团队计划。")
+                _check_team_scope(project, team["plan"]["project"])
+        # Core displays the reviewed originals and applies the receipt on a real Human decision.
+        return self.run_paos(["team-plan", "confirm", action, "--id", ident, "--input", "-",
+                              "--cat-url", self.cat_url], input_text=json.dumps(subject, ensure_ascii=False),
+                             timeout=None)
+
     @staticmethod
     def _context_args(context: dict | None) -> list[str]:
         if context is None:
@@ -707,6 +756,11 @@ def _human_sender(payload: dict) -> None:
         raise BoardProblem("human_sender_only", "此网页使用 Human 身份发言和确认。")
 
 
+def _check_team_scope(project: str, actual: str) -> None:
+    if project and project != actual:
+        raise BoardProblem("project_scope_mismatch", "此团队计划属于其他 Project。")
+
+
 def _target_ids(payload: dict) -> list[str]:
     targets = payload.get("target_ids", [])
     if not isinstance(targets, list) or not all(isinstance(value, str) and value.strip() for value in targets):
@@ -731,6 +785,12 @@ def dispatch_request(board: Board, method: str, path: str,
             if url.path == "/api/cat/rooms":
                 query = parse_qs(url.query)
                 value = board.rooms(query.get("project", [""])[0], query.get("home_id", [""])[0])
+            elif url.path == "/api/team-plan":
+                query = parse_qs(url.query)
+                value = board.team_plan(query.get("owner", [""])[0], query.get("task", [""])[0],
+                                        query.get("project", [""])[0])
+            elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "team":
+                value = board.room_team(unquote(parts[2]), parse_qs(url.query).get("project", [""])[0])
             elif url.path == "/api/cat/people":
                 value = {"ok": True, "people": board.people()}
             elif len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "events":
@@ -771,7 +831,9 @@ def dispatch_request(board: Board, method: str, path: str,
                 return 404, {"ok": False, "error": "未找到此入口。", "error_code": "not_found"}
             return 200, value
         if method == "POST":
-            if url.path == "/api/room":
+            if url.path == "/api/team/confirm":
+                value = board.confirm_team(payload)
+            elif url.path == "/api/room":
                 members = payload.get("members")
                 if not isinstance(members, list) or len(members) < 2 or not all(isinstance(x, str) for x in members):
                     raise BoardProblem("members_invalid", "请选择至少两个登记工位。")

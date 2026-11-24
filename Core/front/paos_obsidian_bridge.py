@@ -68,8 +68,10 @@ def _project_scope(board: Board, context: dict, method: str, path: str,
     url = urlsplit(path)
     query = parse_qs(url.query, keep_blank_values=True)
     project_paths = {"/api/dashboard", "/api/layout", "/api/document",
-                     "/api/collaboration", "/api/cat/rooms"}
-    if url.path in project_paths:
+                     "/api/collaboration", "/api/cat/rooms", "/api/team-plan"}
+    parts = url.path.strip("/").split("/")
+    team_read = len(parts) == 4 and parts[:2] == ["api", "room"] and parts[3] == "team"
+    if url.path in project_paths or team_read:
         supplied = query.get("project", [])
         if supplied and supplied[0] and supplied[0] != project:
             raise BoardProblem("project_scope_mismatch", "当前项目插件不能读写另一个 Project。")
@@ -86,7 +88,7 @@ def _project_scope(board: Board, context: dict, method: str, path: str,
         supplied = str(payload.get("project") or "").strip()
         if supplied and supplied != project:
             raise BoardProblem("project_scope_mismatch", "当前项目插件不能写入另一个 Project。")
-        if url.path in {"/api/layout", "/api/collaboration"}:
+        if url.path in {"/api/layout", "/api/collaboration", "/api/team/confirm"}:
             payload["project"] = project
         if url.path == "/api/hint":
             if str(payload.get("agent_id") or "") not in homes:
