@@ -34,8 +34,8 @@ def context_text(result, agent_id):
         raise ContextProblem("PAOE 上下文回执与当前工位或读取类型不符。")
     missing = view.get("missing")
     if isinstance(missing, list) and missing:
-        names = [f"{item['kind']}（{item['reason']}）" for item in missing
-                 if isinstance(item, dict) and "kind" in item and "reason" in item]
+        names = [f"{item['kind']}（{item['reason']}）：{item['path']}" for item in missing
+                 if isinstance(item, dict) and all(key in item for key in ("kind", "reason", "path"))]
         raise ContextProblem("缺少本次必读原件。" + "、".join(names))
     documents = view.get("documents")
     if (result.returncode != 0 or view.get("ok") is not True or missing != []

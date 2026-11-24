@@ -110,6 +110,7 @@ class AntigravityHookTests(unittest.TestCase):
         actual = self.invoke()
         self.assertEqual(actual["terminationBehavior"], "terminate")
         self.assertIn("input（missing）", actual["injectSteps"][0]["errorMessage"]["userMessage"])
+        self.assertIn("INPUT.md", actual["injectSteps"][0]["errorMessage"]["userMessage"])
         self.assertNotIn("完整原文", str(actual))
 
     def test_invalid_reader_result_stops_a_registered_turn(self):
