@@ -58,6 +58,7 @@ function mountRoom(overrides: {
   approved?: boolean
   noRoom?: boolean
   plans?: any[]
+  rolesReceipt?: string | null
 } = {}) {
   let teamRevision = 3
   let serverSubject = { revision: 3 }
@@ -90,7 +91,7 @@ function mountRoom(overrides: {
     if (options?.method === 'POST' && path === '/api/team/review') return { ok: true, json: async () => review(path, options) }
     if (options?.method === 'POST' && path === '/api/team/confirm') return { ok: true, json: async () => confirm(path, options) }
     if (path.startsWith('/api/team-plan')) return { ok: true, json: async () => ({ ok: true, plans: overrides.plans || [] }) }
-    if (path === '/api/room/task-room/team') return { ok: true, json: async () => ({ ok: true, room: 'task-room', team: team(teamRevision, overrides.approved === true), cards: cards() }) }
+    if (path === '/api/room/task-room/team') return { ok: true, json: async () => ({ ok: true, room: 'task-room', team: { ...team(teamRevision, overrides.approved === true), roles_receipt: overrides.rolesReceipt ?? null }, cards: cards() }) }
     if (path === '/api/room/task-room') return { ok: true, json: async () => room() }
     if (path.startsWith('/api/cat/rooms')) return { ok: true, json: async () => ({ ok: true, rooms: overrides.noRoom ? [] : [{ id: 'task-room', title: 'F87 联调', status: 'open', created_at: '2026-11-24T00:00:00Z' }] }) }
     if (path === '/api/cat/people') return { ok: true, json: async () => ({ ok: true, people: [] }) }
@@ -250,6 +251,7 @@ describe('F87 one-click UI decision', () => {
   it('binds accept-goal to the reviewed content shown for the filled form', async () => {
     const { wrapper, reviewBody, confirmBody } = mountRoom({
       approved: true,
+      rolesReceipt: 'ha-' + '2'.repeat(32),
       confirm: body => ({ ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }),
     })
     await settle()
@@ -293,5 +295,124 @@ describe('F88 grouped TODO mapping', () => {
     expect(group.text()).toContain('进行中 · bridge.py · 后端桥')
     expect(group.text()).toContain('CAT room-a')
     expect(wrapper.text()).not.toContain('新建 TODO')
+  })
+})
+
+describe('final UI fixes (roles receipt gate + role draft retention)', () => {
+  it('keeps edits made while the submitted draft is still saving', async () => {
+    let finishSave: ((value: unknown) => void) | undefined
+    const { wrapper } = mountRoom({
+      confirm: () => new Promise(resolve => { finishSave = resolve }),
+    })
+    await settle()
+    await wrapper.findAll('.edit-role')[0].trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 320))
+    await settle()
+    await wrapper.get('.edit-actions .primary-button').trigger('click')
+    await settle()
+    expect(finishSave).toBeTypeOf('function')
+    await wrapper.get('[data-testid="role-edit"] input').setValue('保存期间补充的新职责')
+    finishSave!({ ok: true, applied: { room_id: 'task-room' } })
+    await settle()
+    expect(wrapper.find('[data-testid="role-edit"]').exists()).toBe(true)
+    expect((wrapper.get('[data-testid="role-edit"] input').element as HTMLInputElement).value)
+      .toBe('保存期间补充的新职责')
+  })
+
+  it('hides accept-goal until the roles receipt is established and shows it after', async () => {
+    const before = mountRoom({ approved: true })
+    await settle()
+    expect(before.wrapper.find('[data-testid="accept-goal-form"]').exists()).toBe(false)
+    const after = mountRoom({ approved: true, rolesReceipt: 'ha-' + '3'.repeat(32) })
+    await settle()
+    expect(after.wrapper.find('[data-testid="accept-goal-form"]').exists()).toBe(true)
+    expect(after.wrapper.text()).toContain('角色回执')
+  })
+
+  it('keeps the role draft on a conflicting save', async () => {
+    // 默认 confirm 的 serverSubject 是 {revision:3}，与 save 的 {room,home,revision:1} 不一致 → 冲突。
+    const { wrapper } = mountRoom()
+    await settle()
+    await wrapper.findAll('.edit-role')[0].trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 320))
+    await settle()
+    await wrapper.get('.edit-actions .primary-button').trigger('click')
+    await settle()
+    expect(wrapper.get('[data-testid="action-outcome"]').classes()).toContain('outcome-conflict')
+    const edit = wrapper.get('[data-testid="role-edit"]')
+    const inputs = edit.findAll('input')
+    expect(inputs.length).toBe(3)
+    expect(inputs[0].element.value).toBe('后端桥')
+    expect(wrapper.get('[data-testid="review-save-role"]').text()).toContain('本次审阅版本')
+  })
+
+  it('closes the edit only after this save is explicitly applied', async () => {
+    let saveApplied = false
+    const { wrapper } = mountRoom({
+      confirm: body => body.action !== 'save-role'
+        ? { ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }
+        : saveApplied
+          ? { ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }
+          : { ok: false, error_code: 'local_operation_failed', error: '保存失败' },
+    })
+    await settle()
+    await wrapper.findAll('.edit-role')[0].trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 320))
+    await settle()
+    await wrapper.get('.edit-actions .primary-button').trigger('click')
+    await settle()
+    expect(wrapper.get('[data-testid="action-outcome"]').text()).toContain('保存失败')
+    expect(wrapper.find('[data-testid="role-edit"]').exists()).toBe(true)
+
+    saveApplied = true
+    await wrapper.get('.edit-actions .primary-button').trigger('click')
+    await settle()
+    expect(wrapper.find('[data-testid="role-edit"]').exists()).toBe(false)
+  })
+
+  it('does not treat another action applied as this save success', async () => {
+    const { wrapper } = mountRoom({
+      confirm: body => ({ ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }),
+    })
+    await settle()
+    await wrapper.findAll('.edit-role')[0].trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 320))
+    await settle()
+    // approve-roles 本次 applied 不关闭 save 编辑。
+    await wrapper.get('[data-testid="btn-approve-roles"]').trigger('click')
+    await settle()
+    expect(wrapper.get('[data-testid="action-outcome"]').text()).toContain('已生效')
+    expect(wrapper.find('[data-testid="role-edit"]').exists()).toBe(true)
+
+    await wrapper.get('.edit-actions .primary-button').trigger('click')
+    await settle()
+    expect(wrapper.find('[data-testid="role-edit"]').exists()).toBe(false)
+  })
+
+  it('keeps the draft and the same receipt id for an unknown save result', async () => {
+    let first = true
+    const { wrapper, confirmBody } = mountRoom({
+      confirm: body => {
+        if (body.action !== 'save-role') return { ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }
+        if (first) { first = false; throw new Error('socket closed') }
+        return { ok: true, receipt_id: body.receipt_id, applied: { room_id: 'task-room' } }
+      },
+    })
+    await settle()
+    await wrapper.findAll('.edit-role')[0].trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 320))
+    await settle()
+    await wrapper.get('.edit-actions .primary-button').trigger('click')
+    await settle()
+    expect(wrapper.get('[data-testid="action-outcome"]').text()).toContain('请求未完成')
+    expect(wrapper.find('[data-testid="role-edit"]').exists()).toBe(true)
+
+    await wrapper.get('.edit-actions .primary-button').trigger('click')
+    await settle()
+    const saves = confirmBody.filter(body => body.action === 'save-role')
+    expect(saves).toHaveLength(2)
+    expect(saves[0].receipt_id).toBe(saves[1].receipt_id)
+    expect(saves[0].decision.subject).toEqual(saves[1].decision.subject)
+    expect(wrapper.find('[data-testid="role-edit"]').exists()).toBe(false)
   })
 })

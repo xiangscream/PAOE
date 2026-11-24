@@ -16,6 +16,7 @@ export default {
     reviews: { type: Object, default: () => ({}) }, // 已展示的 review 快照，按 action+input 绑定
     open: { type: Boolean, default: true },
     actionBusy: { type: String, default: '' },     // 当前在途的 action 名（'approve-roles' 等）
+    actionName: { type: String, default: '' },      // 最近一次完成的 action 名，区分本次保存与其他动作
     actionOutcome: { type: Object, default: null }, // {kind, text} 最近一次操作结果
   },
   emits: ['toggle', 'confirm', 'review'],
@@ -91,6 +92,21 @@ export default {
       handler(input) { if (input) this.queueReview('save-role', input, 250); },
       deep: true,
     },
+    actionOutcome: {
+      // 仅本次 save-role 明确 applied 才退出编辑；失败/冲突/取消/未知保留草稿。
+      // 其他动作的旧成功结果不当作本次保存成功。
+      handler(outcome) {
+        if (this.actionName !== 'save-role' || !outcome) return;
+        const saved = this.savingInput, current = this.saveInput;
+        // A successful older save must not discard text entered while it was pending.
+        if (outcome.kind === 'applied' && saved && current &&
+            saved.room === current.room && saved.home === current.home &&
+            JSON.stringify(saved.role) === JSON.stringify(current.role)) {
+          this.editHome = '';
+        }
+        this.savingInput = null;
+      },
+    },
   },
   data() {
     return {
@@ -98,6 +114,7 @@ export default {
       editDuty: '', editArrangement: '', editDeliverables: '',
       acceptArtifact: '', acceptBasis: '', acceptRemaining: '',
       reviewTimer: 0,
+      savingInput: null,
     };
   },
   beforeUnmount() { clearTimeout(this.reviewTimer); },
@@ -131,8 +148,9 @@ export default {
     cancelEdit() { this.editHome = ''; },
     saveRole() {
       if (!this.saveReady) return;
+      // 提交后保留编辑对象与已填字段；仅本次保存明确 applied 后由 actionOutcome 关闭。
+      this.savingInput = this.saveInput;
       this.$emit('confirm', { action: 'save-role', input: this.saveInput, choice: 'approve' });
-      this.editHome = '';
     },
   },
 };

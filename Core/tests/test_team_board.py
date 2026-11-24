@@ -92,6 +92,7 @@ class TeamBoardTests(unittest.TestCase):
                            "role": {"duty": "核原件", "arrangement": "本周核查", "deliverables": "result.md"}}),
             ("accept-goal", {"room": "r", "task": "T-001", "artifact": "result.md",
                              "basis": "review.md", "remaining": "无", "read_to": 8}),
+            ("close-room", {"room": "r"}),
         ):
             with self.subTest(action=action):
                 result = {"ok": True, "state": "cancelled"} if action == "save-role" else {
@@ -124,6 +125,27 @@ class TeamBoardTests(unittest.TestCase):
                                   "--cat-url", self.board.cat_url])
         self.assertEqual(json.loads(kwargs["input_text"]), payload["input"])
         self.assertEqual(self.plugin("POST", "/api/team/review", {**payload, "project": "2001"})[0], 422)
+
+    def test_close_room_review_and_core_rejection_are_preserved_in_both_hosts(self):
+        self.board.room = Mock(return_value={"ok": True, "task_context": {"project_id": "1001"}})
+        subject = {"room": "governed"}
+        decision = {"channel": "ui", "choice": "approve", "recorded_by": "human",
+                    "source_ref": "paoe://ui/current", "quote": "关闭讨论房", "subject": subject}
+        payload = {"action": "close-room", "receipt_id": self.ticket,
+                   "input": subject, "decision": decision}
+        self.board.run_paos = Mock()
+        for route in (lambda path, body: dispatch_request(self.board, "POST", path, body),
+                      lambda path, body: self.plugin("POST", path, body)):
+            review = {"ok": True, "subject": subject, "explanation": "原讨论房"}
+            self.board.run_paos.return_value = review
+            self.assertEqual(route("/api/team/review", payload), (200, review))
+            self.assertEqual(self.board.run_paos.call_args.args[0][:3],
+                             ["team-plan", "review", "close-room"])
+            rejected = {"ok": False, "error": "受管目标房须通过 accept-goal 验收"}
+            self.board.run_paos.return_value = rejected
+            self.assertEqual(route("/api/team/confirm", payload), (200, rejected))
+            self.assertEqual(self.board.run_paos.call_args.args[0][:3],
+                             ["team-plan", "confirm", "close-room"])
 
     def test_old_page_without_decision_cannot_open_a_second_confirmation(self):
         self.board.run_paos = Mock()
