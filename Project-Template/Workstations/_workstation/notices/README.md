@@ -51,18 +51,26 @@ python notices/opencode.py status
 
 ### DSH
 
-DSH 的固定 Session 使用正常接口返回的完整 ID（形如 `session-<uuid>`），不要剥前缀或用裸 UUID 猜补。Session 的 cwd 可以是 Human 的实际工作区，不必等于项目根；Project 工作材料按 ENTRY 定位，不强迫搬工作区。私有目标配置只登记接收器发现文件，不复制 secret。`receiver_file` 填本机绝对路径：
+DSH 的固定 Session 使用正常接口返回的完整 ID（形如 `session-<uuid>`），不要剥前缀或用裸 UUID 猜补。Session 的 cwd 可以是 Human 的实际工作区，不必等于项目根；Project 工作材料按 ENTRY 定位，不强迫搬工作区。当前 0.1 DSH 插件（`paos-core.mjs`）在模型执行前要求 Contact 已登记可验证的 `stop_file` 定位（缺失会被 `PAOE Contact has no verified STOP location` 拦截），且现有 `wake bind` 不会为首次 DSH 绑定自动补写 `stop_file`，因此私有目标配置必须显式写齐 `receiver_file` 与 `stop_file`（只登记接收器发现文件路径，不复制 secret）。
+
+先执行 `paos install show` 核对当前安装的 `data_root`（如 `D:/PAOE/Data`），将 `stop_file` 定位到 `<data_root>/runtime/dsh-context/<本人Sxxx>/STOP`；**这里只登记 STOP 路径定位，不要预先创建该 `STOP` 文件**（文件存在即表示暂停注入）。`receiver_file` 与 `stop_file` 均填本机绝对路径，保存为本机私有配置 JSON：
 
 ```json
-{"receiver_file":"<本机DSH_HOME>/wake-receiver/receiver.json","mode":"queue"}
+{
+  "receiver_file": "<本机DSH_HOME>/wake-receiver/receiver.json",
+  "mode": "queue",
+  "stop_file": "<当前安装data_root>/runtime/dsh-context/<本人Sxxx>/STOP"
+}
 ```
+
+从本人工位目录按原本人会话与现有模型执行绑定与只读回读（保留原账号、模型与已有绑定，普通安装或补齐只改本人登记，不重置其他员工）：
 
 ```text
 python notices/dsh.py bind --session-id <本人DSH_SESSION_ID> --driver-config <本机私有配置JSON>
 python notices/dsh.py status
 ```
 
-接收器由 DSH 的 `wake-receiver` 插件提供，只监听 `127.0.0.1`。`status` 读取绑定和接收器发现文件的 PID/heartbeat 事实，不连接入口；`prepared=true` 只表示记录、secret 存在、PID 未被确认死亡且 heartbeat 新鲜，heartbeat 缺失/不可解析/过期均为未准备，且不等于在线。记录可用时不再显示未注册 `reason` 或重新 bind 的 `next_action`，只有真正异常才给修复提示。需要在线健康时用 DSH 侧 `dsh_wake.py status`。接收器不创建 Session、不取消回合；PAOE STOP 只阻止后续注入，不能声称已停止运行中的回合。
+回读确认 `stop_file` 为上述非空绝对路径且 `stop_present=false`。接收器由 DSH 的 `wake-receiver` 插件提供，只监听 `127.0.0.1`。`status` 读取绑定和接收器发现文件的 PID/heartbeat 事实，不连接入口；`prepared=true` 只表示记录、secret 存在、PID 未被确认死亡且 heartbeat 新鲜，heartbeat 缺失/不可解析/过期均为未准备，且不等于在线。记录可用时不再显示未注册 `reason` 或重新 bind 的 `next_action`，只有真正异常才给修复提示。需要在线健康时用 DSH 侧 `dsh_wake.py status`。接收器不创建 Session、不取消回合；PAOE STOP 只阻止后续注入，不能声称已停止运行中的回合。
 
 ### Antigravity App
 
