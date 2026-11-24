@@ -5,7 +5,7 @@ title: PAOS 操作指南：联系、当前页与运行
 description: 按需操作：正常留信与提醒、维护本人当前页、查看版本和排查阻碍。
 tags: paos, cat, cli, operations
 status: active
-version: 101
+version: 102
 ---
 
 # PAOS 操作指南
@@ -139,7 +139,7 @@ CAT是系统级公共讨论入口，可跨Project；重要结论回原Project。
 ### 任务房、负责人与关房边界
 
 - **专用目标房与共享讨论房的关房区别**：
-  - **目标专用房（为单一目标单独建立且唯一关联该目标）**：登记目标、负责人已有 Task/计划关联、共同口径（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面）与验收负责人。房间持续开放，即使成员全部离线也继续保留；当约定验收人读到最新 Human 房内输入、明确交付与剩余事项去向并通过验收后，由系统自动关闭（沿 `task accept` 完成；Human 保留的验收仍由 Human 确认）。
+  - **目标专用房（为单一目标单独建立且唯一关联该目标）**：登记目标、负责人已有 Task/计划关联、共同口径（`--project-id`、`--index-path`，直接复用 `Works/` 既有页面）与验收负责人。房间持续开放，即使成员全部离线也继续保留；当约定验收人读到最新 Human 房内输入、明确交付与剩余事项去向并通过验收后，由系统自动关闭（沿 `task accept` 完成；Human 保留的验收仍由 Human 确认）。面向 Human 验收的整体协作，按“各实际参与者提交本轮意图稿（述职）→ 负责人汇总向 Human 述职 → Human 明确通过 → 结束整体任务并关闭专用房 → 各稿、总稿与审阅结论接入 EXM”收口；普通工具调用、已授权子任务与中间阶段交付照常按原授权推进，不设为 Human 审批门。
   - **共享讨论房 / Agent 小房（`--close-policy owner`）**：承载多项议题的共享房或 Agent 自行发起的小房，不被单一目标验收自动关闭，由负责人或发起人在结论归位后正常关闭；关闭后历史可读。
   - **Human 手动关房（`--close-policy human_confirm`）**：如仍显式指定需 Human 手动关房，沿既有 `cat close --action request|confirm|continue` 执行。
 - **房间 INDEX 与负责人**：任务房负责人沿 [Coordinator 工作循环](wf-coordinator-governance-cycle.md#4-项目口径收口与阶段归并) 维护任务 INDEX（目标与交付、Human 当前要求、待定问题、下一步与负责人）；任务结束后稳定结论归入项目 INDEX 或成果原件。
