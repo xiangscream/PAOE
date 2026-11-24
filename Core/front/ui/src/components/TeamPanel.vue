@@ -44,6 +44,7 @@ export default {
     return {
       editHome: '',
       editDuty: '', editArrangement: '', editDeliverables: '',
+      acceptArtifact: '', acceptBasis: '', acceptRemaining: '',
     };
   },
   methods: {
@@ -62,11 +63,15 @@ export default {
       });
     },
     acceptGoal() {
+      const state = this.$parent?.state;
+      if (!this.acceptArtifact?.trim() || !this.acceptBasis?.trim()) return;
       this.emitConfirm('accept-goal', {
-        room: this.$parent?.state?.id || '',
+        room: state?.id || '',
         task: this.team?.plan?.task || '',
-        artifact: '', basis: '', remaining: 'none',
-        read_to: this.$parent?.state?.cursor || 0,
+        artifact: this.acceptArtifact.trim(),
+        basis: this.acceptBasis.trim(),
+        remaining: this.acceptRemaining?.trim() || 'none',
+        read_to: state?.cursor || 0,
       });
     },
     startEdit(home) {
@@ -113,8 +118,13 @@ export default {
       <div class="action-bar">
         <button v-if="canApproveRoles" class="primary-button small" :disabled="!!actionBusy" data-testid="btn-approve-roles"
                 @click="approveRoles">{{actionBusy==='approve-roles'?'处理中…':'放行角色卡（第二次放行）'}}</button>
-        <button v-if="canAcceptGoal" class="primary-button small" :disabled="!!actionBusy" data-testid="btn-accept-goal"
-                @click="acceptGoal">{{actionBusy==='accept-goal'?'处理中…':'验收目标'}}</button>
+      </div>
+      <div v-if="canAcceptGoal" class="accept-goal-form" data-testid="accept-goal-form">
+        <label>成果原件<input v-model="acceptArtifact" type="text" placeholder="如 result.md（必填）"/></label>
+        <label>验收依据<input v-model="acceptBasis" type="text" placeholder="如 basis.md（必填）"/></label>
+        <label>剩余事项<input v-model="acceptRemaining" type="text" placeholder="无则留空"/></label>
+        <button class="primary-button small" :disabled="!!actionBusy || !acceptArtifact.trim() || !acceptBasis.trim()" data-testid="btn-accept-goal"
+                @click="acceptGoal">{{actionBusy==='accept-goal'?'等待确认…':'验收目标'}}</button>
       </div>
 
       <div v-if="roleEntries.length" class="role-grid" role="list">
@@ -176,6 +186,10 @@ button{cursor:pointer}
 .plan-title{font-size:14.5px;font-weight:600;line-height:1.5}
 .stage-description{margin:0;font-size:11.5px;opacity:.66;line-height:1.6}
 .action-bar{display:flex;gap:8px;flex-wrap:wrap}
+.accept-goal-form{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--line-soft);border-radius:10px;background:#fff}
+.accept-goal-form label{display:grid;gap:3px;font-size:11px;font-weight:600;opacity:.7}
+.accept-goal-form input{border:1px solid var(--line-soft);border-radius:6px;padding:5px 8px;font-size:12px;background:#fff;color:inherit}
+.accept-goal-form .primary-button{align-self:flex-end}
 .primary-button{display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;border:1px solid var(--accent);border-radius:8px;min-height:34px;padding:7px 14px;font-size:12px;font-weight:600}
 .primary-button:disabled{opacity:.5}
 .primary-button:hover:not(:disabled){filter:brightness(1.06)}

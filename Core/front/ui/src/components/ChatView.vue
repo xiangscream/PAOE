@@ -508,10 +508,11 @@ export default {
     // 前置计划发现：非专用房也应能找到第一次放行的入口（GET /api/team-plan）。
     async loadPendingPlan() {
       // 只在有明确 owner+task 线索时尝试（避免每次房选择都发无效请求）。
+      // 普通房的 context 实际字段是 source_ref（不是 task）。
       const state=this.state;
       if (!state?.loaded || state.team) { state.pendingPlan=null; return; }
       const owner=state.ownerId || '';
-      const task=state.context?.task || '';
+      const task=state.context?.source_ref || state.context?.task || '';
       if (!owner || !task) { state.pendingPlan=null; return; }
       try {
         const value=await request('/api/team-plan?owner='+encodeURIComponent(owner)+'&task='+encodeURIComponent(task));

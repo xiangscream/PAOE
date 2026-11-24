@@ -91,9 +91,9 @@ describe('confirmInput (四种正式合同)', () => {
 })
 
 describe('actionOutcome (applied / cancelled / conflict / failed)', () => {
-  it('marks applied on ok+applied', () => {
+  it('marks applied on ok+applied (object or boolean)', () => {
     expect(actionOutcome({ ok: true, applied: true })).toMatchObject({ kind: 'applied', text: '已生效' })
-    expect(actionOutcome({ ok: true, state: 'applied' })).toMatchObject({ kind: 'applied' })
+    expect(actionOutcome({ ok: true, applied: { room_id: 'r1', state: 'open' } })).toMatchObject({ kind: 'applied' })
   })
   it('marks cancelled on cancelled flag', () => {
     expect(actionOutcome({ ok: false, cancelled: true })).toMatchObject({ kind: 'cancelled', text: 'Human 取消了操作' })
