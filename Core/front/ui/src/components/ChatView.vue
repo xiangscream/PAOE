@@ -524,10 +524,9 @@ export default {
     toggleTeam() { if (this.state) this.state.teamOpen=!this.state.teamOpen; },
     async teamConfirm({action, input}) {
       // Human 操作入口：POST /api/team/confirm {action, receipt_id, input}
-      // receipt_id 严格 ha- + 32 位小写十六进制；绑定 action+input 主体：
-      // 同一主体 unknown 重入用同一编号；换 action/input 用新编号。
+      // receipt_id 严格 ha- + 32 位小写十六进制；绑定 action+input 主体。
+      // open-plan 成功后 applied.room_id 是新房——刷新列表并进入。
       const state=this.state;
-      if (!state?.loaded && action!=='open-plan') return;
       const requestKey=action+':'+JSON.stringify(input);
       if (this.teamReceiptKey!==requestKey) {
         this.teamReceiptKey=requestKey;
@@ -540,10 +539,16 @@ export default {
           body:JSON.stringify({action, receipt_id:this.teamReceiptId, input})});
         this.teamActionOutcome=actionOutcome(value);
         if (this.teamActionOutcome.kind==='applied') {
-          this.teamReceiptKey=''; this.teamReceiptId='';   // 成功后下一次用新编号
-          if (state?.loaded) { await this.loadTeam(state); this.loadPendingPlan(); }
+          this.teamReceiptKey=''; this.teamReceiptId='';
+          if (action==='open-plan' && value.applied?.room_id) {
+            // 开房成功：刷新列表并进入新建的专用房
+            await this.loadRooms();
+            await this.selectRoom(value.applied.room_id);
+          } else if (state?.loaded) {
+            await this.loadTeam(state);
+            this.loadPendingPlan();
+          }
         }
-        // cancelled/failed/conflict 保留同一主体的编号；改输入后自动换新
       } catch(error) {
         this.teamActionOutcome={kind:'failed', text:'请求未完成：'+error.message};
       } finally { this.teamActionBusy=''; }
