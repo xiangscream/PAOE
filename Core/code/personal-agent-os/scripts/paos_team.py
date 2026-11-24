@@ -298,7 +298,7 @@ def decision_subject(action, payload, resolve_home, client):
     if action == "close-room":
         room_id = payload["room"]
         room = client.request("GET", "/api/rooms/" + quote(room_id, safe=""))["room"]
-        if "team_plan" in room:
+        if room.get("has_team_plan"):
             raise ValueError("目标专用房须先走 accept-goal，不能仅以关房代替验收")
         subject = {"room": room_id, "owner": room.get("owner_id", ""),
                    "close_policy": room.get("close_policy", "human_confirm"),

@@ -100,6 +100,38 @@ class DecisionTests(unittest.TestCase):
                         self.homes.__getitem__, self.client, decision=bad)
         self.assertFalse(receipt_path(self.base / "Data", self.id).exists())
 
+    def test_changed_goal_original_cannot_use_earlier_approval(self):
+        self.scope = propose(self.homes["S042"], "S042", "T1", "plan.md#Scope",
+                             ["S042", "S063"], "human_confirm")["plan"]
+        self.team.update(plan=self.scope, revision=2, roles_receipt=self.id)
+        for name in ("guide.md", "review.md"):
+            (self.project / name).write_text(name, encoding="utf-8")
+        payload = {"room": "room-one", "task": "T1", "artifact": "guide.md",
+                   "basis": "review.md", "remaining": "none", "read_to": 4}
+        decision = self.choice("accept-goal", payload)
+        (self.project / "guide.md").write_text("Changed after review", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            confirm(self.base / "Data", "accept-goal", self.id, payload,
+                    self.homes.__getitem__, self.client, decision=decision)
+        self.assertFalse(receipt_path(self.base / "Data", self.id).exists())
+        self.assertFalse(any(c.args[0] == "POST" for c in self.client.request.call_args_list))
+
+    def test_ordinary_close_uses_the_same_decision_path_and_exact_snapshot(self):
+        room = {"owner_id": "S042", "close_policy": "human_confirm", "task_context": {},
+                "messages": [{"sender_id": "human", "seq": 2}]}
+        self.client.request.return_value = {"room": room}
+        payload = {"room": "room-one"}
+        decision = self.choice("close-room", payload)
+        with patch("paos_human_action._display", side_effect=AssertionError("second dialog")):
+            result = confirm(self.base / "Data", "close-room", self.id, payload,
+                             self.homes.__getitem__, self.client, decision=decision)
+        self.assertTrue(result["ok"])
+        self.client.request.assert_called_with("POST", "/api/rooms/room-one/close", {"receipt_id": self.id})
+        room["messages"].append({"sender_id": "human", "seq": 3})
+        with self.assertRaises(ValueError):
+            confirm(self.base / "Data", "close-room", "ha-" + "e" * 32, payload,
+                    self.homes.__getitem__, self.client, decision=decision)
+
 
 if __name__ == "__main__":
     unittest.main()
