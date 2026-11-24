@@ -334,7 +334,7 @@ Library 源文件变化后用 `paos library catalog workflow --root <Workflow根
 
 ## PAOE 0.1 共用动作速查
 
-以下接口随 System 0.3.0 与配对 CAT 正式发布。本机版本与定位用 `paos install show` 读取，详细参数以当前安装的 `--help` 为准：
+以下为 System 0.3.2 与配对 CAT 的正式接口。本机版本与定位用 `paos install show` 读取，详细参数以当前安装的 `--help` 为准：
 
 | 入口与状态 | 适用时机 | 命令与关键边界 |
 | --- | --- | --- |
