@@ -130,7 +130,7 @@ class GlobalInstallTests(unittest.TestCase):
             home.mkdir(exist_ok=True)
             home.joinpath('ENTRY.md').write_text('Own entry ' + ident)
             if is_rooter:
-                home.joinpath('AGENTS.md').write_text('[共同背景](background.md)')
+                home.joinpath('AGENTS.md').write_text('[共同背景](background.md)', encoding='utf8')
                 home.joinpath('background.md').write_text('Rooter background')
                 home.joinpath('INDEX.md').write_text('Rooter project view')
             home.joinpath('TODO.md').write_text(render_todo(home_kind='rooter' if is_rooter else 'project_agent',
