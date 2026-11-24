@@ -18,7 +18,8 @@ import paos_codex_hook as hook
 from paos_data_paths import contact_store_path
 from paos_installation import write_installation_descriptor
 from paos_registry import ProjectRegistry
-from paos_todo import render_todo
+from paos_todo import parse_todo, render_todo
+from paos_team import plan_view
 
 
 class CodexContextHookTests(unittest.TestCase):
@@ -89,6 +90,45 @@ class CodexContextHookTests(unittest.TestCase):
                 self.assertNotIn('private prompt',text)
         self.assertEqual((self.todo.read_bytes(),self.contact.read_bytes()),before)
         self.assertFalse(self.runtime.exists())
+
+    def test_startup_and_request_read_guide_and_role_from_selected_cat(self):
+        (self.project/'WORK-LEAD.md').write_text('Responsible guide original',encoding='utf-8')
+        (self.project/'plan.md').write_text('Original plan',encoding='utf-8')
+        doc=parse_todo(self.todo.read_text(encoding='utf-8'))
+        task=doc['tasks'][0]
+        task['source_refs']=['team-plan:plan.md','team-member:S010',
+                             'team-review:owner','cat-role:fixture-room']
+        self.todo.write_text(render_todo(home_kind=doc['home_kind'],home_id=doc['home_id'],
+            project_id=doc['project_id'],pinned=doc['pinned'],tasks=doc['tasks'],**doc['current']),
+            encoding='utf-8')
+        home={'project_root':str(self.project),'home_path':str(self.home),'project_id':'3002'}
+        team={'plan':plan_view(home,'S010',task)['plan'],'accepted':False,
+              'roles_receipt':'synthetic-approval','roles':{'S010':{'revision':1,'approved':True,
+              'role':{'duty':'Fixture duty','arrangement':'Original arrangement','deliverables':'out.md'}}}}
+        reads=[]
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                reads.append(self.path)
+                data=json.dumps({'team':team}).encode()
+                self.send_response(200)
+                self.send_header('Content-Type','application/json')
+                self.send_header('Content-Length',str(len(data)))
+                self.end_headers();self.wfile.write(data)
+            def log_message(self,*args):pass
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        before=self.todo.read_bytes(),self.contact.read_bytes()
+        try:
+            for event in (self.read_event('startup'),
+                          dict(session_id='own-session',hook_event_name='UserPromptSubmit')):
+                result=self.invoke(event,'--cat-url',f'http://127.0.0.1:{server.server_port}')
+                text=result['hookSpecificOutput']['additionalContext']
+                self.assertIn('Responsible guide original',text)
+                self.assertIn('Original arrangement',text)
+            self.assertEqual(reads,['/api/rooms/fixture-room/team']*2)
+            self.assertEqual((self.todo.read_bytes(),self.contact.read_bytes()),before)
+        finally:
+            server.shutdown();server.server_close();thread.join(timeout=5)
 
     def test_missing_required_original_explicitly_stops(self):
         (self.project/'background.md').unlink()

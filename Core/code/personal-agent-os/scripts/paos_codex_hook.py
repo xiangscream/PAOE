@@ -93,7 +93,10 @@ def run_hook(event, installation, cat_url=None, *, reuse_existing_prepare=False)
     else:
         observe_hook_entry(event, installation_path=installation)
         message = prepare_current(event=event, installation_path=installation, expected_home=home)
-    result = call_context(installation, ['read', home['home_id'], '--reason', reason])
+    args = ['read', home['home_id'], '--reason', reason]
+    if cat_url:
+        args.extend(['--cat-url', cat_url])
+    result = call_context(installation, args)
     if result.get('schema') != 'paoe-context/v1' or result.get('home_id') != home['home_id'] or result.get('reason') != reason:
         raise HookProblem('上下文回执与当前工位或事件不符')
     docs = result.get('documents')
@@ -111,7 +114,7 @@ def run_hook(event, installation, cat_url=None, *, reuse_existing_prepare=False)
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--installation-file')
-    parser.add_argument('--cat-url', help='Explicit installation CAT endpoint for Stop presence')
+    parser.add_argument('--cat-url', help='Installation CAT endpoint for context reads and Stop presence')
     parser.add_argument('--reuse-existing-prepare', action='store_true',
                         help='Append-only installation: original hooks prepare startup/resume/request.')
     args = parser.parse_args()
