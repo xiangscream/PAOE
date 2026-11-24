@@ -9,7 +9,7 @@ from urllib.parse import quote
 
 from paos_attention_service import resolve_home_by_registry
 from paos_content import original_version
-from paos_human_action import confirm
+from paos_human_action import confirm, review
 from paos_installation import effective_data_root, load_installation_descriptor
 from paos_stage import render, task_snapshot, with_refs
 from paos_team import (
@@ -57,7 +57,7 @@ def add_team_parsers(sub):
 
 
 def add_team_actions(group):
-    for name in ("propose", "plan", "members", "role", "enroll", "receipt", "confirm"):
+    for name in ("propose", "plan", "members", "role", "enroll", "receipt", "review", "confirm"):
         command = group.add_parser(name)
         command.add_argument("--cat-url", default="http://127.0.0.1:8870")
         if name in {"propose", "plan", "role", "enroll"}:
@@ -82,14 +82,18 @@ def add_team_actions(group):
             )
             command.add_argument("--archived-artifact", type=Path, help="Locate an archived result by its recorded version")
             command.add_argument("--archived-basis", type=Path, help="Locate archived review evidence by its recorded version")
-        if name == "confirm":
+        if name in {"confirm", "review"}:
             command.add_argument(
                 "action", choices=["open-plan", "approve-roles", "save-role", "accept-goal"]
             )
-            command.add_argument("--id", required=True, dest="receipt_id")
             command.add_argument(
-                "--input", required=True, help="JSON from the review interface, @file or stdin"
+                "--input", required=True, help="Exact action input JSON, @file or stdin"
             )
+        if name == "confirm":
+            command.add_argument("--id", required=True, dest="receipt_id")
+            mode = command.add_mutually_exclusive_group(required=True)
+            mode.add_argument("--decision", help="Existing Human decision JSON with source, quote and reviewed subject; no dialog")
+            mode.add_argument("--interactive", action="store_true", help="Use the optional window as the direct decision entry")
 
 
 def finish_current(current, task, evidence):
@@ -218,7 +222,7 @@ def execute_team_actions(args, installation, identity, cat_client, text_arg):
         if args.receipt_id.startswith("oa-"):
             proof = read_owner_acceptance(data, args.receipt_id, resolve if args.verify else None)
         else:
-            proof = read_action(data, args.receipt_id)
+            proof = read_action(data, args.receipt_id, require_approval=args.verify)
         if args.verify and proof["action"] == "accept-goal":
             verify_goal(proof["subject"], proof["subject"], resolve, "human_confirm")
         if args.verify and proof["action"] == "open-plan":
@@ -235,11 +239,16 @@ def execute_team_actions(args, installation, identity, cat_client, text_arg):
                 raise ValueError(f"归档文件与已验收的内容版本不同：{path}")
             result.setdefault("verified_archive", {})[kind] = str(path.resolve())
         return result
-    if op == "confirm":
+    if op in {"confirm", "review"}:
         request = json.loads(text_arg(args.input, "Human action", required=True))
         if not isinstance(request, dict):
             raise ValueError("Human 操作需要明确的对象")
-        return confirm(data, args.action, args.receipt_id, request, resolve, client)
+        if op == "review":
+            return review(args.action, request, resolve, client)
+        decision = json.loads(text_arg(args.decision, "Human decision", required=True)) if args.decision else None
+        if args.decision and not isinstance(decision, dict):
+            raise ValueError("已有 Human 决定需要明确的 JSON 对象，不打开确认窗口")
+        return confirm(data, args.action, args.receipt_id, request, resolve, client, decision=decision)
     if op == "members":
         team = client.request("GET", team_path(args.room))["team"]
         return role_projection(team, args.room, resolve)

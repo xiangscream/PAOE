@@ -89,16 +89,25 @@ def receipt_path(data, ident):
     return data / "human-actions" / (ident + ".json")
 
 
-def read_action(data, ident):
+def read_action(data, ident, *, require_approval=True):
     path = receipt_path(data, ident)
     proof = json.loads(path.read_text(encoding="utf-8"))
     if (
         proof.get("schema") != "paoe-human-action/v1"
         or proof.get("id") != ident
-        or proof.get("channel") != "native-human-confirmation"
+        or proof.get("channel") not in {"native-human-confirmation", "conversation-human-decision", "ui-human-decision"}
         or not isinstance(proof.get("subject"), dict)
     ):
         raise ValueError("Human 确认记录不完整")
+    if proof["channel"] != "native-human-confirmation":
+        decision = proof.get("decision")
+        if (not isinstance(decision, dict)
+                or decision.get("choice") not in {"approve", "reject", "revise", "defer"}
+                or any(not isinstance(decision.get(k), str) or not decision[k].strip()
+                       for k in ("recorded_by", "source_ref", "quote"))):
+            raise ValueError("Human 决定记录不完整")
+        if require_approval and decision["choice"] != "approve":
+            raise ValueError("该决定不是通过，不能作为放行或验收依据")
     return proof
 
 

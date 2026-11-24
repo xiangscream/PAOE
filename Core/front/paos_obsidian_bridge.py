@@ -88,7 +88,7 @@ def _project_scope(board: Board, context: dict, method: str, path: str,
         supplied = str(payload.get("project") or "").strip()
         if supplied and supplied != project:
             raise BoardProblem("project_scope_mismatch", "当前项目插件不能写入另一个 Project。")
-        if url.path in {"/api/layout", "/api/collaboration", "/api/team/confirm"}:
+        if url.path in {"/api/layout", "/api/collaboration", "/api/team/review", "/api/team/confirm"}:
             payload["project"] = project
         if url.path == "/api/hint":
             if str(payload.get("agent_id") or "") not in homes:

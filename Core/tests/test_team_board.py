@@ -97,15 +97,37 @@ class TeamBoardTests(unittest.TestCase):
                 result = {"ok": True, "state": "cancelled"} if action == "save-role" else {
                     "ok": True, "receipt_id": self.ticket, "applied": {"room_id": "r"}}
                 self.board.run_paos.return_value = result
-                payload = {"action": action, "receipt_id": self.ticket, "input": subject}
+                decision = {"channel": "ui", "choice": "approve", "recorded_by": "human",
+                            "source_ref": "paoe://ui/current", "quote": "通过", "subject": subject}
+                payload = {"action": action, "receipt_id": self.ticket, "input": subject, "decision": decision}
                 self.assertEqual(self.plugin("POST", "/api/team/confirm", payload), (200, result))
                 args, kwargs = self.board.run_paos.call_args
                 self.assertEqual(args[0], ["team-plan", "confirm", action, "--id", self.ticket,
-                                          "--input", "-", "--cat-url", self.board.cat_url])
+                                          "--input", "-", "--decision", json.dumps(decision, ensure_ascii=False),
+                                          "--cat-url", self.board.cat_url])
                 self.assertEqual(json.loads(kwargs["input_text"]), subject)
-                self.assertIsNone(kwargs["timeout"])
+                self.assertNotIn("timeout", kwargs)
         self.board.run_paos.reset_mock()
         bad = {"action": "task-accept", "receipt_id": self.ticket, "input": {}}
         self.assertEqual(dispatch_request(self.board, "POST", "/api/team/confirm", bad)[1]["error_code"],
                          "team_action_unknown")
+        self.board.run_paos.assert_not_called()
+
+    def test_review_is_read_only_and_same_scope_in_web_and_plugin(self):
+        self.board.room = Mock(return_value={"ok": True, "task_context": {"project_id": "1001"}})
+        result = {"ok": True, "subject": {"version": "one"}, "explanation": "原文"}
+        self.board.run_paos = Mock(return_value=result)
+        payload = {"action": "approve-roles", "input": {"room": "r", "expected_revision": 5}}
+        self.assertEqual(self.plugin("POST", "/api/team/review", payload), (200, result))
+        args, kwargs = self.board.run_paos.call_args
+        self.assertEqual(args[0], ["team-plan", "review", "approve-roles", "--input", "-",
+                                  "--cat-url", self.board.cat_url])
+        self.assertEqual(json.loads(kwargs["input_text"]), payload["input"])
+        self.assertEqual(self.plugin("POST", "/api/team/review", {**payload, "project": "2001"})[0], 422)
+
+    def test_old_page_without_decision_cannot_open_a_second_confirmation(self):
+        self.board.run_paos = Mock()
+        payload = {"action": "open-plan", "receipt_id": self.ticket, "input": {"owner": "1001-s001"}}
+        status, out = dispatch_request(self.board, "POST", "/api/team/confirm", payload)
+        self.assertEqual((status, out["error_code"]), (422, "human_decision_required"))
         self.board.run_paos.assert_not_called()
