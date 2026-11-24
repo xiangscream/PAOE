@@ -135,7 +135,7 @@ $exm = '<从本机 EXM 方法取得的完整脚本路径>'
 | 生成本人公开联系包 | [工位Contact薄入口](guide-paos-cat-operations.md#工位-contact-薄入口)：创建CONTACT.md、contact.py、STATUS.md；保留已有文件 |
 | 查联系或原消息结果 | `status <project> <本人Sxxx>` / `wake status <project> <本人Sxxx>`；已发信使用 `status ... --message-id <原ID>` |
 | 加入已有项目、创建新工位 | [项目和工位创建](../Project-Template/README.md#新项目和工位的创建) |
-| 配置本人唤醒器 | [入职与唤醒器](../Project-Template/Workstations/_workstation/notices/README.md#配置与启动) |
+| 配置本人唤醒器与 App Hook | [入职与唤醒器](../Project-Template/Workstations/_workstation/notices/README.md#配置与启动)（Antigravity App 见 [工作区 Hook 接入与核验](../Project-Template/Workstations/_workstation/notices/README.md#工作区-hook-接入与核验)） |
 | 项目定位 / 首次登记 | `project show` / `project register --root --coordinator`；不创建项目管理状态 |
 | 安装定位或库路径异常 | `install show` / `library roots show` / `health`；[Rooter 安装](guide-rooter-installation.md) |
 | 对话、日会、Tips 归位 | 日常输入整理（`<workflow_root>/Workflows/wf-meeting-audio-package.md`） |

@@ -66,7 +66,7 @@ python notices/dsh.py status
 
 ### Antigravity App
 
-本流程已在 Windows 上的 Antigravity App 2.33.0 实测。System 0.2.29 起支持该驱动。从本人 [ENTRY](../ENTRY.md) 取 PAOE 命令前缀。用 `paos wake bind --help` 核对 `antigravity`，用 `paos install show` 核对该安装的 `source_root`。下文的 `antigravity_sidecar.py` 位于此 Source 的 `scripts/wakeup_native/`。
+本流程已在 Windows 上的 Antigravity App 2.33.0（Sidecar 唤醒）与 2.34.0（工作区 Hook 接入）实测。System 0.2.29 起支持该驱动。从本人 [ENTRY](../ENTRY.md) 取 PAOE 命令前缀。用 `paos wake bind --help` 核对 `antigravity`，用 `paos install show` 核对该安装的 `source_root`。下文的 `antigravity_sidecar.py` 位于此 Source 的 `scripts/wakeup_native/`。
 
 #### 确认本人 App 会话
 
@@ -114,6 +114,16 @@ paos --json wake status '<项目ID>' '<本人S号>'
 ```
 
 回读 `runtime=antigravity`、`native_session_id` 和 STOP，再按本页 [使用与验收](#使用与验收) 发一封测试信，核对原 App 会话实读回告。复工时回到同一个 App 会话。App 重新加载时端口可以变化，Contact 继续读取固定路径下的登记。登记缺失或拒连时查本人 Sidecar 的启用状态和 `sidecar_data/<ID>/logs/`。提醒已受理但没有回告时，沿原信和 `sidecar_data/<ID>/events/` 核对。
+
+#### 工作区 Hook 接入与核验
+
+在 Antigravity App 中接入 PAOE 工作区 Hook（自动注入必读原文与回合 Stop），以已实测路径为准：
+
+1. **选择真实项目目录（`@` 引用不是选项目）**：在桌面 App 的项目选择器明确选中真实项目目录（本地模式选 Local），使会话实际归属该项目。在已有会话里用 `@` 引用其他目录不会切换会话归属，也不会触发该目录的 Hook。
+2. **合并写入工作区 `.agents/hooks.json`**：工作区 Hook 保存在项目根目录 `.agents/hooks.json`。同项目多名成员的具名 Hook 合并写入同一文件并保留已有定义，各自沿同一安装描述核对自己的 Contact；部署只接 Hook，不改原会话、模型、STOP 或正式 Store。
+3. **无独立 Hooks 菜单**：本版 App（2.34.0）项目设置的「自定义项」可查看技能、规则、插件及自定义 Agent，没有已证实的独立 Hooks 列表或开关菜单。核对或修改 Hook 直接看项目根目录 `.agents/hooks.json`，目录归属看项目设置的「文件夹」。
+4. **重绑目录后须开新会话验证**：通过项目设置「文件夹」重新选定项目目录后，已创建的旧会话仍沿用创建时的工作区记录；验证工作区 Hook 生效必须新建会话并核对新会话的项目归属。
+5. **分层核验**：把**配置就绪**（`.agents/hooks.json`、Contact 与脚本回读）、**原文实读与原生事件**（原会话转写与 Hook 日志中的注入/Stop）、**实际业务结果**（接手、产文与提交）分开记录，互不替代。隔离试件与原会话业务验证独立取证；当前 24D 同进程注入试件仍为独立待验项。
 
 #### 后台提醒后的收信与公开回复习惯
 
