@@ -5,7 +5,7 @@ from pathlib import Path
 import os
 import time
 
-from paos_content import changes_db, original_version, record_version
+from paos_content import changes_db, record_version, snapshot_original
 from paos_installation import effective_data_root, load_installation_descriptor
 from paos_library import load_library_roots
 from paos_registry import ProjectRegistry
@@ -146,7 +146,7 @@ class ContentWatcher:
                     seen.add(file)
                     try:
                         before = file.stat()
-                        version = original_version(file)
+                        version, body = snapshot_original(file)
                         after = file.stat()
                     except FileNotFoundError:
                         continue  # Atomic replacement/removal; final path event follows.
@@ -159,7 +159,7 @@ class ContentWatcher:
                         self.pending[file] = time.monotonic() + self.settle_seconds
                         continue
                     with changes_db(self.scope.data) as db:
-                        record_version(db, str(file), version, "original", "watcher")
+                        record_version(db, str(file), version, "original", "watcher", body=body)
             except FileNotFoundError:
                 continue  # Removed directory; any replacement is subscribed already.
 
