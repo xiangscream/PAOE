@@ -3,6 +3,7 @@ import {markRaw} from 'vue';
 import {readPage, acceptMessage, sendOutcome, errorText, seatLabels} from '../../../cat-state.mjs';
 import {findMessages, messagePreview} from '../../../cat-content.mjs';
 import {memberCandidates, outsideCandidates, presenceInfo, rosterEntry, observerNote, scopeText, staffId, roleLine} from '../../../mention-select.mjs';
+import {actionOutcome} from '../../../team-select.mjs';
 import CatIcon from './ChatIcon.vue';
 import MessageContent from './ChatMessageContent.vue';
 import TeamPanel from './TeamPanel.vue';
@@ -19,7 +20,7 @@ function newConversation(id) {
   return {id,title:'',status:'open',members:[],messages:[],cursor:0,draft:'',reply:'',targets:[],preview:null,pending:null,
           endedRequests:[],feedback:'',outcome:'',loaded:false,expanded:{},position:null,atLatest:true,firstUnseen:'',
           ownerId:'',closePolicy:'',context:null,indexDoc:null,indexError:'',indexOpen:true,progressSent:-1,progressBusy:false,progressLag:false,presenceMarked:false,
-          team:null,teamOpen:true};
+          team:null,teamOpen:true, cards:null};
 }
 async function request(path, options={}) {
   const controller = new AbortController();
@@ -42,7 +43,8 @@ export default {
       seatLabels,selection:0,stream:null,storageError:'',active:true,endingWaiting:false,
       connection:'正在连接',connectionError:false,unseen:0,highlight:'',checking:false,atLatest:true,
       searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false,closeBusy:false,
-      mention:{open:false,outside:false,query:'',index:0},previewTimer:0};
+      mention:{open:false,outside:false,query:'',index:0},previewTimer:0,
+      teamActionBusy:'', teamActionOutcome:null};
   },
   computed: {
     state() { return this.roomStates[this.roomId] || null; },
@@ -488,17 +490,33 @@ export default {
       this.endingWaiting=false;this.persistDraft(state);this.$nextTick(this.resizeComposer);
     },
     openCreator() {this.sidebar=false;this.$emit('new-discussion');},
-    // ---- 任务房完整交互：INDEX / 关房 / 已读游标 / 在线 ----
+    // ---- 任务房完整交互：INDEX / 关房 / 已读游标 / 在线 / 团队操作 ----
     md(source) { return renderMarkdown(source); },
     async loadTeam(state) {
-      // 团队计划数据（GET /api/rooms/R/team）；非团队房 404 → 静默无面板。
+      // 团队计划数据（GET /api/rooms/R/team → {ok, team, cards}）；非团队房 404 → 静默无面板。
       try {
         const value=await request('/api/rooms/'+encodeURIComponent(state.id)+'/team');
-        if (value && value.ok && value.team) state.team=value.team;
-        else state.team=null;
-      } catch(error) { state.team=null; }   // 非团队房或暂不可读：不显示面板
+        if (value && value.ok && value.team) { state.team=value.team; state.cards=value.cards||null; }
+        else { state.team=null; state.cards=null; }
+      } catch(error) { state.team=null; state.cards=null; }
     },
     toggleTeam() { if (this.state) this.state.teamOpen=!this.state.teamOpen; },
+    async teamConfirm({action, input}) {
+      // Human 操作入口：POST /api/team/confirm {action, receipt_id, input}
+      // 由 Core 受信确认流一次生效；本组件不做第二次弹窗。
+      const state=this.state;
+      if (!state?.loaded) return;
+      this.teamActionBusy=action;
+      this.teamActionOutcome=null;
+      try {
+        const value=await request('/api/team/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action, receipt_id:'ha-web-'+crypto.randomUUID().replace(/-/g,'').slice(0,32), input})});
+        this.teamActionOutcome=actionOutcome(value);
+        if (this.teamActionOutcome.kind==='applied') await this.loadTeam(state);
+      } catch(error) {
+        this.teamActionOutcome={kind:'failed', text:'请求未完成：'+error.message};
+      } finally { this.teamActionBusy=''; }
+    },
     async loadIndexDoc(state) {
       const context=state.context;
       if (!context?.index_path) return;
@@ -643,7 +661,7 @@ export default {
       <div class="close-banner-text"><strong>负责人已提请关闭本任务房</strong><span>关闭后保留可读历史；若还有要补做的事，可选择继续讨论。</span></div>
       <div class="close-banner-actions"><button class="secondary-button small" :disabled="closeBusy" @click="closeRoom('continue')">继续讨论</button><button class="primary-button small" :disabled="closeBusy" @click="closeRoom('confirm')">{{closeBusy?'处理中…':'确认关闭'}}</button></div>
     </div>
-    <team-panel v-if="state?.team" :team="state.team" :people="people" :open="state.teamOpen" @toggle="toggleTeam"></team-panel>
+    <team-panel v-if="state?.team" :team="state.team" :cards="state.cards" :people="people" :open="state.teamOpen" :actionBusy="teamActionBusy" :actionOutcome="teamActionOutcome" @toggle="toggleTeam" @confirm="teamConfirm"></team-panel>
     <section v-if="indexAvailable" class="task-index" :class="{collapsed:!state.indexOpen}" aria-label="任务 INDEX" data-testid="task-index">
       <header class="task-index-head">
         <button type="button" class="task-index-toggle" :aria-expanded="state.indexOpen" @click="toggleIndex"><cat-icon name="room"></cat-icon><span>任务 INDEX</span><small v-if="state.context.goal">{{state.context.goal}}</small><cat-icon class="chevron" name="latest"></cat-icon></button>
