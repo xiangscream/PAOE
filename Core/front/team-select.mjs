@@ -42,12 +42,15 @@ export function allSeatRoles(team) {
   });
 }
 
-// close_policy=human_confirm 时，owner 房不显示保留给 Human 的最终验收。
+// accept-goal 仅 human_confirm 房可走；owner 房由负责人原 task accept CLI 收口。
 export function canShowAcceptGoal(team, viewerIsOwner) {
   if (!team || team.accepted || team.owner_acceptance) return false;
-  if (team.plan?.close_policy === 'human_confirm' && viewerIsOwner) return false;
+  // 只有 human_confirm 关房政策的专用房才走 accept-goal
+  if (team.plan?.close_policy !== 'human_confirm') return false;
+  // Human 面板：human_confirm 房始终可见（Human 就是最终验收人）
+  // owner 政策房不显示 accept-goal（负责人用 CLI task accept）
   const entries = Object.values(team.roles || {});
-  return entries.length > 0 && entries.every(e => !e.role || e.approved === true);
+  return entries.length > 0 && entries.every(e => !e.role || e.approved);
 }
 
 // 计划卡摘要行：project · owner · version · close_policy · members
@@ -104,14 +107,14 @@ export function confirmInput(action, context) {
 }
 
 // Human 操作结果的三种可见状态：applied / cancelled / failed
+// applied 是对象（含 room_id 等），不只是 boolean——对齐 Core 正式结构。
 export function actionOutcome(value) {
   if (!value) return { kind: 'failed', text: '请求未完成' };
-  if (value.ok === true && (value.applied === true || value.state === 'applied' || value.result === 'applied'))
+  if (value.ok === true && value.applied)
     return { kind: 'applied', text: '已生效' };
   if (value.cancelled === true || value.state === 'cancelled' || value.result === 'cancelled')
     return { kind: 'cancelled', text: 'Human 取消了操作' };
   if (value.ok === false) {
-    // 冲突（revision 不匹配等）与普通错误分别可见
     const code = value.error_code || '';
     if (code.includes('revision') || code.includes('conflict') || code.includes('stale'))
       return { kind: 'conflict', text: '版本冲突：' + (value.error || '请刷新后重试') };
