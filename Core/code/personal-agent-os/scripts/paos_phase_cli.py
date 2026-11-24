@@ -97,14 +97,7 @@ def _context_sources(context):
 def _stage_failure(context, args):
     """Keep the normal failure receipt small; full text stays explicit."""
     sources = _context_sources(context)
-    compact = {
-        "schema": context.get("schema"),
-        "home_id": context.get("home_id"),
-        "task_id": context.get("task_id"),
-        "missing": list(context.get("missing") or []),
-        "omitted": list(context.get("omitted") or []),
-        "documents": sources,
-    }
+    compact = {**context, "documents": sources}
     cat_url = str(getattr(args, "cat_url", "") or "").strip()
     hint = (
         f"paos context read {args.home} --task {args.task} --reason stage"
