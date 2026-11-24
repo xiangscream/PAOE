@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from paos_team import decision_subject, publish_receipt, read_action, receipt_path, team_path
 
 
 CHOICES = {"approve", "reject", "revise", "defer"}
+
+
+def _apply(client, action, payload, ident):
+    if action == "close-room":
+        return client.request("POST", "/api/rooms/" + quote(payload["room"], safe="") + "/close",
+                              {"receipt_id": ident})
+    route = "/api/team/open" if action == "open-plan" else team_path(payload["room"]) + "/" + action
+    return client.request("POST", route, {"receipt_id": ident})
 
 
 def review(action, payload, resolve_home, client):
@@ -60,9 +69,8 @@ def record_decision(data, action, ident, payload, decision, resolve_home, client
         state = {"reject": "rejected", "revise": "changes_requested", "defer": "deferred"}
         return {"ok": True, "receipt_id": ident, "state": state[decision["choice"]],
                 "applied": None, "replayed": replayed}
-    route = "/api/team/open" if action == "open-plan" else team_path(payload["room"]) + "/" + action
     return {"ok": True, "receipt_id": ident, "replayed": replayed,
-            "applied": client.request("POST", route, {"receipt_id": ident})}
+            "applied": _apply(client, action, payload, ident)}
 
 
 def _display(action, subject, explanation):
@@ -75,6 +83,7 @@ def _display(action, subject, explanation):
         "approve-roles": "通过角色安排",
         "save-role": "保存角色并提醒本人",
         "accept-goal": "验收目标并关闭专用房",
+        "close-room": "关闭本讨论房，保留历史",
     }
     window = tk.Tk()
     window.title("PAOE · " + labels[action])
@@ -137,9 +146,8 @@ def confirm(data, action, ident, payload, resolve_home, client, *, decision=None
             original = read_action(data, ident)
             if original["action"] != action or original["input"] != payload:
                 raise ValueError("确认 ID 冲突")
-    route = "/api/team/open" if action == "open-plan" else team_path(payload["room"]) + "/" + action
     return {
         "ok": True,
         "receipt_id": ident,
-        "applied": client.request("POST", route, {"receipt_id": ident}),
+        "applied": _apply(client, action, payload, ident),
     }

@@ -84,7 +84,7 @@ def add_team_actions(group):
             command.add_argument("--archived-basis", type=Path, help="Locate archived review evidence by its recorded version")
         if name in {"confirm", "review"}:
             command.add_argument(
-                "action", choices=["open-plan", "approve-roles", "save-role", "accept-goal"]
+                "action", choices=["open-plan", "approve-roles", "save-role", "accept-goal", "close-room"]
             )
             command.add_argument(
                 "--input", required=True, help="Exact action input JSON, @file or stdin"

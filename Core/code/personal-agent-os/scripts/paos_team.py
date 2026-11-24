@@ -295,6 +295,16 @@ def verify_goal(subject, evidence, resolve_home, policy):
 
 def decision_subject(action, payload, resolve_home, client):
     """Construct the exact subject displayed by the Human client from authoritative originals."""
+    if action == "close-room":
+        room_id = payload["room"]
+        room = client.request("GET", "/api/rooms/" + quote(room_id, safe=""))["room"]
+        if "team_plan" in room:
+            raise ValueError("目标专用房须先走 accept-goal，不能仅以关房代替验收")
+        subject = {"room": room_id, "owner": room.get("owner_id", ""),
+                   "close_policy": room.get("close_policy", "human_confirm"),
+                   "context": room.get("task_context") or {},
+                   "last_human_seq": max((m["seq"] for m in room["messages"] if m["sender_id"] == "human"), default=0)}
+        return subject, pack(subject)
     if action == "open-plan":
         staff = payload["owner"]
         home = resolve_home(staff)
