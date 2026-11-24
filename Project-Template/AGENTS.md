@@ -42,7 +42,7 @@ PAOE 是 Human 和多名 Agent 共同工作的本地环境。Human 给出目标�
 
 ### 2. 把责任落到 TODO（含 0 类综合工作）
 
-所有行动以本人工位唯一生效的 `TODO.md`（v4）为准：零散事项单列，并行工作在现有 Task 的 `source_refs` 内标 `work-group:<工作名>` 与对应 CAT 标签（如 `cat-role:<room>/<home>` 或 `cat-room:<room>`）归组，同组待办、来源与成果自成范围，收尾只取本组；角色卡直接映射后端该组安排与成果，不维护第二份 TODO（Work 保持软流程，不建注册库、编号或状态机）。新任务接入对应 Task，确有新责任时新增。Current 只写当前焦点：
+所有行动以本人工位唯一生效的 `TODO.md`（v4）为准：零散事项单列，并行工作在现有 Task 的 `source_refs` 内标 `work-group:<工作名>` 与对应 CAT 标签（如 `cat-role:<room>` 或 `cat-room:<room>`）归组，同组待办、来源与成果自成范围，收尾只取本组；角色卡直接映射后端该组安排与成果，不维护第二份 TODO（Work 保持软流程，不建注册库、编号或状态机）。新任务接入对应 Task，确有新责任时新增。Current 只写当前焦点：
 
 - **目标（Objective）**：本次要交付的结果。
 - **下一步（Next action）**：一项能直接开始的具体动作。

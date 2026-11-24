@@ -26,4 +26,4 @@ project_id: "<project-id>"
 - [ ] **T-001** · <已对齐的真实行动（可选在 Source refs 标 work-group:<工作名> 归组；未标即零散事项）>
   - **Source refs:**
     - work-group:<工作名>
-    - cat-role:<room>/<home>
+    - cat-role:<room>
