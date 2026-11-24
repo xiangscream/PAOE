@@ -22,7 +22,6 @@ from paos_registry import ProjectRegistry, RegistryProblem
 from paos_workstation import posix_windows_drive_locator
 
 
-_EXM_PROJECT = "3005"
 _FORMATS = {
     "codex-rollout": "codex",
     "opencode-v2": "opencode",
@@ -223,16 +222,15 @@ def _position_without_rewind(previous, proposed):
     return proposed
 
 
-def publish_originals(installation, *, format, session_id, project_id, input_file, page,
+def publish_originals(installation, *, format, session_id, project_id, exm_project_id, input_file, page,
                       origins_file=None, work_group=None, counterpart=None, start_line=1,
                       end_line=None, selected_message_id=None):
     """Append verified source revisions, then commit the consumption cursor."""
     if format not in _FORMATS or not session_id or not session_id.strip():
         raise BatchError("an exact native session and supported format are required")
     registry = ProjectRegistry(installation)
-    if project_id != _EXM_PROJECT:
-        registry.read_record(project_id)
-    root = _path(registry.read_record(_EXM_PROJECT)["root_path"]).resolve(strict=True)
+    registry.read_record(project_id)
+    root = _path(registry.read_record(exm_project_id)["root_path"]).resolve(strict=True)
     target = _page_path(root, page)
     path = _path(input_file).resolve(strict=True)
     if not path.is_file() or path == target:
@@ -243,7 +241,7 @@ def publish_originals(installation, *, format, session_id, project_id, input_fil
     source = Source(_FORMATS[format], session_id, project_id, str(path), work_group, counterpart)
     namespace = source.namespace()
     stream = pack(namespace)
-    page_key = os.path.normcase(target.relative_to(root).as_posix())
+    page_key = pack([exm_project_id, os.path.normcase(target.relative_to(root).as_posix())])
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(db_path, timeout=5)) as db, db:
         # Serialize importers. After a process interruption the source page may
@@ -285,6 +283,8 @@ def add_originals_parser(group):
     parser.add_argument("--format", choices=_FORMATS, required=True)
     parser.add_argument("--session", dest="session_id", required=True)
     parser.add_argument("--project", dest="project_id", required=True, help="Registered source project")
+    parser.add_argument("--exm-project", dest="exm_project_id", required=True,
+                        help="Registered experience project; no machine-specific project ID is assumed")
     parser.add_argument("--input", dest="input_file", required=True, help="Selected local export/API page")
     parser.add_argument("--page", required=True, help="Selected EXM Markdown page")
     parser.add_argument("--origins", dest="origins_file", help="JSON of reviewed native IDs and evidence")
@@ -298,12 +298,16 @@ def add_originals_parser(group):
 
 def execute_originals(args, installation):
     """Dispatch the originals subcommand from a registered CLI group."""
-    return publish_originals(
-        installation, format=args.format, session_id=args.session_id, project_id=args.project_id,
-        input_file=args.input_file, page=args.page, origins_file=args.origins_file,
-        work_group=args.work_group, counterpart=args.counterpart, start_line=args.start_line,
-        end_line=args.end_line, selected_message_id=args.selected_message_id,
-    )
+    try:
+        return publish_originals(
+            installation, format=args.format, session_id=args.session_id, project_id=args.project_id,
+            exm_project_id=args.exm_project_id,
+            input_file=args.input_file, page=args.page, origins_file=args.origins_file,
+            work_group=args.work_group, counterpart=args.counterpart, start_line=args.start_line,
+            end_line=args.end_line, selected_message_id=args.selected_message_id,
+        )
+    except BadZipFile as exc:
+        raise BatchError("selected DSH input is not a valid export ZIP") from exc
 
 
 def main():

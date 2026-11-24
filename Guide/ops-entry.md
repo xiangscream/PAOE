@@ -5,7 +5,7 @@ title: 操作入口：按目的找命令
 description: 定位本人工作、已登记资源、同事与安装级 Rooter；使用现有文件和联系入口。
 tags: ops, operations, entry
 status: active
-version: 46
+version: 47
 ---
 
 # 操作入口
@@ -60,6 +60,14 @@ $targetProject = '3004'  # 接手人所在项目，查对方唤醒状态时用
 | 沿主题找有依据的联系 | `paos context related <本人Sxxx> --project 3005 --source Topics/产品与Agent协作.md --depth 1 --limit 8` | 从原页派生直接关系和反向关系，保留理由、来源及原作者表述；不另建图数据库。 |
 
 主题正文的“相关经历”或“相关主题”节用命名 Markdown 链接开头的列表项，链接后写关系含义、理由、来源和归属。工具原样返回说明，不替作者推断因果；反向关系由读取时派生。节点预算只控制展开，命中后仍须回读当前原件。心得沿同一内容观察与检索入口，不新建索引服务。
+
+### 保存已选会话原话
+
+用 `paos context originals --format <格式> --session <原生会话ID> --project <来源项目> --exm-project <经历库项目> --input <已选原件> --page <经历库内来源页>` 接入已授权导出或已保存的 API 页。四种格式为 `codex-rollout`、`opencode-v2`、`dsh-export`、`antigravity-transcript`；DSH 支持正常导出的 ZIP 或 JSONL。
+
+Codex、OpenCode 和 Antigravity 需 `--origins <JSON>` 按原生消息 ID 给出已核的 `kind`、`evidence_ref`，不以 user 外观认定本人发言；DSH 沿原生 source.kind。来源不明或正文被裁剪时返回具体缺口，不写正文或推进游标。只读选定范围，不扫描全账号；Codex/Antigravity 可用 `--start-line`、`--end-line`，OpenCode 可用 `--select-message`。
+
+来源页追加完整文字、修订和附件定位，游标留 Data。用同一会话、项目、工作归组和页续读；`saved=0` 不改页面。正常中断后复跑会识别已落盘的修订，先保存原话再提交位置。保护已有人工文字，并保留来源页的修订标记以便恢复。没有新材料不造新稿，主题归类仍由 EXM 整理者判断。
 
 ### 派工与唤醒
 

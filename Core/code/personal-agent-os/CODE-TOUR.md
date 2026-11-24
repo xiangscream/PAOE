@@ -72,6 +72,7 @@ external Runtime, and a successful transport receipt is **not** task completion.
 | `paos_context.py`, `paos_team.py`, `paos_human_action.py` | Load responsible-role sources and apply attributable Human decisions | Exact reviewed content, one decision; ordinary members do not load the lead guide |
 | `paos_content.py`, `paos_content_watch.py`, `paos_stage.py` | Keep observed source transitions, retained text and post-write consumption cursors | Old missing bytes stay explicit; registered cross-project sources do not transfer TODO ownership |
 | `paos_relations.py` | Read named topic relations and derive bounded neighbors/backlinks from Markdown | Explanations and source attribution remain the author's text; no independent graph store |
+| `paos_exm_originals.py`, `paos_exm_publish.py` | Import explicitly selected native Human originals and commit cursors after publication | Unknown authors/cropped text stay gaps; source revisions and human edits survive restart |
 | `paos_mail.py`, `paos_notice.py` | Immutable Mail and durable Notice | Input handled != task finished |
 | `paos_attention_service.py`, `paos_agent_activation.py` | Compose Home, Mail, Notice and explicit activation | Do not invent an execution-state database |
 | `paos_library.py`, `paos_guide.py` | Discover independent Workflow/Skill/Tool and support Guide diffs | Does not own the method documents |

@@ -34,7 +34,7 @@ def codex_record(message_id, text):
 
 class OriginalPublicationTests(unittest.TestCase):
     def setUp(self):
-        home = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        home = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         self.installation = home / "installation.json"
         self.data = home / "Data"
         self.exm = home / "EXM"
@@ -52,6 +52,7 @@ class OriginalPublicationTests(unittest.TestCase):
         registry.register("3005", root_path=str(self.exm), coordinator_home_id="S072")
         self.selection = {
             "format": "codex-rollout", "session_id": "isolated-thread", "project_id": "3002",
+            "exm_project_id": "3005",
             "input_file": str(self.source), "page": "Sessions/Codex/selected.md",
             "origins_file": str(self.origins), "work_group": "书写验收",
         }
@@ -213,7 +214,7 @@ class OriginalPublicationTests(unittest.TestCase):
         self.assertEqual(self.dest.read_bytes(), b"# Replaced by editor.\n")
         self.assertEqual(self.read_cursor(), prior)
 
-    def test_standalone_cli_reads_normal_dsh_zip_and_reports_replay(self):
+    def test_public_cli_reads_normal_dsh_zip_and_reports_replay(self):
         archive = self.source.with_suffix(".zip")
         records = [{"type": "session", "id": "dsh-fixture", "version": 4}, {
             "type": "user/message", "surfaceOp": "append", "seq": 0, "time": 1791423939394,
@@ -223,9 +224,10 @@ class OriginalPublicationTests(unittest.TestCase):
         }]
         with ZipFile(archive, "w") as output:
             output.writestr("session.v4.jsonl", "\n".join(json.dumps(row) for row in records) + "\n")
-        command = [sys.executable, "-B", "-X", "utf8", str(SCRIPTS / "paos_exm_publish.py"),
-                   "--installation-file", str(self.installation), "originals", "--format", "dsh-export",
+        command = [sys.executable, "-B", "-X", "utf8", str(SCRIPTS / "paos.py"),
+                   "--installation-file", str(self.installation), "--json", "context", "originals", "--format", "dsh-export",
                    "--session", "dsh-fixture", "--project", "3002", "--input", str(archive),
+                   "--exm-project", "3005",
                    "--page", "Sessions/DSH.md"]
         for expected in (1, 0):
             result = subprocess.run(command, capture_output=True, encoding="utf-8", timeout=15)
@@ -233,6 +235,32 @@ class OriginalPublicationTests(unittest.TestCase):
             receipt = json.loads(result.stdout)
             self.assertEqual(receipt["saved"], expected)
             self.assertTrue(Path(receipt["page"]).is_file())
+
+    def test_experience_project_is_explicit_and_portable(self):
+        elsewhere = self.exm.parent / "OtherExperience"
+        elsewhere.mkdir()
+        ProjectRegistry(self.installation).register("3008", root_path=str(elsewhere), coordinator_home_id="S073")
+        self.write(codex_record("a", "Selected experience"))
+        result = self.run_import(exm_project_id="3008")
+        self.assertTrue(Path(result["page"]).is_relative_to(elsewhere))
+        self.assertIn(b"Selected experience", Path(result["page"]).read_bytes())
+        self.assertFalse(self.dest.exists())
+
+    def test_public_cli_bad_zip_is_structured_and_does_not_advance(self):
+        archive = self.source.with_suffix(".zip")
+        archive.write_bytes(b"not an export ZIP")
+        result = subprocess.run([
+            sys.executable, "-B", "-X", "utf8", str(SCRIPTS / "paos.py"),
+            "--installation-file", str(self.installation), "--json", "context", "originals",
+            "--format", "dsh-export", "--session", "dsh-fixture", "--project", "3002",
+            "--exm-project", "3005", "--input", str(archive), "--page", "Sessions/DSH.md",
+        ], capture_output=True, encoding="utf-8", timeout=15)
+        self.assertEqual(result.returncode, 1)
+        receipt = json.loads(result.stdout or result.stderr)
+        self.assertFalse(receipt["ok"])
+        self.assertIn("valid export ZIP", receipt["error"])
+        self.assertIsNone(self.read_cursor())
+        self.assertFalse(self.dest.exists())
 
 
 if __name__ == "__main__":
