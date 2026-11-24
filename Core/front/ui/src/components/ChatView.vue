@@ -5,6 +5,7 @@ import {findMessages, messagePreview} from '../../../cat-content.mjs';
 import {memberCandidates, outsideCandidates, presenceInfo, rosterEntry, observerNote, scopeText, staffId, roleLine} from '../../../mention-select.mjs';
 import CatIcon from './ChatIcon.vue';
 import MessageContent from './ChatMessageContent.vue';
+import TeamPanel from './TeamPanel.vue';
 import {readDraft, writeDraft} from '../state/chat-drafts.mjs';
 import {isLegacyHomeId} from '../state/team';
 import {renderMarkdown} from '../lib/markdown';
@@ -17,7 +18,8 @@ const roomStatusLabels = {open:'进行中的讨论', pending_close:'负责人已
 function newConversation(id) {
   return {id,title:'',status:'open',members:[],messages:[],cursor:0,draft:'',reply:'',targets:[],preview:null,pending:null,
           endedRequests:[],feedback:'',outcome:'',loaded:false,expanded:{},position:null,atLatest:true,firstUnseen:'',
-          ownerId:'',closePolicy:'',context:null,indexDoc:null,indexError:'',indexOpen:true,progressSent:-1,progressBusy:false,progressLag:false,presenceMarked:false};
+          ownerId:'',closePolicy:'',context:null,indexDoc:null,indexError:'',indexOpen:true,progressSent:-1,progressBusy:false,progressLag:false,presenceMarked:false,
+          team:null,teamOpen:true};
 }
 async function request(path, options={}) {
   const controller = new AbortController();
@@ -34,7 +36,7 @@ function checked(value) { if (!value.ok) throw new Error(errorText(value)); retu
 export default {
   props:{project:{type:String,required:true},initialRoom:{type:String,default:''},embedded:{type:Boolean,default:false},eventUrl:{type:Function,default:null},streamFactory:{type:Function,default:null}},
   emits:['new-discussion','board','room-selected'],
-  components:{CatIcon, MessageContent},
+  components:{CatIcon, MessageContent, TeamPanel},
   data() {
     return {rooms:[],people:[],roomStates:{},roomId:'',filter:'',roomScope:'open',relatedOnly:true,sidebar:false,roomsLoading:true,roomListRequest:0,
       seatLabels,selection:0,stream:null,storageError:'',active:true,endingWaiting:false,
@@ -370,6 +372,7 @@ export default {
           ownerId:room.owner_id||'',closePolicy:room.close_policy||'',context:room.task_context||null},readPage(state,room.messages));
         this.confirmPending(state);
         this.loadIndexDoc(state);
+        this.loadTeam(state);
         if (generation!==this.selection) return;
         this.roomScope=room.status;
         if(!this.embedded)document.title=(room.title||'圆桌')+' · CAT';
@@ -487,6 +490,15 @@ export default {
     openCreator() {this.sidebar=false;this.$emit('new-discussion');},
     // ---- 任务房完整交互：INDEX / 关房 / 已读游标 / 在线 ----
     md(source) { return renderMarkdown(source); },
+    async loadTeam(state) {
+      // 团队计划数据（GET /api/rooms/R/team）；非团队房 404 → 静默无面板。
+      try {
+        const value=await request('/api/rooms/'+encodeURIComponent(state.id)+'/team');
+        if (value && value.ok && value.team) state.team=value.team;
+        else state.team=null;
+      } catch(error) { state.team=null; }   // 非团队房或暂不可读：不显示面板
+    },
+    toggleTeam() { if (this.state) this.state.teamOpen=!this.state.teamOpen; },
     async loadIndexDoc(state) {
       const context=state.context;
       if (!context?.index_path) return;
@@ -631,6 +643,7 @@ export default {
       <div class="close-banner-text"><strong>负责人已提请关闭本任务房</strong><span>关闭后保留可读历史；若还有要补做的事，可选择继续讨论。</span></div>
       <div class="close-banner-actions"><button class="secondary-button small" :disabled="closeBusy" @click="closeRoom('continue')">继续讨论</button><button class="primary-button small" :disabled="closeBusy" @click="closeRoom('confirm')">{{closeBusy?'处理中…':'确认关闭'}}</button></div>
     </div>
+    <team-panel v-if="state?.team" :team="state.team" :people="people" :open="state.teamOpen" @toggle="toggleTeam"></team-panel>
     <section v-if="indexAvailable" class="task-index" :class="{collapsed:!state.indexOpen}" aria-label="任务 INDEX" data-testid="task-index">
       <header class="task-index-head">
         <button type="button" class="task-index-toggle" :aria-expanded="state.indexOpen" @click="toggleIndex"><cat-icon name="room"></cat-icon><span>任务 INDEX</span><small v-if="state.context.goal">{{state.context.goal}}</small><cat-icon class="chevron" name="latest"></cat-icon></button>
