@@ -14,7 +14,7 @@ class RelationTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name)
+        self.root = Path(tmp.name).resolve()
         self.topics = self.root / "Topics"
         self.topics.mkdir()
         self.a, self.b = self.topics / "LRC.md", self.topics / "Reachy.md"

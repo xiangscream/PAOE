@@ -25,7 +25,7 @@ class StageCliTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name)
+        self.root = Path(tmp.name).resolve()
         self.project = self.root / "p"
         self.home = self.project / "Workstations" / "S010"
         self.home.mkdir(parents=True)
