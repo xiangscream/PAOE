@@ -25,7 +25,7 @@ class StageCliTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name)
+        self.root = Path(tmp.name).resolve()
         self.project = self.root / "p"
         self.home = self.project / "Workstations" / "S010"
         self.home.mkdir(parents=True)
@@ -233,6 +233,64 @@ class StageCliTests(unittest.TestCase):
         self.cli(*self.args, expected=1)
         self.assertEqual(before, self.todo.read_bytes())
         self.assertEqual(self.cli("content", "changes")["changes"], [])
+
+    def test_registered_cross_project_source_and_saved_versions(self):
+        experience = self.root / "experience"
+        experience.mkdir()
+        artifact = experience / "topic.md"
+        artifact.write_text("Human approved topic", encoding="utf-8")
+        ProjectRegistry(self.install).register(
+            "3005", root_path=str(experience), homes=["S072"], coordinator_home_id="S072"
+        )
+        args = self.args.copy()
+        args[args.index("--artifact") + 1] = str(artifact)
+        got = self.cli(*args)
+        self.assertTrue(got["ok"])
+        self.assertIn(str(artifact), got["sources"])
+        rows = self.cli("content", "changes")["changes"]
+        seq = next(row["seq"] for row in rows if row["locator"] == str(artifact))
+        artifact.write_text("New human edit", encoding="utf-8")
+        self.assertEqual(self.cli("content", "show", str(seq))["after"]["body"], "Human approved topic")
+        self.assertTrue(self.cli(*args)["replayed"])
+        self.cli("content", "consume", "S010", "--through", str(rows[-1]["seq"]), "--result-ref", str(artifact))
+        self.assertEqual(self.cli("content", "status", "S010")["pending_count"], 0)
+        self.assertEqual(self.cli("content", "changes", "--home", "S010")["changes"], [])
+
+    def test_unregistered_source_does_not_mutate_task(self):
+        artifact = self.root / "not-registered.md"
+        artifact.write_text("Outside registered content", encoding="utf-8")
+        args = self.args.copy()
+        args[args.index("--artifact") + 1] = str(artifact)
+        before = self.todo.read_bytes()
+        got = self.cli(*args, expected=1)
+        self.assertIn("所选项目原件不可读", got["error"])
+        self.assertEqual(self.todo.read_bytes(), before)
+        self.assertEqual(self.cli("content", "changes")["changes"], [])
+
+    def test_rooter_can_deliver_registered_project_originals(self):
+        rooter = self.root / "rooter"
+        rooter.mkdir()
+        descriptor = json.loads(self.install.read_text(encoding="utf-8"))
+        descriptor["rooter_home"] = str(rooter)
+        self.install.write_text(json.dumps(descriptor), encoding="utf-8")
+        Path(descriptor["agent_numbers_config"]).write_text(
+            json.dumps({"3002-s010": "S010", "rooter-001": "S035"}), encoding="utf-8"
+        )
+        (rooter / "AGENTS.md").write_text("[共同背景](background.md)", encoding="utf-8")
+        (rooter / "background.md").write_text("Shared background", encoding="utf-8")
+        (rooter / "ENTRY.md").write_text("Rooter entry", encoding="utf-8")
+        (rooter / "TODO.md").write_text(render_todo(
+            home_kind="rooter", home_id="rooter-001", project_id="", objective="Deliver",
+            next_action="Save the approved design", context_refs=["task:EX"],
+            tasks=[dict(id="EX", title="EXM design", state="doing")]), encoding="utf-8")
+        args = self.args.copy()
+        args[2] = "S035"
+        args[args.index("--artifact") + 1] = str(self.project / "out.md")
+        args[args.index("--intent") + 1] = str(self.project / "original.md")
+        got = self.cli(*args)
+        self.assertTrue(got["ok"])
+        self.assertEqual(got["home_id"], "rooter-001")
+        self.assertEqual(parse_todo((rooter / "TODO.md").read_text(encoding="utf-8"))["tasks"][0]["result"], "First result")
 
     def test_failure_after_todo_publishes_each_original_once_on_resume(self):
         home = dict(

@@ -1,10 +1,11 @@
 """Command contracts shared by the four user-facing Harness adapters."""
 
 import os
+from pathlib import Path
 
 from paos_attention_service import resolve_home_by_registry
 from paos_cat_activation import CatActivationProblem
-from paos_content import consume, list_changes
+from paos_content import consume, consumer_progress, list_changes, read_change
 from paos_content_watch_cli import add_watch_parser, execute_watch
 from paos_context import read_context
 from paos_context_search import add_search_parser, collection_plan, search_context
@@ -12,6 +13,8 @@ from paos_installation import effective_data_root, load_installation_descriptor
 from paos_phase_stop import on_stop
 from paos_stage import deliver
 from paos_stage import task_snapshot
+from paos_registry import ProjectRegistry
+from paos_relations import related
 from paos_team import ROLE, live_role
 
 DEFAULT_CAT_URL = "http://127.0.0.1:8870"
@@ -26,6 +29,12 @@ def add_phase_parsers(sub):
         "context", help="Read phase inputs or end native participation"
     ).add_subparsers(dest="context_command", required=True)
     add_search_parser(ctx)
+    relations = ctx.add_parser("related", help="Expand explicit topic links and derived backlinks")
+    relations.add_argument("home")
+    relations.add_argument("--source", required=True)
+    relations.add_argument("--project", help="Registered project containing the topic notes")
+    relations.add_argument("--depth", type=int, default=1)
+    relations.add_argument("--limit", type=int, default=8, help="Maximum returned nodes")
     read = ctx.add_parser("read", help="Read original phase inputs from the registered Home")
     read.add_argument("home")
     read.add_argument("--task", default="")
@@ -78,8 +87,13 @@ def add_phase_parsers(sub):
     ).add_subparsers(dest="content_command", required=True)
     add_watch_parser(content)
     changes = content.add_parser("changes", help="Read changes after a sequence number")
-    changes.add_argument("--after", type=int, default=0)
+    changes.add_argument("--after", type=int, default=None)
+    changes.add_argument("--home", help="Resume from this Home's committed consumption cursor")
     changes.add_argument("--limit", type=int, default=50)
+    show = content.add_parser("show", help="Read captured before/after text; old gaps remain explicit")
+    show.add_argument("seq", type=int)
+    status = content.add_parser("status", help="Read a consumer's saved cursor and pending count")
+    status.add_argument("home")
     done = content.add_parser("consume", help="Record the actual result of processing changes")
     done.add_argument("home")
     done.add_argument("--through", type=int, required=True)
@@ -119,14 +133,30 @@ def execute_phase(args, installation, identity, cat_client):
     if args.command == "content" and args.content_command == "watch":
         return execute_watch(args, installation)
     if args.command == "content" and args.content_command == "changes":
-        return list_changes(data, args.after, args.limit)
+        after = args.after
+        if after is None and args.home:
+            target = resolve_home_by_registry(args.home, installation_file=str(installation))
+            after = consumer_progress(data, target["home_id"])["cursor"]
+        return list_changes(data, after or 0, args.limit)
+    if args.command == "content" and args.content_command == "show":
+        return read_change(data, args.seq)
     home = resolve_home_by_registry(args.home, installation_file=str(installation))
+    if args.command == "context" and args.context_command == "related":
+        project = args.project or home["project_id"]
+        if not project:
+            raise ValueError("安装级工位展开主题时需用 --project 指定登记项目")
+        root = ProjectRegistry(installation).read_record(project)["root_path"]
+        return related(root, args.source, source_roots=_project_roots(installation, data),
+                       depth=args.depth, limit=args.limit)
     if args.command == "context" and args.context_command == "collections":
         return collection_plan(home, installation, descriptor, args.project)
     if args.command == "context" and args.context_command == "search":
         return search_context(args, home, installation, descriptor)
     if args.command == "content":
-        return consume(data, home, args.through, args.result_ref)
+        if args.content_command == "status":
+            return consumer_progress(data, home["home_id"])
+        return consume(data, home, args.through, args.result_ref,
+                       source_roots=_project_roots(installation, data))
     staff = identity(args.home, installation_path=installation).get("staff_number") or args.home
     if args.command == "context" and args.context_command == "stop":
         return on_stop(
@@ -204,4 +234,12 @@ def execute_phase(args, installation, identity, cat_client):
         next_action=args.next_action,
         waiting=args.waiting,
         current=args.current,
+        source_roots=_project_roots(installation, data),
     )
+
+
+def _project_roots(installation, data):
+    """Cross-project originals come from explicit registry entries, not neighboring folders."""
+    registry = ProjectRegistry(installation)
+    return [registry.read_record(p.stem)["root_path"]
+            for p in sorted((Path(data) / "project-registry/projects").glob("*.json"))]

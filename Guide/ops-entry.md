@@ -5,7 +5,7 @@ title: 操作入口：按目的找命令
 description: 定位本人工作、已登记资源、同事与安装级 Rooter；使用现有文件和联系入口。
 tags: ops, operations, entry
 status: active
-version: 45
+version: 46
 ---
 
 # 操作入口
@@ -46,6 +46,20 @@ $targetProject = '3004'  # 接手人所在项目，查对方唤醒状态时用
 | 写回交付结果 | `& $paos mail result $project $me $mailId --result '已改稿并回读，原件见 Works/...' --artifact-ref $artifact`（Rooter 用 `mail rooter-result $mailId ...`） | `--result` 用单行、最多 500 字，需发件人直接打开原件时把路径写进结果；`--artifact-ref` 记入接件人 Task。本命令写回关联 Task 与 Notice 并收口原信，无需再跑 `attention handle`；不唤醒对方，需验收或接续时按下一节定向提醒。 |
 | 更新本人 Current | `& $paos attention todo-update $project $me --set 'next_action=核对原稿后交付链接'` | 写当前可执行的一步。Tasks/Pinned 的修改用 `attention todo-write --help` 查看正文与指纹参数。 |
 | 处理普通通知 | `& $paos attention handle $project $me $noticeId --resolution '已处理' --action-ref $artifact` | 用于不走 `mail result` 路径的普通通知收口；`$artifact` 填实际成果或记录路径，业务结果写回项目。 |
+
+### 阶段来源、增量与主题关系
+
+`stage deliver` 沿原 Task 交成果与意图；来源可位于本人项目或本机已登记的其他 Project。跨项目使用准确原件路径，未登记目录不自动纳入。
+
+| 要做的事 | 命令 | 结果 |
+| --- | --- | --- |
+| 看本人消费位置与积压 | `paos content status <本人Sxxx>` | 返回已消费序号、成果入口及待处理数；只读。 |
+| 接着读尚未消费的变化 | `paos content changes --home <本人Sxxx> --limit 20` | 从已提交游标继续；显式 `--after N` 可回看。 |
+| 读变化的前后原文 | `paos content show <seq>` | Markdown/TXT 的准确版本；旧记录未留正文时显示 `not_captured`，不以当前文本冒充过去。 |
+| 正文写回后提交进度 | `paos content consume <本人Sxxx> --through <seq> --result-ref <成果>` | 只有成果实际存在才提交；读取或整理失败时不推进。 |
+| 沿主题找有依据的联系 | `paos context related <本人Sxxx> --project 3005 --source Topics/产品与Agent协作.md --depth 1 --limit 8` | 从原页派生直接关系和反向关系，保留理由、来源及原作者表述；不另建图数据库。 |
+
+主题正文的“相关经历”或“相关主题”节用命名 Markdown 链接开头的列表项，链接后写关系含义、理由、来源和归属。工具原样返回说明，不替作者推断因果；反向关系由读取时派生。节点预算只控制展开，命中后仍须回读当前原件。心得沿同一内容观察与检索入口，不新建索引服务。
 
 ### 派工与唤醒
 

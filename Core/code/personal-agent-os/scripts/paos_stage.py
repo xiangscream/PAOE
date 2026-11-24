@@ -7,7 +7,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from paos_content import changes_db, db_path, original_version, pack, record_version, scoped_file
+from paos_content import (changes_db, db_path, original_version, pack, record_version,
+                          save_snapshot, scoped_file, snapshot_original)
 from paos_todo import parse_todo, render_todo, write_todo
 
 
@@ -72,7 +73,8 @@ def _apply(doc, task, req, marker):
 
 
 def deliver(
-    data, home, *, task_id, operation, artifacts, intents, result, next_action, waiting, current
+    data, home, *, task_id, operation, artifacts, intents, result, next_action, waiting, current,
+    source_roots=()
 ):
     if not operation or len(operation) > 120 or any(c.isspace() for c in operation):
         raise ValueError("交付 ID 需要稳定且不含空白字符")
@@ -95,7 +97,7 @@ def deliver(
         _apply(doc, task, req, marker)
         render(doc)
         for locator in (*artifacts, *intents):
-            scoped_file(root, locator)
+            scoped_file(root, locator, source_roots=source_roots)
 
     def receipt(sources, replay):
         return {
@@ -126,8 +128,10 @@ def deliver(
             sources = {}
             for kind, locators in (("artifact", artifacts), ("intent", intents)):
                 for locator in locators:
-                    path = scoped_file(root, locator)
-                    sources[str(path)] = {"kind": kind, "version": original_version(path)}
+                    path = scoped_file(root, locator, source_roots=source_roots)
+                    version, body = snapshot_original(path)
+                    save_snapshot(db, version, body)
+                    sources[str(path)] = {"kind": kind, "version": version}
             db.execute(
                 "INSERT INTO stages(home,operation,request,sources) VALUES(?,?,?,?)",
                 (*ident, encoded, pack(sources)),
@@ -144,10 +148,8 @@ def deliver(
         for source, info in sources.items():
             record_version(db, source, info["version"], info["kind"], "stage")
             if not fresh:
-                current_version = (
-                    original_version(Path(source)) if Path(source).is_file() else "removed"
-                )
+                current_version, body = snapshot_original(Path(source)) if Path(source).is_file() else ("removed", None)
                 if current_version != info["version"]:
-                    record_version(db, source, current_version, info["kind"], "reconcile")
+                    record_version(db, source, current_version, info["kind"], "reconcile", body=body)
         db.execute("UPDATE stages SET finished=1 WHERE home=? AND operation=?", ident)
     return receipt(sources, False)

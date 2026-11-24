@@ -35,7 +35,7 @@ def _project_collection(home, installation, project_id):
     if not project_id:
         raise ValueError("安装级工位检索项目时需用 --project 指定登记项目")
     root = ProjectRegistry(installation).read_record(project_id)["root_path"]
-    return ("project", "project-" + project_id, root, "INDEX.md,{Topics,Works,Decisions,Materials}/**/*.md")
+    return ("project", "project-" + project_id, root, "*.md,{Topics,Works,Decisions,Materials,心得}/**/*.md")
 
 
 def _method_collections(roots):
