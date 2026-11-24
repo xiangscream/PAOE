@@ -19,7 +19,8 @@ export function roleCardState(roleEntry) {
 // 团队整体阶段：以全部成员卡与 accepted 标志描述当前位置。不替后台判断。
 export function teamStage(team) {
   if (!team) return { label: '', hint: '', tone: '' };
-  if (team.accepted === true || team.owner_acceptance) return { label: RELEASE_STAGES.accepted, hint: '目标已验收，专用房可关闭', tone: 'accepted' };
+  // accepted 实为对象或 null（S010 配对复核确认），truthy 即已验收。
+  if (team.accepted || team.owner_acceptance) return { label: RELEASE_STAGES.accepted, hint: '目标已验收，专用房可关闭', tone: 'accepted' };
   const entries = Object.values(team.roles || {});
   const states = entries.map(roleCardState);
   if (states.length && states.every(s => s.kind === 'approved'))
@@ -27,6 +28,26 @@ export function teamStage(team) {
   if (states.some(s => s.kind === 'draft'))
     return { label: RELEASE_STAGES.opened, hint: '有草案待 Human 放行（第二次放行）', tone: 'draft' };
   return { label: RELEASE_STAGES.opened, hint: '等待成员提交角色卡', tone: 'draft' };
+}
+
+// 计划全部席位的角色卡：按计划 members 列出所有座位（含尚无草案的，初始 revision=0）。
+export function allSeatRoles(team) {
+  if (!team) return [];
+  const roles = team.roles || {};
+  const seats = planMembers(team.plan);
+  return seats.map(home => {
+    const entry = roles[home];
+    if (entry) return { home, ...entry, state: roleCardState(entry) };
+    return { home, role: null, approved: false, revision: 0, state: roleCardState(null) };
+  });
+}
+
+// close_policy=human_confirm 时，owner 房不显示保留给 Human 的最终验收。
+export function canShowAcceptGoal(team, viewerIsOwner) {
+  if (!team || team.accepted || team.owner_acceptance) return false;
+  if (team.plan?.close_policy === 'human_confirm' && viewerIsOwner) return false;
+  const entries = Object.values(team.roles || {});
+  return entries.length > 0 && entries.every(e => !e.role || e.approved === true);
 }
 
 // 计划卡摘要行：project · owner · version · close_policy · members

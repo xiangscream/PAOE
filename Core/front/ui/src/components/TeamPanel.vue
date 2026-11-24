@@ -3,7 +3,7 @@
 // 数据来源 GET /api/rooms/{room}/team → {team, cards}；
 // Human 操作 POST /api/team/confirm {action, receipt_id, input}，由 Core 受信确认流一次生效。
 // 本组件不做第二次确认弹窗；错误/冲突/取消分别可见。
-import { roleCardState, teamStage, planSummary, planMembers, roleLine, confirmInput, actionOutcome, cardTaskLine } from '../../../team-select.mjs';
+import { roleCardState, teamStage, planSummary, planMembers, roleLine, confirmInput, actionOutcome, cardTaskLine, allSeatRoles, canShowAcceptGoal } from '../../../team-select.mjs';
 
 export default {
   name: 'TeamPanel',
@@ -21,26 +21,22 @@ export default {
     summary() { return planSummary(this.team?.plan); },
     members() { return planMembers(this.team?.plan); },
     roleEntries() {
-      const roles = this.team?.roles || {};
-      return Object.entries(roles).map(([home, entry]) => ({
-        home,
+      return allSeatRoles(this.team).map(entry => ({
         ...entry,
-        state: roleCardState(entry),
-        memberName: this.nameOf(home),
+        memberName: this.nameOf(entry.home),
         line: roleLine(entry?.role),
-        taskLine: cardTaskLine(this.cards?.[home]),
+        taskLine: cardTaskLine(this.cards?.[entry.home]),
       }));
     },
     canApproveRoles() {
-      return this.team && this.team.accepted !== true &&
-        this.roleEntries.length > 0 &&
+      return this.team && !this.team.accepted && !this.team.owner_acceptance &&
         this.roleEntries.some(e => e.state.kind === 'draft');
     },
     canAcceptGoal() {
-      return this.team && this.team.accepted !== true &&
-        this.team.owner_acceptance === undefined &&
-        this.roleEntries.length > 0 &&
-        this.roleEntries.every(e => e.state.kind === 'approved' || e.state.kind === 'empty');
+      return canShowAcceptGoal(this.team, this.isOwner);
+    },
+    isOwner() {
+      return false; // 网页是 Human 身份，owner 角色由 close_policy 联动判定
     },
     editingHome() { return this.editHome || ''; },
   },

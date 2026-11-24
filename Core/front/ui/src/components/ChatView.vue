@@ -20,7 +20,7 @@ function newConversation(id) {
   return {id,title:'',status:'open',members:[],messages:[],cursor:0,draft:'',reply:'',targets:[],preview:null,pending:null,
           endedRequests:[],feedback:'',outcome:'',loaded:false,expanded:{},position:null,atLatest:true,firstUnseen:'',
           ownerId:'',closePolicy:'',context:null,indexDoc:null,indexError:'',indexOpen:true,progressSent:-1,progressBusy:false,progressLag:false,presenceMarked:false,
-          team:null,teamOpen:true, cards:null, pendingPlan:null};
+          team:null,teamOpen:true, cards:null, pendingPlan:null, teamError:''};
 }
 async function request(path, options={}) {
   const controller = new AbortController();
@@ -44,7 +44,7 @@ export default {
       connection:'正在连接',connectionError:false,unseen:0,highlight:'',checking:false,atLatest:true,
       searchOpen:false,searchQuery:'',searchIndex:0,searchReturn:null,refreshing:false,closeBusy:false,
       mention:{open:false,outside:false,query:'',index:0},previewTimer:0,
-      teamActionBusy:'', teamActionOutcome:null};
+      teamActionBusy:'', teamActionOutcome:null, teamReceiptId:''};
   },
   computed: {
     state() { return this.roomStates[this.roomId] || null; },
@@ -494,12 +494,16 @@ export default {
     // ---- 任务房完整交互：INDEX / 关房 / 已读游标 / 在线 / 团队操作 ----
     md(source) { return renderMarkdown(source); },
     async loadTeam(state) {
-      // 团队计划数据（GET /api/rooms/R/team → {ok, team, cards}）；非团队房 404 → 静默无面板。
+      // 团队计划数据（GET /api/room/R/team → {ok, team, cards}）；单数路径，与桥一致。
       try {
-        const value=await request('/api/rooms/'+encodeURIComponent(state.id)+'/team');
-        if (value && value.ok && value.team) { state.team=value.team; state.cards=value.cards||null; }
-        else { state.team=null; state.cards=null; }
-      } catch(error) { state.team=null; state.cards=null; }
+        const value=await request(endpoint(state.id,'/team'));
+        if (value && value.ok && value.team) { state.team=value.team; state.cards=value.cards||null; state.teamError=''; }
+        else { state.team=null; state.cards=null; state.teamError=''; }
+      } catch(error) {
+        // 断连不是普通房：显示读取错误，勿把网络问题吞成 team=null。
+        state.team=null; state.cards=null;
+        state.teamError='团队数据读取失败：'+error.message;
+      }
     },
     // 前置计划发现：非专用房也应能找到第一次放行的入口（GET /api/team-plan）。
     async loadPendingPlan() {
@@ -518,19 +522,22 @@ export default {
     toggleTeam() { if (this.state) this.state.teamOpen=!this.state.teamOpen; },
     async teamConfirm({action, input}) {
       // Human 操作入口：POST /api/team/confirm {action, receipt_id, input}
-      // 由 Core 受信确认流一次生效；本组件不做第二次弹窗。
+      // receipt_id 严格 ha- + 32 位小写十六进制；未知结果保留同一编号重试。
       const state=this.state;
       if (!state?.loaded) return;
+      if (!this.teamReceiptId) this.teamReceiptId='ha-'+crypto.randomUUID().replace(/-/g,'').slice(0,32);
       this.teamActionBusy=action;
       this.teamActionOutcome=null;
       try {
         const value=await request('/api/team/confirm',{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({action, receipt_id:'ha-web-'+crypto.randomUUID().replace(/-/g,'').slice(0,32), input})});
+          body:JSON.stringify({action, receipt_id:this.teamReceiptId, input})});
         this.teamActionOutcome=actionOutcome(value);
         if (this.teamActionOutcome.kind==='applied') {
+          this.teamReceiptId='';   // 成功后下一次用新编号
           await this.loadTeam(state);
           this.loadPendingPlan();
         }
+        // cancelled/failed/conflict 保留同一编号供 Human 重试
       } catch(error) {
         this.teamActionOutcome={kind:'failed', text:'请求未完成：'+error.message};
       } finally { this.teamActionBusy=''; }
@@ -699,6 +706,9 @@ export default {
           {{teamActionBusy==='open-plan'?'等待确认…':'通过计划并建房（第一次放行）'}}
         </button>
       </div>
+    </section>
+    <section v-if="state?.teamError && !state?.team" class="connection-banner" role="alert" data-testid="team-error">
+      <div><strong>团队数据读取失败</strong><span>{{state.teamError}}</span></div>
     </section>
     <team-panel v-if="state?.team" :team="state.team" :cards="state.cards" :people="people" :open="state.teamOpen" :actionBusy="teamActionBusy" :actionOutcome="teamActionOutcome" @toggle="toggleTeam" @confirm="teamConfirm"></team-panel>
     <section v-if="indexAvailable" class="task-index" :class="{collapsed:!state.indexOpen}" aria-label="任务 INDEX" data-testid="task-index">
