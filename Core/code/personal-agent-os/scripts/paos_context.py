@@ -1,7 +1,7 @@
 """Read phase inputs from the registered Home. This command has no writers.
 
 Unresolved Current task references select no business Task. The exact Tasks
-section remains available for Home maintenance; explicit task IDs stay required.
+section remains available for Home maintenance; explicit task IDs must resolve.
 """
 
 from __future__ import annotations

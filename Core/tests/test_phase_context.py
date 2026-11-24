@@ -117,6 +117,11 @@ class ContextReadTests(unittest.TestCase):
         self.assertFalse(any(d["kind"] == "task" for d in got["documents"]))
         self.assertNotIn("The actual request", "\n".join(d["body"] for d in got["documents"]))
         self.assertEqual(path.read_bytes(), before)
+        from paos_phase_stop import on_stop
+        stopped = on_stop(self.root / "Data", self.ref, staff="S001", event="repair-ends",
+                          task_id=got["task_id"], interrupted=False, reentry=False, waiting_human=False)
+        self.assertEqual(stopped["action"], "stop")
+        self.assertEqual(stopped["reason"], "no_current_task")
         update_todo_current(path, {"context_refs": ["task:T1"]})
         repaired = read_context(self.ref, staff_number="S001")
         self.assertTrue(repaired["ok"])
