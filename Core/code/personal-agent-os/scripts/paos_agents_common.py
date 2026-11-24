@@ -1,7 +1,7 @@
-"""Check and explicitly distribute the marked common AGENTS section.
+"""Check and explicitly distribute marked AGENTS and WORK-LEAD sections.
 
-The canonical source is System/Project-Template/AGENTS.md. Registered project
-vaults are the only destinations. Project-specific text is always preserved.
+Canonical sources live in System/Project-Template. Destinations are registered
+project vaults and the explicitly selected Rooter. Local text is preserved.
 No project creation, registry modification, service calls or background jobs.
 """
 from __future__ import annotations
