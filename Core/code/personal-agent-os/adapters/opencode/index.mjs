@@ -10,13 +10,29 @@ const eventTypes = [
   'session.execution.failed', 'session.execution.succeeded',
 ]
 
-async function contact(core, target, sessionID, signal) {
-  const row = await core.cli(['wake', 'status', target.project, target.home], signal)
-  if (!row.configured || row.runtime !== 'opencode' || row.native_session_id !== sessionID ||
-      typeof row.stop_present !== 'boolean' || !row.stop_file) {
+export function validateContact(row, target, sessionID) {
+  if (!row || !row.configured || row.runtime !== 'opencode' ||
+      row.native_session_id !== sessionID ||
+      typeof row.stop_present !== 'boolean') {
     throw new Error('PAOE Contact does not bind OpenCode session ' + sessionID + ' to ' + target.home)
   }
-  return row
+  if (row.stop_file != null && typeof row.stop_file !== 'string') {
+    throw new Error('PAOE Contact returned an invalid STOP locator for ' + target.home)
+  }
+  if (row.stop_present && !row.stop_file) {
+    throw new Error('PAOE Contact reports a stopped session without a STOP locator for ' + target.home)
+  }
+  return { ...row, stop_file: row.stop_file || null }
+}
+
+async function contact(core, target, sessionID, signal) {
+  const row = await core.cli(['wake', 'status', target.project, target.home], signal)
+  return validateContact(row, target, sessionID)
+}
+
+async function stopped(core, path) {
+  if (typeof path !== 'string' || !path) return false
+  return core.stopped(path)
 }
 
 async function observe(core, target, event) {
@@ -76,7 +92,7 @@ async function install(ctx, options) {
       state.binding = await contact(core, state.target, sessionID, signal)
     }
     state.engaged = true
-    if (await core.stopped(state.binding.stop_file)) {
+    if (await stopped(core, state.binding.stop_file)) {
       if (automatic) throw new Error('PAOE STOP prevents an automatic continuation')
       return
     }
@@ -90,7 +106,7 @@ async function install(ctx, options) {
       await write(state, sessionID, 'originals_unavailable', { missing: error.missing ?? [], reason: error.message })
       throw error
     }
-    if (automatic && (automatic.task !== state.frame.task || await core.stopped(state.binding.stop_file))) {
+    if (automatic && (automatic.task !== state.frame.task || await stopped(core, state.binding.stop_file))) {
       throw new Error('PAOE task or STOP changed before automatic continuation')
     }
 
@@ -187,7 +203,7 @@ async function settle(ctx, core, state, sessionID, turn, signal) {
   await ctx.session.wait({ sessionID })
   if (!current(state, turn, signal)) return
   const binding = await contact(core, state.target, sessionID, signal)
-  const stopped = binding.stop_present || await core.stopped(binding.stop_file)
+  const stopped = binding.stop_present || await stopped(core, binding.stop_file)
   const presenceOnly = stopped || !task || !turn.checked || turn.outcome === 'failed'
   if (presenceOnly && !core.config.catUrl) return
   // The context snapshot also detects a newer execution before the event consumer sees it.
@@ -201,7 +217,7 @@ async function settle(ctx, core, state, sessionID, turn, signal) {
     : presenceOnly ? ['--presence-only'] : turn.reentry ? ['--reentry'] : []
   const decision = await core.stop(state.target, id + ':' + sessionID + ':' + input, task, flags, signal)
   if (flags.length || decision.action !== 'continue' || !current(state, turn, signal) ||
-      await core.stopped(binding.stop_file)) return
+      await stopped(core, binding.stop_file)) return
   await proceed(ctx, core, binding.stop_file, sessionID, task, decision.next_action, signal)
 }
 
@@ -230,19 +246,19 @@ async function recover(ctx, core, state, sessionID, turn, signal, write) {
     if (!current(state, turn, signal)) return
     const binding = await contact(core, state.target, sessionID, signal)
     const before = await ctx.session.context({ sessionID })
-    if (!current(state, turn, signal) || binding.stop_present || await core.stopped(binding.stop_file) ||
+    if (!current(state, turn, signal) || binding.stop_present || await stopped(core, binding.stop_file) ||
         before.findLast(message => message.type === 'user')?.id !== input ||
         !capacityRefusal(before.at(-1)?.error) || !before.some(message => message.type === 'assistant')) {
       await write(state, sessionID, 'capacity_owner', { task, input, reason: 'stopped_or_no_compactable_history' })
       return
     }
     const frame = await readFrame(core, state, signal)
-    if (frame.task !== task || !current(state, turn, signal) || await core.stopped(binding.stop_file)) return
+    if (frame.task !== task || !current(state, turn, signal) || await stopped(core, binding.stop_file)) return
     await ctx.storage.set(key, { input })
     signal.throwIfAborted()
-    if (!current(state, turn, signal) || await core.stopped(binding.stop_file)) return
+    if (!current(state, turn, signal) || await stopped(core, binding.stop_file)) return
     await write(state, sessionID, 'capacity_refused', { task, input, checkpoint: 'OpenCode provider response' })
-    if (!current(state, turn, signal) || await core.stopped(binding.stop_file)) return
+    if (!current(state, turn, signal) || await stopped(core, binding.stop_file)) return
     const receipt = await ctx.session.compact({ sessionID })
     await write(state, sessionID, 'compaction_admitted', { task, input, compaction: receipt.id })
     await ctx.session.wait({ sessionID })
@@ -254,16 +270,16 @@ async function recover(ctx, core, state, sessionID, turn, signal, write) {
       await write(state, sessionID, 'capacity_owner', { task, input, reason: 'compaction_unconfirmed' })
       return
     }
-    if (await core.stopped(binding.stop_file)) {
+    if (await stopped(core, binding.stop_file)) {
       await write(state, sessionID, 'capacity_owner', { task, input, reason: 'stopped_after_compaction' })
       return
     }
     if (!current(state, turn, signal) || after.slice(compactIndex + 1).some(message => message.type === 'user')) return
     state.reason = 'compact'
     state.frame = await readFrame(core, state, signal)
-    if (state.frame.task !== task || !current(state, turn, signal) || await core.stopped(binding.stop_file)) return
+    if (state.frame.task !== task || !current(state, turn, signal) || await stopped(core, binding.stop_file)) return
     await write(state, sessionID, 'compaction_completed', { task, input, compaction: receipt.id })
-    if (!current(state, turn, signal) || await core.stopped(binding.stop_file)) return
+    if (!current(state, turn, signal) || await stopped(core, binding.stop_file)) return
     await proceed(ctx, core, binding.stop_file, sessionID, task, '原生压缩完成。请读取当前工位原件，接续 ' + task + '。', signal)
   } finally {
     state.recovering = false
@@ -274,7 +290,7 @@ async function proceed(ctx, core, stopFile, sessionID, task, text, signal) {
   const id = 'msg_' + globalThis.crypto.randomUUID().replaceAll('-', '')
   await ctx.storage.set('continuation:' + sessionID + ':' + id, { id, task })
   signal.throwIfAborted()
-  if (await core.stopped(stopFile)) return
+  if (await stopped(core, stopFile)) return
   await ctx.session.prompt({ sessionID, id, text, delivery: 'queue' })
 }
 
