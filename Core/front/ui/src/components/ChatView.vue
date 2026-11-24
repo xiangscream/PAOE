@@ -24,13 +24,16 @@ function newConversation(id) {
 }
 async function request(path, options={}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.method==='POST' ? 20000 : 15000);
+  // Human 确认（/api/team/confirm）等待真人读确认框并按按钮，不能自动中止；
+  // 其他请求保持正常超时（POST 20s / GET 15s）。
+  const humanConfirm = path === '/api/team/confirm';
+  const timeout = humanConfirm ? null : setTimeout(() => controller.abort(), options.method==='POST' ? 20000 : 15000);
   try {
     const response = await requestTransport(path, {...options,signal:controller.signal,cache:'no-store'});
     const value = await response.json();
     if (!response.ok && value.status===undefined) value.status=response.status;
     return value;
-  } finally { clearTimeout(timeout); }
+  } finally { if (timeout) clearTimeout(timeout); }
 }
 function checked(value) { if (!value.ok) throw new Error(errorText(value)); return value; }
 
