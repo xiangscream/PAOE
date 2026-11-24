@@ -5,7 +5,7 @@ title: 项目级 Work 临时负责人指南
 description: 仅在被指定为某项 Work（含 0 类综合工作）的临时负责人时载入；普通成员无需加载本指南。
 tags: template, work, lead, alignment, closeout
 status: active
-version: 1
+version: 2
 ---
 
 # 项目 <project-id> · Work 临时负责人指南
@@ -16,6 +16,8 @@ version: 1
 仅当你被指定为某项 Work 的临时负责人（或收到 Human 以 `0` 开头的真实新输入准备组织团队规划）时，通过任务 `source_refs` 或 `paos context read <本人Sxxx> --source WORK-LEAD.md` 完整读取本文。普通成员日常只读 `AGENTS.md`，不每轮加载本指南。
 
 Work 仍是软流程概念，不建注册库、编号或状态机；状态留在业务原件、唯一个人 `TODO.md` 与对应 CAT 房间中。
+
+本指南的公共正文由System母版自动同步，项目补充留在公共区外。负责人在承担新工作或阶段恢复时重读本项目的实际文件；文件同步不代替会话中的重新读取。
 
 ## 1. 开工前对齐工作法（先落到底层，再出计划）
 

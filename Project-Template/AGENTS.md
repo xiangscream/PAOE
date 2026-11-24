@@ -5,7 +5,7 @@ title: Project AGENTS 入口模板
 description: 项目公共工作指南的唯一编辑母本；项目副本承载派生公共区与本项目约定。
 tags: template, harness, entry
 status: active
-version: 32
+version: 33
 ---
 
 # 项目 <project-id> · Agent 工作入口
@@ -56,6 +56,10 @@ PAOE 是 Human 和多名 Agent 共同工作的本地环境。Human 给出目标�
 ### 3. 用已有方法和工具推进
 
 已授权的简单修改，由执行者自查后直接交付。
+
+公共运行规则在 System 的 `Project-Template/AGENTS.md` 与 `WORK-LEAD.md` 母版修改，保存后由本机内容观察器自动更新各已登记项目的公共区。项目自己的导航和补充约定保留在公共区外；INDEX、TEAM与个人TODO仍由原Owner维护。成员在下一次开工、阶段切换或恢复时读取更新后的正文。
+
+需要查同步状态时，用本人ENTRY中的CLI前缀执行 `content watch --rules-status`，按具体目标与原因处理；后台恢复启动会补齐停止期间的母版变化。
 
 - **查方法与工具**：准备设计流程、配置工具或首次处理某类产物时，先从 Libraries 找现行主方法（`paos library search "动作或产物"`），本机工具沿 `library tools` 登记入口调用。
 - **长期岗位与临时角色**：长期岗位与 Harness 分工统一读 `TEAM.md`（或 `paos peers`），不在工位私自重写；本轮协作的临时角色与安排读 CAT 角色卡与本人 Task。技术问题直接找负责同事，安装与原生接收找 Rooter，方向分歧与跨组协同找 Coordinator。
