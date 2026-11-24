@@ -17,7 +17,7 @@ class TodoGroupUnitTests(unittest.TestCase):
     def test_groups_preserve_order_rooms_and_original_tasks(self):
         tasks = [
             {"id": "T-1", "source_refs": [
-                "work-group: PAOE 0.1", "cat-role:room-a/S032"]},
+                "work-group: PAOE 0.1", "cat-role:room-a"]},
             {"id": "T-2", "source_refs": [
                 "cat-room:room-b", "work-group:PAOE 0.1"]},
             {"id": "T-3", "source_refs": ["work-group:Another"]},
@@ -46,11 +46,11 @@ class TodoGroupUnitTests(unittest.TestCase):
         self.assertEqual([task["id"] for task in groups[1]["tasks"]],
                          ["T-1", "T-2"])
 
-    def test_role_room_requires_exact_room_and_home_shape(self):
+    def test_role_room_uses_exact_existing_tag(self):
         groups = project_groups([
             {"id": "T-1", "source_refs": [
-                "cat-role:room-a/S032", "cat-role:room-b",
-                "cat-role:/S032", "cat-room:room-c", "cat-room:"]},
+                "cat-role:room-a", "cat-role:room-b/S032",
+                "cat-role:", "cat-room:room-c", "cat-room:"]},
         ])
         self.assertEqual(groups[0]["rooms"], ["room-a", "room-c"])
 
@@ -64,7 +64,7 @@ class TodoGroupReadModelTests(unittest.TestCase):
     def _todo(self):
         tasks = [
             {"id": "T-1", "title": "主工作一", "state": "doing",
-             "source_refs": ["work-group:PAOE 0.1", "cat-role:room-a/S032"]},
+             "source_refs": ["work-group:PAOE 0.1", "cat-role:room-a"]},
             {"id": "T-2", "title": "主工作二", "state": "doing",
              "source_refs": ["work-group:PAOE 0.1", "cat-room:room-b"]},
             {"id": "T-3", "title": "零散事项", "state": "todo"},

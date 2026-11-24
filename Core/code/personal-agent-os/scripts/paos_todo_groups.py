@@ -27,9 +27,9 @@ def _room(source_ref: Any) -> str | None:
         room = text[len(CAT_ROOM):].strip()
         return room or None
     if text.startswith(CAT_ROLE):
-        value = text[len(CAT_ROLE):].strip()
-        room, separator, _home = value.rpartition("/")
-        return room if separator and room and _home else None
+        room = text[len(CAT_ROLE):].strip()
+        # enroll writes cat-role:<room>; a second /<home> spelling is not valid.
+        return room if room and "/" not in room else None
     return None
 
 
