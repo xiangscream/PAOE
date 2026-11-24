@@ -49,7 +49,7 @@ class TeamBoardTests(unittest.TestCase):
     def test_plugin_rejects_other_project_before_opening_a_confirmation(self):
         self.board.run_paos = Mock(return_value={"ok": True, "team": {"plan": {"project": "2001"}}})
         self.assertEqual(self.plugin("GET", "/api/room/other/team")[1]["error_code"], "project_scope_mismatch")
-        self.board.room = Mock(return_value={"ok": True, "team_plan": {"plan": {"project": "2001"}}})
+        self.board.room = Mock(return_value={"ok": True, "task_context": {"project_id": "2001"}})
         self.board.run_paos.reset_mock()
         for action, subject in (("open-plan", {"owner": "2001-s009", "task": "T-001", "version": "v"}),
                                 ("approve-roles", {"room": "other", "expected_revision": 5})):
@@ -60,7 +60,7 @@ class TeamBoardTests(unittest.TestCase):
         self.board.run_paos.assert_not_called()
 
     def test_confirm_only_sends_typed_input_and_preserves_core_outcomes(self):
-        self.board.room = Mock(return_value={"ok": True, "team_plan": {"plan": {"project": "1001"}}})
+        self.board.room = Mock(return_value={"ok": True, "task_context": {"project_id": "1001"}})
         self.board.run_paos = Mock()
         for action, subject in (
             ("open-plan", {"owner": "1001-s001", "task": "T-001", "version": "v"}),

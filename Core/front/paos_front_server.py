@@ -660,10 +660,8 @@ class Board:
                 room = self.room(str(subject.get("room") or ""))
                 if not room.get("ok"):
                     return room
-                team = room.get("team_plan")
-                if not team:
-                    raise BoardProblem("not_dedicated_room", "这间共享房没有团队计划。")
-                _check_team_scope(project, team["plan"]["project"])
+                # The public room context is fixed by the approved plan. Core verifies each action.
+                _check_team_scope(project, (room.get("task_context") or {}).get("project_id"))
         # Core displays the reviewed originals and applies the receipt on a real Human decision.
         return self.run_paos(["team-plan", "confirm", action, "--id", ident, "--input", "-",
                               "--cat-url", self.cat_url], input_text=json.dumps(subject, ensure_ascii=False),
