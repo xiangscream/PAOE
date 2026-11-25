@@ -25,7 +25,7 @@ def main():
             from pathlib import Path
             command = [sys.executable, '-X', 'utf8', '-B',
                        str(Path(__file__).with_name('paos_codex_hook.py')),
-                       '--installation-file', args.installation_file, '--reuse-existing-prepare']
+                       '--installation-file', args.installation_file]
             if args.cat_url:
                 command.extend(['--cat-url', args.cat_url])
             result = subprocess.run(command, input=raw, capture_output=True, timeout=25)
