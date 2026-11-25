@@ -97,9 +97,10 @@ class SelectedHookTests(unittest.TestCase):
         self.assertEqual(len(outputs), 1)
         self.assertEqual(outputs[0].get('decision'), 'block')
         self.assertEqual(self.invoke(candidate, event), [{}])
-        # Per-event observation count must equal only the selected new adapter once.
+        # Legacy observers see three events. The selected handler observes all four.
         records = [json.loads(s) for s in log.read_text().splitlines()]
-        self.assertEqual(len(records) - before_count, 4)
+        self.assertEqual([row['entrypoint'] for row in records[before_count:]],
+                         ['receiver', 'context', 'receiver', 'context', 'context', 'receiver', 'context'])
         install.apply(self.packet, restore=True)
         self.assertEqual(self.hooks.read_bytes(), self.original_bytes)
         for session in before:
@@ -142,19 +143,54 @@ class SelectedHookTests(unittest.TestCase):
             for event in self.events(session):
                 self.assertEqual(self.invoke(trusted_only, event), self.invoke(self.original, event))
 
-    def test_appended_reader_never_prepares_old_events_but_prepares_compact_once(self):
+    def test_selected_handler_checks_owner_receiver_on_each_read_event(self):
         hook = fixture_module.hook
-        with patch.dict(os.environ, self.env, clear=True):
+        env = dict(self.env, CODEX_THREAD_ID='own-session', CODEX_APP_TOOLS_PIPE_PATH='fixture')
+        with patch.dict(os.environ, env, clear=True):
             for event in self.events('own-session')[:4]:
-                with patch.object(hook, 'prepare_current', return_value='prepared') as prepare, \
+                with self.subTest(event=event), \
+                     patch.object(hook, 'prepare_current', return_value='receiver_prepare_reused: fixture') as prepare, \
                      patch.object(hook, 'observe_hook_entry') as observe, \
                      patch.object(hook, 'call_context', wraps=hook.call_context) as context:
-                    result = hook.run_hook(event, self.fixture.install, reuse_existing_prepare=True)
-                    self.assertIn('PAOE 本次必读原文', result['hookSpecificOutput']['additionalContext'])
-                    expected = 1 if event.get('source') == 'compact' else 0
-                    self.assertEqual(prepare.call_count, expected)
-                    self.assertEqual(observe.call_count, expected)
-                    self.assertEqual(context.call_count, 1)
+                    result = hook.run_hook(event, self.fixture.install)
+                    original = result['hookSpecificOutput']['additionalContext']
+                    self.assertIn('PAOE 本次必读原文', original)
+                    self.assertNotIn('[PAOE 接收器]', original)
+                    prepare.assert_called_once()
+                    self.assertEqual(prepare.call_args.kwargs['event'], event)
+                    self.assertEqual(prepare.call_args.kwargs['expected_home']['home_id'], 'S010')
+                    observe.assert_called_once_with(event, installation_path=self.fixture.install, entrypoint='context')
+                    context.assert_called_once()
+
+    def test_selected_without_legacy_or_owner_preserves_read_and_requests_same_owner_tool(self):
+        self.prepare()
+        candidate = json.loads((self.packet / 'candidate.json').read_bytes())
+        for event in ('SessionStart', 'UserPromptSubmit'):
+            candidate['hooks'][event].pop(0)
+        self.env['CODEX_APP_TOOLS_PIPE_PATH'] = 'fixture'
+        log = self.fixture.runtime.with_name('runtime.json.lifecycle.jsonl')
+        for event in self.events('own-session')[:4]:
+            with self.subTest(event=event):
+                [result] = self.invoke(candidate, event)
+                self.assertEqual(result['systemMessage'],
+                                 'receiver_prepare_skipped: original_desktop_environment_missing')
+                original = result['hookSpecificOutput']['additionalContext']
+                self.assertIn('PAOE 本次必读原文', original)
+                self.assertIn('Original entry', original)
+                self.assertIn('orient 3002 S010 --resume', original)
+        records = [json.loads(line) for line in log.read_text().splitlines()]
+        self.assertEqual(len(records), 4)
+        self.assertTrue(all(row['entrypoint'] == 'context' for row in records))
+        self.assertTrue(all(row['desktop_connection_present'] and not row['owner_thread_present']
+                            and not row['owner_thread_matches'] for row in records))
+        self.assertFalse(self.fixture.runtime.exists())
+
+        self.env['CODEX_THREAD_ID'] = 'another-owner'
+        [result] = self.invoke(candidate, self.events('own-session')[1])
+        self.assertFalse(result['continue'])
+        self.assertNotIn('hookSpecificOutput', result)
+        self.assertEqual(len(log.read_text().splitlines()), 4)
+        self.assertFalse(self.fixture.runtime.exists())
 
     def test_conflicting_apply_restore_and_candidate_mutation_do_not_overwrite(self):
         self.prepare()

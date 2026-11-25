@@ -39,7 +39,7 @@ def call_context(installation, args):
     return value
 
 
-def run_hook(event, installation, cat_url=None, *, reuse_existing_prepare=False):
+def run_hook(event, installation, cat_url=None):
     name = event.get('hook_event_name')
     reason = event.get('source') if name == 'SessionStart' else 'request'
     if name not in {'SessionStart', 'UserPromptSubmit', 'Stop'}:
@@ -88,11 +88,8 @@ def run_hook(event, installation, cat_url=None, *, reuse_existing_prepare=False)
 
     # Reading originals works even when a local hook lacks the Desktop pipe.
     # Receiver preparation still requires the original Desktop environment.
-    if reuse_existing_prepare and reason != 'compact':
-        message = 'receiver_prepare_delegated: unchanged existing hook owns preparation.'
-    else:
-        observe_hook_entry(event, installation_path=installation)
-        message = prepare_current(event=event, installation_path=installation, expected_home=home)
+    observe_hook_entry(event, installation_path=installation, entrypoint='context')
+    message = prepare_current(event=event, installation_path=installation, expected_home=home)
     args = ['read', home['home_id'], '--reason', reason]
     if cat_url:
         args.extend(['--cat-url', cat_url])
@@ -106,6 +103,14 @@ def run_hook(event, installation, cat_url=None, *, reuse_existing_prepare=False)
            for k in ('kind', 'path', 'body', 'version')) for d in docs):
         raise HookProblem('必读原件内容或版本不完整')
     text = '\n\n'.join(f"[{d['kind']}] {d['path']}\n{d['body']}" for d in docs)
+    if os.name == 'nt' and message == 'receiver_prepare_skipped: original_desktop_environment_missing':
+        command = ('attention rooter-show --resume' if home['home_kind'] == 'rooter'
+                   else f"orient {home['project_id']} {home['home_id']} --resume")
+        text += (
+            '\n\n[PAOE 接收器] Hook 缺少本人 Desktop 工具环境，尚未检查接收器。'
+            '请在当前原会话的终端，用本人 ENTRY 的 CLI 前缀运行一次 '
+            f'`{command}`，再继续处理当前输入。同一回合只运行一次。'
+        )
     return {'systemMessage': message, 'hookSpecificOutput': {
         'hookEventName': name, 'additionalContext': '[PAOE 本次必读原文]\n\n' + text,
     }}
@@ -115,8 +120,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--installation-file')
     parser.add_argument('--cat-url', help='Installation CAT endpoint for context reads and Stop presence')
-    parser.add_argument('--reuse-existing-prepare', action='store_true',
-                        help='Append-only installation: original hooks prepare startup/resume/request.')
     args = parser.parse_args()
     event = {}
     try:
@@ -124,8 +127,7 @@ def main():
         if not isinstance(event, dict):
             raise HookProblem('宿主事件必须为 JSON 对象')
         installation = resolve_installation_path(args.installation_file)
-        response = run_hook(event, installation, args.cat_url,
-                            reuse_existing_prepare=args.reuse_existing_prepare)
+        response = run_hook(event, installation, args.cat_url)
     except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired, InstallationProblem,
             AttentionServiceProblem, HomeProblem, RegistryProblem, WorkstationProblem, ReceiverError,
             InjectionError) as exc:

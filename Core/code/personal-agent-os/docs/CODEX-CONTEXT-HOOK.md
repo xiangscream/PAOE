@@ -11,11 +11,11 @@
 
 Stop 的 action=continue 翻译为原生 `decision=block` 和 next_action；action=stop 正常结束。原生回合 ID 不变时共用动作最多允许一次，宿主明确重入也不继续。Stop 只更新本人参与状态与判断后续行动，不调用 stage deliver，不验收 Task。当前 Waiting/Inflight 由共用动作读取。
 
-接收准备缺 Desktop 环境时仍可从已登记的原会话读取业务原文，但它不会建立接收器；返回中保留该准备结果。只有原生事件实际进入、输出实际进入模型及原信实际处理，才能分别确认对应结果。
+Windows Hook 缺少本人 Desktop 环境时继续返回已登记会话的业务原文，同时请当前原会话从自己的终端执行一次 `orient <项目> <工位> --resume`（Rooter 用 `attention rooter-show --resume`）。命令核对恢复工位与真实工具环境的本人身份，再沿原登记、STOP 与复用检查执行。线程不符时直接停止。只有原生事件实际进入、输出实际进入模型及原信实际处理，才能分别确认对应结果。
 
 ## 配置与采用
 
-限定原会话的渐进采用用[只追加的会话选择配置](CODEX-SELECTED-HOOK.md)：保留旧准备定义及位置，新入口传`--reuse-existing-prepare`，对startup/resume/提交只读上下文，compact才执行准备。此模式避免新增定义审阅前中断其他会话；以下整体替换方式仅用于整体切换，不用于限定试用。
+限定原会话的渐进采用用[只追加的会话选择配置](CODEX-SELECTED-HOOK.md)：保留旧准备定义及位置。已获信任的选中入口对 startup、resume、compact 与提交事件执行本人准备和上下文读取。此模式避免新增定义审阅前中断其他会话；以下整体替换方式仅用于整体切换，不用于限定试用。
 
 Rooter 通过受支持宿主入口，把下面同一命令配置到 SessionStart（matcher `^(startup|resume|compact)$`）、UserPromptSubmit 和 Stop：
 

@@ -63,7 +63,7 @@ def _is_prepare_event(event):
     return name == "UserPromptSubmit" or name == "SessionStart" and event.get("source") in {"startup", "resume", "compact"}
 
 
-def observe_hook_entry(event, *, installation_path=None):
+def observe_hook_entry(event, *, installation_path=None, entrypoint='receiver'):
     """Record that a registered hook reached Python before the Owner environment guard."""
     thread = event.get("session_id")
     if not _is_prepare_event(event) or not isinstance(thread, str) or not thread:
@@ -81,10 +81,12 @@ def observe_hook_entry(event, *, installation_path=None):
     runtime = Path(posix_windows_drive_locator(locator))
     if not runtime.is_absolute() or not runtime.parent.is_dir():
         return home
+    owner = os.environ.get("CODEX_THREAD_ID")
     with runtime.with_name(runtime.name + ".lifecycle.jsonl").open("a", encoding="utf-8") as stream:
-        record_lifecycle(stream, "owner_hook_entered", hook=event["hook_event_name"], parent_pid=os.getppid(),
+        record_lifecycle(stream, "owner_hook_entered", entrypoint=entrypoint, hook=event["hook_event_name"],
+                         parent_pid=os.getppid(),
                          source=event.get("source") if event["hook_event_name"] == "SessionStart" else None,
-                         owner_thread_matches=os.environ.get("CODEX_THREAD_ID") == thread,
+                         owner_thread_present=bool(owner), owner_thread_matches=owner == thread,
                          desktop_connection_present=bool(os.environ.get("CODEX_APP_TOOLS_PIPE_PATH")))
     return home
 
