@@ -1,5 +1,6 @@
 """Before/apply/restore through actual Windows command handlers in isolated Homes."""
 import copy
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,76 @@ import test_codex_context_hook as fixture_module
 import paos_codex_hook_install as install
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'code/personal-agent-os/scripts'
+
+
+def breakaway_restriction():
+    """Skip real detached-child tests only for a verified restrictive Windows Job."""
+    from ctypes import wintypes
+
+    class BasicLimits(ctypes.Structure):
+        _fields_ = [
+            ('PerProcessUserTimeLimit', ctypes.c_int64), ('PerJobUserTimeLimit', ctypes.c_int64),
+            ('LimitFlags', wintypes.DWORD), ('MinimumWorkingSetSize', ctypes.c_size_t),
+            ('MaximumWorkingSetSize', ctypes.c_size_t), ('ActiveProcessLimit', wintypes.DWORD),
+            ('Affinity', ctypes.c_size_t), ('PriorityClass', wintypes.DWORD),
+            ('SchedulingClass', wintypes.DWORD),
+        ]
+
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.IsProcessInJob.argtypes = (wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL))
+    kernel.IsProcessInJob.restype = wintypes.BOOL
+    kernel.QueryInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+                                               wintypes.DWORD, ctypes.c_void_p)
+    kernel.QueryInformationJobObject.restype = wintypes.BOOL
+    inside = wintypes.BOOL()
+    if not kernel.IsProcessInJob(kernel.GetCurrentProcess(), None, ctypes.byref(inside)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if not inside.value:
+        return None
+    limits = BasicLimits()
+    if not kernel.QueryInformationJobObject(None, 2, ctypes.byref(limits), ctypes.sizeof(limits), None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if limits.LimitFlags & (0x800 | 0x1000):  # BREAKAWAY_OK or SILENT_BREAKAWAY_OK.
+        return None
+    return f'Current Windows Job explicitly disallows breakaway (LimitFlags={limits.LimitFlags:#x})'
+
+
+@unittest.skipUnless(os.name == 'nt', 'Windows Job capability')
+class BreakawayCapabilityTests(unittest.TestCase):
+    def test_only_known_restrictive_job_skips_the_real_child_test(self):
+        for in_job, flags, restricted in ((False, 0, False), (True, 0x2000, True),
+                                           (True, 0x800, False), (True, 0x1000, False)):
+            with self.subTest(in_job=in_job, flags=flags), patch.object(ctypes, 'WinDLL') as load:
+                kernel = load.return_value
+
+                def membership(process, job, output):
+                    output._obj.value = in_job
+                    return True
+
+                def limits(job, information_class, output, size, returned):
+                    self.assertEqual(information_class, 2)
+                    output._obj.LimitFlags = flags
+                    return True
+
+                kernel.IsProcessInJob.side_effect = membership
+                kernel.QueryInformationJobObject.side_effect = limits
+                self.assertEqual(breakaway_restriction() is not None, restricted)
+                self.assertEqual(kernel.QueryInformationJobObject.call_count, int(in_job))
+
+    def test_job_query_failure_is_an_error_and_does_not_become_a_skip(self):
+        for operation in ('IsProcessInJob', 'QueryInformationJobObject'):
+            with self.subTest(operation=operation), patch.object(ctypes, 'WinDLL') as load:
+                kernel = load.return_value
+
+                def membership(process, job, output):
+                    output._obj.value = True
+                    return operation != 'IsProcessInJob'
+
+                kernel.IsProcessInJob.side_effect = membership
+                kernel.QueryInformationJobObject.return_value = False
+                with self.assertRaises(OSError):
+                    breakaway_restriction()
 
 
 @unittest.skipUnless(os.name == 'nt', 'Windows command configuration')
@@ -194,6 +265,9 @@ class SelectedHookTests(unittest.TestCase):
         self.assertFalse(self.fixture.runtime.exists())
 
     def test_native_hook_without_owner_prepares_and_reuses_real_isolated_receiver(self):
+        restriction = breakaway_restriction()
+        if restriction is not None:
+            self.skipTest(restriction)
         self.prepare()
         candidate = json.loads((self.packet / 'candidate.json').read_bytes())
         for name in ('SessionStart', 'UserPromptSubmit'):
