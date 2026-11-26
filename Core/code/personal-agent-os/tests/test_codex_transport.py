@@ -185,11 +185,12 @@ class ApplicationTransportTests(unittest.TestCase):
 @unittest.skipUnless(os.name == 'nt', 'Windows pipe host evidence')
 class NativeHostTests(unittest.TestCase):
     def test_product_and_instance_must_both_match_the_supplied_pipe(self):
-        image = r'C:\Program Files\WindowsApps\OpenAI.Codex_26.1120.6357.0_x64__2p2nqsd0c76g0\app\ChatGPT.exe'
+        root = Path(tempfile.gettempdir())
+        image = str(root / 'WindowsApps' / 'OpenAI.Codex_26.1120.6357.0_x64__2p2nqsd0c76g0' / 'app' / 'ChatGPT.exe')
         snapshot = {'alive': True, 'identity': 'windows:1000'}
         for supplied_image, snapshots, valid in (
                 (image, [snapshot, snapshot], True),
-                (r'C:\different-product\ChatGPT.exe', [snapshot], False),
+                (str(root / 'different-product' / 'ChatGPT.exe'), [snapshot], False),
                 (image, [snapshot, {'alive': True, 'identity': 'windows:2000'}], False)):
             with self.subTest(image=supplied_image, valid=valid), \
                  patch.object(ctypes, 'WinDLL') as load, patch('msvcrt.get_osfhandle', return_value=7), \
