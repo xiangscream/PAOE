@@ -8,11 +8,11 @@
 
 底层脚本仍支持维护调用。由目标本人从 Codex Desktop 正常提供的原生工具环境执行人工 prepare：使用已安装 Windows Python，工作目录为安装 Source 的 `scripts`，运行 `python -X utf8 -B codex_receiver_session_start.py --prepare-current`。本入口沿 installation、registry 和 Contact 唯一定位调用者本人的 Home，读取已登记 Python、运行文件和 STOP；不接收目标、pipe 或身份覆盖参数，也不读取伪造的 Hook 事件。
 
-人工 prepare 从原工具环境取得本人线程与 Desktop 连接。已信任的真实 SessionStart 或 UserPromptSubmit 缺终端线程变量时，使用事件 session_id 和同次继承的当前连接；只在本次检查及接收器子进程内传递该身份，全局环境保持。非空工具线程与事件不符即拒绝。两种入口共用唯一 Home、STOP、实例及连接核验和同一启动段。正常 prepare 先读已有接收器的正式实例状态；prepared的本人实例还须通过鉴权/status核对实例和捕获连接标记，并与当前Owner事件环境中的连接身份比较。连接相同时返回 `receiver_prepare_reused`，不创建子进程或准备日志。需要启动时使用 `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB`，标准输入关闭，stdout/stderr 仍留原运行文件旁。`CREATE_NO_WINDOW` 只隐藏控制台；当宿主 Job 允许 breakaway 时，第二个标志使新接收器脱离该工具 Job。[Microsoft 进程创建标志](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)及[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)说明了这一机制。
+人工 prepare 从原工具环境取得本人线程与 Desktop 连接。已信任的真实 SessionStart 或 UserPromptSubmit 缺终端线程变量时，使用事件 session_id 和同次继承的当前连接；只在本次检查及接收器子进程内传递该身份，全局环境保持。非空工具线程与事件不符即拒绝。两种入口共用唯一 Home、STOP、实例及连接核验和同一启动段。正常 prepare 核已有接收器的正式实例和鉴权/status；已加载共享连接能力且作用域一致时复用，旧接收器按下节的采用合同更新。复用时返回 `receiver_prepare_reused`，不创建子进程或准备日志。需要启动时使用 `CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB`，标准输入关闭，stdout/stderr 仍留原运行文件旁。`CREATE_NO_WINDOW` 只隐藏控制台；当宿主 Job 允许 breakaway 时，第二个标志使新接收器脱离该工具 Job。[Microsoft 进程创建标志](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags)及[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)说明了这一机制。
 
-旧receiver仍活而当前Owner连接已更换时，正常prepare在原锁内用既有精确启动调用、OS实例与鉴权空消息拒绝核本人旧服务，再经原Windows实例停止入口退休它；随后同一正常启动段沿原locator归档旧登记并加载当前Owner环境。接收器身份/连接证明未知、STOP、身份变化或缺原Owner环境时保留原服务，明确报receiver_connection_unknown，不回退或循环重试。逐次打开旧pipe不等于其名称会更新。
+旧receiver未加载共享连接能力，或旧模式下当前Owner连接已更换时，正常prepare在原锁内用既有精确启动调用、OS实例与鉴权空消息拒绝核本人旧服务，再经原Windows实例停止入口退休它；随后同一正常启动段沿原locator归档旧登记并加载当前Owner环境。接收器身份/连接证明未知、STOP、身份变化或缺原Owner环境时保留原服务，明确报receiver_connection_unknown，不回退或循环重试。逐次打开旧pipe不等于其名称会更新。
 
-宿主拒绝创建时只尝试一次，输出 `receiver_prepare_unavailable` 及原错误，人工命令以非零状态退出；不改 Job 策略，不重试或换启动路径。环境缺失、未登记、歧义或 STOP 仍明确停止。创建成功只报告启动器 PID；随后读正式 `wake status` 确认就绪。正常 prepare 与 SessionStart 不替换健康实例，登记迁移也不加载新代码。
+宿主拒绝创建时只尝试一次，输出 `receiver_prepare_unavailable` 及原错误，人工命令以非零状态退出；不改 Job 策略，不重试或换启动路径。环境缺失、未登记、歧义或 STOP 仍明确停止。创建成功只报告启动器 PID；随后读正式 `wake status` 确认就绪。正常 prepare 与 SessionStart 复用已加载当前连接能力的健康实例；缺该能力的旧进程须沿准确本人核验加载新行为。登记迁移不加载代码。
 
 接收器行为代码需要更新时，由本人在同一个 Desktop 工具环境、安装 Source 的 `scripts` 目录运行 `python -X utf8 -B codex_receiver_session_start.py --update-current`。本入口仍只解析本人的 Home，不接受 PID、Thread、pipe 或目标覆盖。它在原 native 锁内核准确 runtime-file/stop-file、OS 实例和既有鉴权空消息拒绝，再用同一 Windows 进程句柄核创建标识后停止旧被动接收器。STOP、未知、外 Thread、无法鉴权或实例变化时保留原状。旧登记留给正常 prepare 归档，新进程沿原 locator 与 STOP 启动；不要求操作者拼终止命令，不由 Rooter 代管他人实例。
 
@@ -21,6 +21,18 @@
 入口不接受 pipe、caller 或目标 ID 参数。手动入口继承启动者自己的 `CODEX_THREAD_ID` 与 `CODEX_APP_TOOLS_PIPE_PATH`；真实 Hook 可用宿主事件本人身份和其当前连接，接收器仍绑定同一线程。不得从别人进程/文件提取或复制这些值来启动。它内部使用已存在的 Desktop app-tools 客户端，只查询本人状态，再向本人线程发送。不能用另起 CLI/app-server 的会话冒充 Desktop 线程。
 
 Installed communication details are documented in System/Guide; this receiver only accepts its own registered session.
+
+## 应用连接更新与空闲接收器
+
+默认Windows正式版使用应用级app-tools管道。本人准备通过Home和STOP检查后，在安装Data的`runtime-injection/codex-desktop/transport.json`发布当前应用连接。该单一原件记录规范化CODEX_HOME作用域、管道、准确宿主PID及创建实例，不记录caller/session或账号令牌。当前仅支持默认userData的OpenAI.Codex正式包。显式其他userData或其他产品明确返回receiver_prepare_skipped及未支持原因，不发布、不启动或退休接收器，但业务Hook继续读取原文；这不表示提醒就绪。不同CODEX_HOME作用域、未知或不一致错误仍明确失败。
+
+发布者只检查真实事件／本人终端继承的那条已知管道。GetNamedPipeServerProcessId取得服务PID，再核正式包可执行文件与OS创建实例。发布锁内重新核当前连接；旧宿主仍活而出现另一个同域宿主时保留原件并报歧义。旧宿主退出后，新真实事件可原子发布新连接。同一宿主更换管道时，仅在准确旧管道已确认不存在、新管道属于同一实例时更新；两个管道都有效报歧义，旧管道查不明则保留错误。已失效旧管道的延迟事件无法通过锁内核验，不比较mtime猜最新。
+
+加载新行为的被动接收器，在处理一条新请求前读取这一原件，核作用域与实际服务实例，再查询和提醒自己的固定原生线程。另一名同事的真实事件可以发布新应用连接，空闲目标随后使用该连接，目标的caller/session、HTTP授权和STOP继续保持。原生结果未知时不重发，也不再挑另一条连接尝试。
+
+本人正常准备读取实际接收器的鉴权`/status`。旧进程缺共享连接能力时，沿已有准确实例与鉴权拒绝核验退休，并由同一原Owner正常启动新进程；STOP或身份未知时保留。已具备能力且作用域／原件路径一致的进程直接复用，即使它最初捕获的是旧应用连接，也由每次新请求读取当前连接。新进程状态返回`application_transport=true`及实际作用域／原件定位。Rooter据实际状态记录成员采用范围；未产生本人事件的旧进程仍属未加载，不以磁盘包更新代替采用。
+
+没有任何新真实事件或本人准备时，尚无可验证的新连接；应用离线、不同作用域或产品拒绝目标访问时，明确返回不可用。正常Hook已经看到新连接时，空闲接收器可以按次接回；不需要轮询服务或逐个唤醒目标模型。
 
 ## 外部提交合同
 
@@ -72,7 +84,7 @@ agent send的runtime_wake_performed只聚合本次调用：有确证受理成员
 
 ## SessionStart接线
 
-用户级宿主事件定义供已登记的Codex Home使用，不含逐Agent参数。`scripts/codex_receiver_session_start.py`处理SessionStart的startup/resume/compact及UserPromptSubmit：两类事件的session_id都必须等于宿主原有CODEX_THREAD_ID，并继承本人CODEX_APP_TOOLS_PIPE_PATH。它沿既有installation和`ProjectRegistry.read`读取五字段登记的Home适配视图及准确root的Contact，以及安装描述rooter_home的Rooter Contact；Rooter沿公开合同使用`rooter-001`身份和既有rooter_home校验，目录名可以不同，不创建Project Session，也不要求存在Project登记目录。旧schema、缺失或空root的坏项目登记明确失败，不把当前目录当root。当前Thread须在Project与Rooter之间唯一匹配一个已登记且存在的Home；使用该Contact原有receiver_runtime_file、stop_file和windows_python做一次隐藏prepare。环境缺失、未登记、歧义、Home缺失或STOP存在均明确停止，不建身份、不改Contact、不借凭据。
+用户级宿主事件定义供已登记的Codex Home使用，不含逐Agent参数。`scripts/codex_receiver_session_start.py`处理SessionStart的startup/resume/compact及UserPromptSubmit：两类事件使用真实session_id并继承当前CODEX_APP_TOOLS_PIPE_PATH；CODEX_THREAD_ID非空时必须与事件相符，缺失时仅在本次本人准备和子进程使用事件身份。它沿既有installation和`ProjectRegistry.read`读取五字段登记的Home适配视图及准确root的Contact，以及安装描述rooter_home的Rooter Contact；Rooter沿公开合同使用`rooter-001`身份和既有rooter_home校验，目录名可以不同，不创建Project Session，也不要求存在Project登记目录。旧schema、缺失或空root的坏项目登记明确失败，不把当前目录当root。当前Thread须在Project与Rooter之间唯一匹配一个已登记且存在的Home；使用该Contact原有receiver_runtime_file、stop_file和windows_python做一次隐藏prepare。环境缺失、未登记、歧义、Home缺失或STOP存在均明确停止，不建身份、不改Contact、不借凭据。
 
 UserPromptSubmit用于本人真实输入前的正常准备，保证后续自然回合也有准备时点；不读取、记录或转发事件中的prompt。健康实例复用，失效实例仍由原锁内的正常prepare判定与归档。脚本支持该事件不等于本机已经安装对应定义；Rooter须在宿主受支持设置中把同一已安装命令接入UserPromptSubmit，并对当前精确定义完成正常审阅和真实触发读回。没有新增轮询、重投、Harness启动或模型调用。
 
@@ -94,7 +106,7 @@ An installed hook must be checked on its own host; source files and prior adopti
 
 常驻观察应核具体工具Job的成员，以及创建工具结束、后继自然回合中的正式状态。嵌套Job可能仍有外层归属；不能仅因 `IsProcessInJob(..., NULL)` 为true就反复停止活实例。脱离工具Job不等于持续自愈，也不承诺Desktop退出、注销或重启后的可用性。历史缺exit的退出原因仍未知；自然正式来件的受理与业务消费另核，不盲发测试提醒。
 
-切回已加载聊天时，是否收到 SessionStart 由宿主决定。UserPromptSubmit 对应实际输入。存在真实事件和当前 Desktop 连接时，Hook 直接运行本人准备；未收到本人事件的空闲接收器仍不能据此判为已刷新。如果 SessionStart 到达脚本而缺少 Desktop 环境，已登记的会话会在 `additionalContext` 收到本人的 `--resume` 入口。接收器生命周期日志的 `owner_hook_entered` 保存事件、SessionStart 的 source 和环境可用性，不含 prompt、管道地址或凭据。退出原因取真实退出记录。
+切回已加载聊天时，是否收到 SessionStart 由宿主决定。UserPromptSubmit 对应实际输入。存在真实事件和当前 Desktop 连接时，Hook 直接运行本人准备；已加载共享连接能力的空闲接收器可在新请求前采用同作用域其他真实事件发布的连接；仍在运行的旧版进程不能据此判为已采用。如果 SessionStart 到达脚本而缺少 Desktop 环境，已登记的会话会在 `additionalContext` 收到本人的 `--resume` 入口。接收器生命周期日志的 `owner_hook_entered` 保存事件、SessionStart 的 source 和环境可用性，不含 prompt、管道地址或凭据。退出原因取真实退出记录。
 
 压缩后同一根会话的 `SessionStart(source=compact)` 也进入本人接收准备，沿原 Thread、Contact 与 STOP 检查；健康实例复用，旧连接沿已有本人校验处理。安装时将该脚本的 SessionStart matcher 设为 `^(startup|resume|compact)$`，按宿主正常入口审阅变更；源码更新不会自动修改本机 Hook 或信任记录。`clear`、`fork` 仍不在该接收准备合同内。普通 Stop 不表示业务完成，本脚本不在 Stop 重启接收器。
 
@@ -104,4 +116,4 @@ An installed hook must be checked on its own host; source files and prior adopti
 
 Receiver behavior is exercised by the current source tests; historic Dashboard tests are not part of this checkout.
 
-准备Hook只比较原Owner事件环境中的连接身份与已鉴权receiver实际捕获的连接，不反向调用Desktop工具或读取线程状态；宿主正在等待Hook完成时，准备路径不能再等待同一宿主。原生线程可用性仍由正常一次提醒在发送阶段判断。
+准备Hook只核已知管道的OS宿主、作用域与已鉴权receiver的实际能力，不反向调用Desktop工具或读取线程状态；宿主正在等待Hook完成时，准备路径不能再等待同一宿主。原生线程可用性仍由正常一次提醒在发送阶段判断。

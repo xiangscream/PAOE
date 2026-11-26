@@ -414,6 +414,8 @@ def _codex_receiver_view(target: dict[str, Any]) -> dict[str, Any]:
             elif expected == snapshot["identity"]:
                 view.update(state="prepared", prepared=True, reason=None, repair_owner=None, next_action=None,
                             receiver_behavior=descriptor.get("receiver_behavior"))
+                if descriptor.get("application_transport") is True:
+                    view["application_transport"] = True
             else:
                 view.update(state="process_identity_mismatch", prepared=False, reason="process_identity_mismatch")
     return view

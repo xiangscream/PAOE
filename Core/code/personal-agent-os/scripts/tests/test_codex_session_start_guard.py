@@ -37,6 +37,10 @@ class SessionStartGuardTests(unittest.TestCase):
         self.environment = {"CODEX_THREAD_ID": "own-thread", "CODEX_APP_TOOLS_PIPE_PATH": "own-fixture-pipe"}
         self.event = {"hook_event_name": "SessionStart", "source": "resume", "session_id": "own-thread"}
         self.target = self.register("3002", "3002-s031")
+        self.transport = self.source / "private-data/runtime-injection/codex-desktop/transport.json"
+        publisher = patch.object(hook, "publish_current", return_value=self.transport)
+        publisher.start()
+        self.addCleanup(publisher.stop)
 
     def register(self, project_id, agent_id, thread="own-thread"):
         root = self.root / project_id
@@ -231,6 +235,10 @@ class SessionStartGuardTests(unittest.TestCase):
         context = threading.local()
         barrier = threading.Barrier(2)
         class Environment:
+            def keys(self):
+                return ("CODEX_THREAD_ID", "CODEX_APP_TOOLS_PIPE_PATH")
+            def __getitem__(self, key):
+                return self.get(key)
             def get(self, key, default=None):
                 return context.thread if key == "CODEX_THREAD_ID" else "fixture-pipe" if key == "CODEX_APP_TOOLS_PIPE_PATH" else default
         def launch(*args, **kwargs):
@@ -318,7 +326,7 @@ class SessionStartGuardTests(unittest.TestCase):
             "wakeup_native.codex_receiver", "--runtime-file", str(runtime), "--stop-file", self.target["stop_file"]])
         self.assertEqual(kwargs["cwd"], self.source / "scripts")
         self.assertEqual(kwargs["creationflags"], 0x09000000)
-        self.assertIsNone(kwargs["env"])
+        self.assertEqual(kwargs["env"], {**self.environment, hook.TRANSPORT_ENV: str(self.transport)})
         self.assertNotIn("own-fixture-pipe", str(args))
         self.assertEqual(runtime.read_text(encoding="utf-8"), "existing grant evidence")
 
@@ -333,7 +341,8 @@ class SessionStartGuardTests(unittest.TestCase):
             self.assertEqual(launch.call_args.kwargs["creationflags"], 0x09000000)
             self.assertEqual(launch.call_args.kwargs["cwd"], self.source / "scripts")
             self.assertEqual(launch.call_args.kwargs["stdin"], subprocess.DEVNULL)
-            self.assertIsNone(launch.call_args.kwargs["env"])
+            self.assertEqual(launch.call_args.kwargs["env"],
+                         {**self.environment, hook.TRANSPORT_ENV: str(self.transport)})
         self.assertEqual([call.args[0] for call in lookup.call_args_list], ["own-thread", "own-thread"])
 
     def test_manual_guards_environment_stop_and_ambiguous_owner(self):
@@ -427,15 +436,15 @@ class SessionStartGuardTests(unittest.TestCase):
         self.environment.pop("CODEX_THREAD_ID")
         original = self.environment.copy()
         events = [{**self.event, "source": source} for source in ("startup", "resume", "compact")]
-        events.append({"hook_event_name": "UserPromptSubmit", "session_id": "own-thread", "prompt": "private"})
+        events.append({"hook_event_name": "UserPromptSubmit", "session_id": "own-thread", "prompt": "native prompt contents"})
         for event in events:
             with self.subTest(event=event):
                 result, launch = self.prepare(event)
                 self.assertIn("receiver_prepare_started: 3002-s031", result)
                 launch.assert_called_once()
                 child = launch.call_args.kwargs["env"]
-                self.assertEqual(child, {**original, "CODEX_THREAD_ID": "own-thread"})
-                self.assertNotIn("private", str(child))
+                self.assertEqual(child, {**original, "CODEX_THREAD_ID": "own-thread", hook.TRANSPORT_ENV: str(self.transport)})
+                self.assertNotIn("native prompt contents", str(child))
                 self.assertEqual(self.environment, original)
 
     def test_native_hook_owner_uses_existing_receiver_connection_checks(self):
@@ -449,7 +458,7 @@ class SessionStartGuardTests(unittest.TestCase):
                  patch.object(hook, "reusable_owned_runtime", return_value=reusable) as check:
                 result, launch = self.prepare()
             check.assert_called_once_with(runtime, Path(self.target["stop_file"]),
-                                          environment={**original, "CODEX_THREAD_ID": "own-thread"})
+                                          environment={**original, "CODEX_THREAD_ID": "own-thread", hook.TRANSPORT_ENV: str(self.transport)})
             if reusable is None:
                 self.assertIn("receiver_prepare_started", result)
                 launch.assert_called_once()
@@ -473,6 +482,27 @@ class SessionStartGuardTests(unittest.TestCase):
         self.register_rooter("own-thread")
         with self.assertRaisesRegex(ValueError, "contact_thread_ambiguous"):
             self.prepare()
+
+    def test_transport_query_error_does_not_publish_pipe_in_hook_error(self):
+        with patch.object(hook, 'publish_current', side_effect=FileNotFoundError(2, 'missing', 'private-pipe')):
+            with self.assertRaises(hook.ReceiverError) as caught:
+                self.prepare()
+        self.assertEqual(caught.exception.code, 'desktop_transport_unavailable')
+        self.assertNotIn('private-pipe', str(caught.exception))
+
+    def test_explicitly_unsupported_transport_skips_preparation_without_reloading(self):
+        for reason in ('profile', 'product', 'pipe'):
+            code = f'desktop_transport_{reason}_unsupported'
+            with self.subTest(reason=reason), \
+                 patch.object(hook, 'publish_current', side_effect=hook.TransportProblem(code)), \
+                 patch.object(hook, 'reusable_owned_runtime') as reuse, \
+                 patch.object(hook, 'retire_owned_runtime') as retire:
+                result, launch = self.prepare()
+                self.assertEqual(result, f'receiver_prepare_skipped: {code}')
+                reuse.assert_not_called()
+                retire.assert_not_called()
+                launch.assert_not_called()
+        self.assertFalse(Path(self.target['extension']['receiver_runtime_file']).parent.exists())
 
     def test_startup_resume_compact_are_processed(self):
         for source in ("clear", "fork"):
@@ -507,7 +537,8 @@ class SessionStartGuardTests(unittest.TestCase):
         self.assertIn("receiver_prepare_started: 3002-s031", result)
         launch.assert_called_once()
         self.assertNotIn(event["prompt"], str(launch.call_args))
-        self.assertIsNone(launch.call_args.kwargs["env"])
+        self.assertEqual(launch.call_args.kwargs["env"],
+                         {**self.environment, hook.TRANSPORT_ENV: str(self.transport)})
 
     def test_user_prompt_cannot_supply_another_or_missing_session(self):
         for session in ("another-thread", None):

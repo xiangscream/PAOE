@@ -268,32 +268,73 @@ class SelectedHookTests(unittest.TestCase):
         restriction = breakaway_restriction()
         if restriction is not None:
             self.skipTest(restriction)
-        self.prepare()
+        other_home = self.fixture.project / 'Workstations/S052'
+        team = self.fixture.project / 'TEAM.md'
+        team.write_text(team.read_text(encoding='utf-8') + '\n### S052\nAnother publisher\n', encoding='utf-8')
+        (other_home / 'ENTRY.md').write_text('Another native publisher', encoding='utf-8')
+        (other_home / 'TODO.md').write_text(fixture_module.render_todo(
+            home_kind='project_agent', home_id='S052', project_id='3002',
+            objective='Publish the replacement application connection', next_action='Read own input', tasks=[]),
+            encoding='utf-8')
+        contacts = json.loads(self.fixture.contact.read_bytes())
+        contacts['S052']['stop_file'] = str(self.root / 'other/STOP')
+        self.fixture.contact.write_text(json.dumps(contacts), encoding='utf-8')
+        install.prepare(self.hooks, self.packet, ['own-session', 's052-example'], self.fixture.install)
         candidate = json.loads((self.packet / 'candidate.json').read_bytes())
         for name in ('SessionStart', 'UserPromptSubmit'):
             candidate['hooks'][name].pop(0)
         self.env['CODEX_APP_TOOLS_PIPE_PATH'] = 'isolated-native-hook-fixture'
         self.env['USERPROFILE'] = str(self.root / 'isolated-user')
+        # Keep native host discovery synthetic while exercising the actual Hook/receiver processes.
+        shim = self.root / 'native-boundary'
+        shim.mkdir()
+        calls = self.root / 'native-calls.jsonl'
+        (shim / 'sitecustomize.py').write_text(
+            "import json\n"
+            "from pathlib import Path\n"
+            "from importlib.util import find_spec\n"
+            "import wakeup_native.codex_app_tools as tools\n"
+            "if find_spec('wakeup_native.codex_transport') is not None:\n"
+            "    import wakeup_native.codex_transport as transport\n"
+            "    def host(pipe):\n"
+            "        replacement = pipe == 'isolated-replacement-connection'\n"
+            "        return {'pid': 100002 if replacement else 100001,\n"
+            "                'process_identity': 'windows:2000' if replacement else 'windows:1000'}\n"
+            "    transport.pipe_host = host\n"
+            "    transport.process_snapshot = lambda pid: {'alive': False}\n"
+            "class NativeClient:\n"
+            "    def __init__(self, pipe, caller):\n"
+            "        self.pipe_path, self.caller_thread_id = pipe, caller\n"
+            "    def thread_status(self, target): return 'idle'\n"
+            "    def wake(self, target, message):\n"
+            f"        with Path({str(calls)!r}).open('a', encoding='utf-8') as output:\n"
+            "            output.write(json.dumps({'pipe': self.pipe_path, 'caller': self.caller_thread_id,\n"
+            "                                     'target': target, 'message': message}) + '\\n')\n"
+            "tools.DesktopPipeClient = NativeClient\n", encoding='utf-8')
+        self.env['PYTHONPATH'] = os.pathsep.join((str(shim), str(SCRIPTS)))
         from wakeup_native.process_identity import process_snapshot, stop_windows_instance
         from wakeup_native.codex_receiver import desktop_connection_identity
 
+        def dispose(pid=None, runtime_file=self.fixture.runtime, stop_file=self.fixture.stop):
+            if pid is None:
+                if not runtime_file.exists():
+                    return
+                pid = json.loads(runtime_file.read_bytes())['pid']
+            process = process_snapshot(pid, str(runtime_file), str(stop_file))
+            if process.get('alive'):
+                self.assertTrue(process.get('invocation_matches'))
+                stop_windows_instance(pid, process['identity'])
+        self.addCleanup(dispose)
         [first] = self.invoke(candidate, self.events('own-session')[0])
         self.assertIn('receiver_prepare_started: S010 PID ', first['systemMessage'])
         pid = int(re.search(r'PID (\d+)', first['systemMessage'])[1])
 
-        def dispose(pid):
-            process = process_snapshot(pid, str(self.fixture.runtime), str(self.fixture.stop))
-            if process.get('alive'):
-                self.assertTrue(process.get('invocation_matches'))
-                stop_windows_instance(pid, process['identity'])
-        self.addCleanup(dispose, pid)
-
-        def wait_ready(expected_pid):
+        def wait_ready(expected_pid, runtime_file=self.fixture.runtime):
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
-                if self.fixture.runtime.is_file():
+                if runtime_file.is_file():
                     try:
-                        value = json.loads(self.fixture.runtime.read_bytes())
+                        value = json.loads(runtime_file.read_bytes())
                     except json.JSONDecodeError:
                         pass  # Exclusive publication is still being written by the child.
                     else:
@@ -320,16 +361,25 @@ class SelectedHookTests(unittest.TestCase):
         self.assertNotIn('CODEX_THREAD_ID', self.env)
 
         self.env['CODEX_APP_TOOLS_PIPE_PATH'] = 'isolated-replacement-connection'
-        [replacement] = self.invoke(candidate, self.events('own-session')[1])
-        self.assertIn('receiver_prepare_started: S010 PID ', replacement['systemMessage'])
-        new_pid = int(re.search(r'PID (\d+)', replacement['systemMessage'])[1])
-        self.addCleanup(dispose, new_pid)
-        self.assertNotEqual(new_pid, pid)
-        runtime = wait_ready(new_pid)
-        self.assertEqual(runtime['session_id'], 'own-session')
-        self.assertFalse(process_snapshot(pid).get('alive'))
-        self.assertTrue(list(self.fixture.runtime.parent.glob(f'runtime.json.stale-{pid}-*.json')))
-        original = self.fixture.runtime.read_bytes()
+        publisher_runtime = Path(contacts['S052']['extension']['receiver_runtime_file'])
+        self.addCleanup(dispose, None, publisher_runtime, Path(contacts['S052']['stop_file']))
+        [publisher] = self.invoke(candidate, self.events('s052-example')[1])
+        self.assertIn('receiver_prepare_started: S052 PID ', publisher['systemMessage'])
+        publisher_pid = int(re.search(r'PID (\d+)', publisher['systemMessage'])[1])
+        wait_ready(publisher_pid, publisher_runtime)
+        self.assertEqual(self.fixture.runtime.read_bytes(), original)
+        request = Request(runtime['endpoint'] + '/send', method='POST',
+                          headers={'Authorization': 'Bearer ' + runtime['token'], 'Content-Type': 'application/json'},
+                          data=json.dumps({'session_id': 'own-session', 'message': 'new real handoff'}).encode())
+        with build_opener(ProxyHandler({})).open(request, timeout=5) as response:
+            self.assertTrue(json.load(response)['accepted'])
+        self.assertEqual([json.loads(line) for line in calls.read_text().splitlines()], [
+            {'pipe': 'isolated-replacement-connection', 'caller': 'own-session',
+             'target': 'own-session', 'message': 'new real handoff'}])
+        self.assertTrue(status_body['application_transport'])
+        self.assertEqual(self.fixture.runtime.read_bytes(), original)
+        [resumed] = self.invoke(candidate, self.events('own-session')[1])
+        self.assertIn(f'receiver_prepare_reused: S010 PID {pid}', resumed['systemMessage'])
         self.env['CODEX_THREAD_ID'] = 'another-owner'
         [result] = self.invoke(candidate, self.events('own-session')[1])
         self.assertFalse(result['continue'])

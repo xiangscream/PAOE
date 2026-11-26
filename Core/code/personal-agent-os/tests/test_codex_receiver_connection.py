@@ -93,6 +93,42 @@ class ReceiverConnectionTests(unittest.TestCase):
         self.stop_process.assert_not_called()
         self.assert_preserved()
 
+    def test_shared_receiver_is_reused_after_application_changes(self):
+        self.old.transport_file = self.current.transport_file = self.root / 'application.json'
+        self.old.transport_scope = self.current.transport_scope = 'same-home'
+        self.current.desktop_connection_id = receiver.desktop_connection_identity('new-application')
+        self.assertEqual(self.reuse(), os.getpid())
+        self.stop_process.assert_not_called()
+        self.assert_preserved()
+
+    def test_old_receiver_loads_shared_behavior_through_exact_owner_retirement(self):
+        self.current.transport_file = self.root / 'application.json'
+        self.current.transport_scope = 'same-home'
+        self.assertIsNone(self.reuse())
+        self.stop_process.assert_called_once_with(os.getpid(), 'windows:123')
+        self.assert_preserved()
+
+    def test_another_shared_scope_is_unknown_and_preserved(self):
+        self.old.transport_file = self.current.transport_file = self.root / 'application.json'
+        self.old.transport_scope, self.current.transport_scope = 'another-home', 'same-home'
+        with self.assertRaises(receiver.ReceiverError) as caught:
+            self.reuse()
+        self.assertEqual(caught.exception.code, 'receiver_connection_unknown')
+        self.stop_process.assert_not_called()
+        self.assert_preserved()
+
+    def test_adoption_read_surface_requires_the_actual_registered_process_instance(self):
+        grant = json.loads(self.original)
+        grant['application_transport'] = True
+        self.runtime.write_text(json.dumps(grant), encoding='utf-8')
+        target = {'runtime': 'codex', 'session_id': 'own', 'stop_file': str(self.stop),
+                  'extension': {'receiver_runtime_file': str(self.runtime)}}
+        self.assertTrue(receiver._codex_receiver_view(target)['application_transport'])
+        with patch('wakeup_native.process_identity.process_snapshot', return_value={'alive': False}):
+            view = receiver._codex_receiver_view(target)
+        self.assertFalse(view['prepared'])
+        self.assertNotIn('application_transport', view)
+
     def test_stop_after_receiver_proof_prevents_connection_rotation(self):
         self.current.desktop_connection_id = receiver.desktop_connection_identity("new-pipe")
         request = receiver._request
