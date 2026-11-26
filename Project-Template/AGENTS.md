@@ -32,7 +32,7 @@ PAOE 是 Human 和多名 Agent 共同工作的本地环境。Human 给出目标�
 
 ### 1. 从当前任务恢复
 
-新会话、接班或压缩后，从本人 ENTRY 取得 CLI 前缀。已登记接收器的 Codex 本人在原 Desktop 执行 `orient <project> <本人Sxxx> --resume`；其他 Harness 执行 `orient <project> <本人Sxxx> --read`（`context read <本人Sxxx> [--task <TaskID>] [--reason startup|resume|compact|stage|request] [--source <原件>]` 供按检查点装载与显式补读）。Rooter 从安装级 ENTRY 执行 `attention rooter-show --resume`。
+新会话、接班或压缩后，先恢复本人规则、当前责任与必要原文。已登记接收器的 Codex 若可信 Hook 已准备本人接收器并完整提供必读原文，直接阅读接续；缺准备或原文时，从本人 ENTRY 取得 CLI 前缀，在原 Desktop 执行 `orient <project> <本人Sxxx> --resume`，Rooter 执行 `attention rooter-show --resume`。其他 Harness 执行 `orient <project> <本人Sxxx> --read`（`context read <本人Sxxx> [--task <TaskID>] [--reason startup|resume|compact|stage|request] [--source <原件>]` 供按检查点装载与显式补读）。共享连接新版采用时，旧接收进程由本人沿正常入口加载一次；之后无需每次切换连接都手动重配。
 
 开始新任务、进入新阶段或压缩后恢复规划时，先恢复必要规则、本人 Current、当前原输入与必要业务入口，再读完页首「共同背景」，把跨项目重要经历和联系带入当前上下文，然后写 TODO 或计划；同一执行阶段内复用已选底稿，不把静默后台更新中途塞进正在推进的任务，Human 新输入与本房有效角色变化在下一次动作边界及时带入。
 

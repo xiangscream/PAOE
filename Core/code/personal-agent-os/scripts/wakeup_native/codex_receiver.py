@@ -27,6 +27,7 @@ from paos_contact import _codex_receiver_view
 from runtime_injection import _native_lock, _request
 from wakeup_native.diagnostics import exception_fields, transport_fields
 from wakeup_native.process_identity import process_snapshot, stop_windows_instance, valid_identity
+from wakeup_native.codex_transport import TRANSPORT_ENV, desktop_scope, current_pipe
 
 
 class ReceiverError(RuntimeError):
@@ -51,12 +52,15 @@ def desktop_connection_identity(pipe):
 
 
 class SelfReminder:
-    def __init__(self, client, session_id, stop_file, process_identity=None, desktop_connection_id=None):
+    def __init__(self, client, session_id, stop_file, process_identity=None, desktop_connection_id=None,
+                 transport_file=None, transport_scope=None):
         self.client = client
         self.session_id = session_id
         self.stop_file = Path(stop_file)
         self.process_identity = process_identity
         self.desktop_connection_id = desktop_connection_id
+        self.transport_file = transport_file
+        self.transport_scope = transport_scope
 
     def status(self):
         """Return only the authenticated target's own session/instance proof."""
@@ -64,6 +68,10 @@ class SelfReminder:
                   "process_identity": self.process_identity}
         if self.desktop_connection_id is not None:
             result["desktop_connection_id"] = self.desktop_connection_id
+        if self.transport_file is not None:
+            result["application_transport"] = True
+            result["application_transport_file"] = str(self.transport_file)
+            result["application_transport_scope"] = self.transport_scope
         return result
 
     @classmethod
@@ -73,8 +81,10 @@ class SelfReminder:
         pipe = environment.get("CODEX_APP_TOOLS_PIPE_PATH", "").strip()
         if not session or not pipe:
             raise ReceiverError("codex_caller_unavailable", "Start from the target's own Codex Desktop environment", 503)
+        transport_file = environment.get(TRANSPORT_ENV)
         return cls(DesktopPipeClient(pipe, session), session, stop_file,
-                   desktop_connection_id=desktop_connection_identity(pipe))
+                   desktop_connection_id=desktop_connection_identity(pipe), transport_file=transport_file,
+                   transport_scope=desktop_scope(environment) if transport_file else None)
 
     def send(self, payload, *, observe=None):
         """Validate exact self-thread + STOP *before* native submission.
@@ -90,6 +100,16 @@ class SelfReminder:
             raise ReceiverError("invalid_request", "message must be nonempty text", 400)
         if self.stop_file.exists():
             raise ReceiverError("native_stopped", "Explicit STOP prevents native injection")
+        if self.transport_file is not None:
+            try:
+                pipe = current_pipe(self.transport_file, self.transport_scope)
+            except (OSError, ValueError) as exc:
+                raise ReceiverError("desktop_transport_unavailable", "Own application transport is unavailable", 503,
+                                    diagnostic={"phase": "status_read", "operation": "application_transport",
+                                                **exception_fields(exc)}) from exc
+            if pipe != self.client.pipe_path:
+                self.client = DesktopPipeClient(pipe, self.session_id)
+                self.desktop_connection_id = desktop_connection_identity(pipe)
         if observe:
             observe("status_read_started")
         try:
@@ -260,6 +280,8 @@ def publish_owned_runtime(runtime_file, reminder, lifecycle=None):
                "receiver_behavior": "native_followup",
                "endpoint": f"http://127.0.0.1:{server.server_port}",
                "session_id": reminder.session_id, "token": token}
+    if reminder.transport_file is not None:
+        runtime["application_transport"] = True
     try:
         # Exclusive creation prevents a second launcher replacing a live grant.
         fd = os.open(runtime_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -348,7 +370,17 @@ def reusable_owned_runtime(runtime_file, stop_file, *, environment=None):
             raise ReceiverError("native_stopped", "Original STOP prevents receiver prepare")
         if runtime_file.read_bytes() != original:
             raise ReceiverError("receiver_connection_unknown", "Receiver registration changed; keep it unchanged", 503)
-        if hmac.compare_digest(connection, reminder.desktop_connection_id):
+        if reminder.transport_file is not None:
+            shared = status.get("application_transport")
+            if shared is not None and type(shared) is not bool:
+                raise ReceiverError("receiver_connection_unknown", "Receiver capability is unverified", 503)
+            if shared is True:
+                if (status.get("application_transport_file") != str(reminder.transport_file)
+                        or status.get("application_transport_scope") != reminder.transport_scope):
+                    raise ReceiverError("receiver_connection_unknown", "Receiver application scope differs", 503)
+                return old["pid"]  # Each new request selects the verified published connection.
+            # A verified old receiver must load shared-transport behavior once.
+        elif hmac.compare_digest(connection, reminder.desktop_connection_id):
             return old["pid"]
         verified, _, process = verified_owned_runtime(runtime_file, reminder)
         if verified != original:

@@ -83,6 +83,7 @@ external Runtime, and a successful transport receipt is **not** task completion.
 | `paos_cat_cli.py`, `paos_cat_activation.py`, `paos_external_contact.py` | Explicit CAT/cross-agent communication adapter | No implicit CAT server |
 | `paos_contact.py`, `paos_contact_package.py`, `paos_wakeup.py` | Registered native target, STOP, wake handling | Unknown delivery is not a negative receipt |
 | `runtime_injection.py`, `codex_receiver_session_start.py` | One explicit submission and preparation from the manual Desktop Owner or trusted native Hook identity/current connection, scoped to that check and child | Never borrow another Home's thread/token or copy a receiver secret into Contact |
+| `wakeup_native/codex_transport.py` | One installation-scoped Windows application connection, published by real Owner preparation and read before a new reminder | Fixed receiver caller; verified live host; no retry after native submission |
 | `paos_cat_relay_windows.py`, `paos_cat_relay_wsl_client.py` | Explicit Windows/WSL CAT transport | No background poll or automatic fallback |
 | `wakeup_native/*.py`, `workbuddy_extension/*.cjs` | Codex/WorkBuddy native transport implementation | Run only in an authorized native environment |
 | `paos_backup.py`, `release_check.py` | Deliberate backup and release checks | Restore boundaries and source-only release checks differ |

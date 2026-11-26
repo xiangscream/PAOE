@@ -91,6 +91,28 @@ class CodexContextHookTests(unittest.TestCase):
         self.assertEqual((self.todo.read_bytes(),self.contact.read_bytes()),before)
         self.assertFalse(self.runtime.exists())
 
+    @unittest.skipUnless(os.name == 'nt', 'Windows reminder capability boundary')
+    def test_unsupported_reminder_profile_still_returns_business_originals(self):
+        import codex_receiver_session_start as prepare
+        from wakeup_native.codex_transport import TransportProblem
+        environment = dict(self.environment, CODEX_APP_TOOLS_PIPE_PATH='isolated-native-pipe')
+        for reason in ('profile', 'product', 'pipe'):
+            code = f'desktop_transport_{reason}_unsupported'
+            with self.subTest(reason=reason), patch.dict(os.environ, environment, clear=True), \
+                 patch.object(prepare, 'publish_current', side_effect=TransportProblem(code)), \
+                 patch.object(prepare.subprocess, 'Popen') as launch:
+                result = {'schema': 'paoe-context/v1', 'home_id': 'S010', 'reason': 'resume',
+                          'missing': [], 'documents': [dict(kind='entry', path=str(self.home / 'ENTRY.md'),
+                                                          body='Original entry', version='fixture')]}
+                with patch.object(hook, 'call_context', return_value=result) as context:
+                    response = hook.run_hook(self.read_event(), self.install)
+                self.assertEqual(response['systemMessage'], f'receiver_prepare_skipped: {code}')
+                self.assertIn('Original entry', response['hookSpecificOutput']['additionalContext'])
+                self.assertNotIn('continue', response)
+                context.assert_called_once()
+                launch.assert_not_called()
+        self.assertFalse(self.runtime.exists())
+
     def test_startup_and_request_read_guide_and_role_from_selected_cat(self):
         (self.project/'WORK-LEAD.md').write_text('Responsible guide original',encoding='utf-8')
         (self.project/'plan.md').write_text('Original plan',encoding='utf-8')

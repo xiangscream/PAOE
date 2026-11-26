@@ -1,8 +1,8 @@
 """Prepare the caller's *own* registered Codex receiver.
 
 Manual prepare, SessionStart (including compact) and UserPromptSubmit use the same Home/Contact and STOP
-checks. Current thread identity comes from the host environment; this module
-refuses a caller-supplied target override or another Home's credentials.
+checks. Identity comes from the manual Desktop environment or a trusted native Hook event.
+Application transport publication carries no caller identity.
 """
 import argparse
 import json
@@ -20,6 +20,8 @@ from paos_registry import ProjectRegistry
 from paos_workstation import WorkstationProblem, posix_windows_drive_locator
 from runtime_injection import InjectionError
 from wakeup_native.codex_receiver import ReceiverError, record_lifecycle, reusable_owned_runtime, retire_owned_runtime
+from wakeup_native.codex_transport import TRANSPORT_ENV, TransportProblem, publish_current
+from wakeup_native.diagnostics import exception_fields
 
 
 def registered_target(thread_id, descriptor):
@@ -134,6 +136,19 @@ def prepare_current(*, event=None, update=False, installation_path=None, expecte
         return "receiver_prepare_skipped: registered_receiver_locators_not_absolute"
     if stop.exists():
         return "receiver_prepare_skipped: original_STOP_present"
+    receiver_environment = dict(os.environ if receiver_environment is None else receiver_environment)
+    try:
+        transport_file = publish_current(descriptor, receiver_environment)
+    except TransportProblem as exc:
+        if str(exc) in {"desktop_transport_profile_unsupported", "desktop_transport_product_unsupported",
+                        "desktop_transport_pipe_unsupported"}:
+            # Unsupported reminder capabilities do not prevent the Hook from reading business originals.
+            return f"receiver_prepare_skipped: {exc}"
+        raise
+    except OSError as exc:
+        raise ReceiverError("desktop_transport_unavailable", "Current application transport could not be verified", 503,
+                            diagnostic={"phase": "process_query", **exception_fields(exc)}) from exc
+    receiver_environment[TRANSPORT_ENV] = str(transport_file)
     if update:
         retire_owned_runtime(runtime, stop)
     elif runtime.exists():
