@@ -67,9 +67,10 @@ class SelfReminder:
         return result
 
     @classmethod
-    def from_desktop(cls, stop_file):
-        session = os.environ.get("CODEX_THREAD_ID", "").strip()
-        pipe = os.environ.get("CODEX_APP_TOOLS_PIPE_PATH", "").strip()
+    def from_desktop(cls, stop_file, *, environment=None):
+        environment = os.environ if environment is None else environment
+        session = environment.get("CODEX_THREAD_ID", "").strip()
+        pipe = environment.get("CODEX_APP_TOOLS_PIPE_PATH", "").strip()
         if not session or not pipe:
             raise ReceiverError("codex_caller_unavailable", "Start from the target's own Codex Desktop environment", 503)
         return cls(DesktopPipeClient(pipe, session), session, stop_file,
@@ -308,7 +309,7 @@ def verified_owned_runtime(runtime_file, reminder):
     return original, old, process
 
 
-def reusable_owned_runtime(runtime_file, stop_file):
+def reusable_owned_runtime(runtime_file, stop_file, *, environment=None):
     """Reuse a verified current connection, or retire a verified old connection.
 
     PID readiness is not Desktop connection readiness. Only a real Owner
@@ -316,7 +317,7 @@ def reusable_owned_runtime(runtime_file, stop_file):
     call back into the Desktop that is waiting for this hook; normal sends
     check native thread readiness separately.
     """
-    reminder = SelfReminder.from_desktop(stop_file)
+    reminder = SelfReminder.from_desktop(stop_file, environment=environment)
     target = {"runtime": "codex", "session_id": reminder.session_id, "stop_file": str(reminder.stop_file),
               "extension": {"receiver_runtime_file": str(runtime_file)}}
     with _native_lock(target):

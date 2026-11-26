@@ -98,12 +98,24 @@ def prepare(event):
 
 
 def prepare_current(*, event=None, update=False, installation_path=None, expected_home=None):
-    """Resolve only the current Desktop Owner; never accept a target override."""
+    """Use a native Hook's Owner, or the manual caller's Desktop environment."""
     thread_id = os.environ.get("CODEX_THREAD_ID", "")
+    receiver_environment = None
+    if event is not None:
+        if not _is_prepare_event(event):
+            return "receiver_prepare_skipped: unsupported_event"
+        event_thread = event.get("session_id")
+        if not isinstance(event_thread, str) or not event_thread.strip():
+            return "receiver_prepare_skipped: event_thread_missing"
+        if thread_id and event_thread != thread_id:
+            return "receiver_prepare_skipped: event_thread_mismatch"
+        if not thread_id:
+            thread_id = event_thread
+            # A trusted native Hook supplies its own identity before shell tools exist.
+            # Scope it to this preparation and the receiver child, not process globals.
+            receiver_environment = dict(os.environ, CODEX_THREAD_ID=thread_id)
     if not thread_id or not os.environ.get("CODEX_APP_TOOLS_PIPE_PATH"):
         return "receiver_prepare_skipped: original_desktop_environment_missing"
-    if event is not None and event.get("session_id") != thread_id:
-        return "receiver_prepare_skipped: event_thread_mismatch"
     if os.name != "nt":
         return "receiver_prepare_skipped: windows_desktop_required"
 
@@ -125,7 +137,7 @@ def prepare_current(*, event=None, update=False, installation_path=None, expecte
     if update:
         retire_owned_runtime(runtime, stop)
     elif runtime.exists():
-        pid = reusable_owned_runtime(runtime, stop)
+        pid = reusable_owned_runtime(runtime, stop, environment=receiver_environment)
         if pid is not None:
             return f"receiver_prepare_reused: {home['home_id']} PID {pid}; original receiver unchanged."
     scripts = Path(posix_windows_drive_locator(descriptor["source_root"])) / "scripts"
@@ -137,6 +149,7 @@ def prepare_current(*, event=None, update=False, installation_path=None, expecte
              "--runtime-file", str(runtime), "--stop-file", str(stop)],
             cwd=scripts, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_BREAKAWAY_FROM_JOB,
+            env=receiver_environment,
         )
     action = "update" if update else "prepare"
     return f"receiver_{action}_started: {home['home_id']} PID {process.pid}; read readiness through wake status."

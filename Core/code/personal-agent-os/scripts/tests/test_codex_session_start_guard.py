@@ -318,7 +318,7 @@ class SessionStartGuardTests(unittest.TestCase):
             "wakeup_native.codex_receiver", "--runtime-file", str(runtime), "--stop-file", self.target["stop_file"]])
         self.assertEqual(kwargs["cwd"], self.source / "scripts")
         self.assertEqual(kwargs["creationflags"], 0x09000000)
-        self.assertNotIn("env", kwargs)
+        self.assertIsNone(kwargs["env"])
         self.assertNotIn("own-fixture-pipe", str(args))
         self.assertEqual(runtime.read_text(encoding="utf-8"), "existing grant evidence")
 
@@ -333,7 +333,7 @@ class SessionStartGuardTests(unittest.TestCase):
             self.assertEqual(launch.call_args.kwargs["creationflags"], 0x09000000)
             self.assertEqual(launch.call_args.kwargs["cwd"], self.source / "scripts")
             self.assertEqual(launch.call_args.kwargs["stdin"], subprocess.DEVNULL)
-            self.assertNotIn("env", launch.call_args.kwargs)
+            self.assertIsNone(launch.call_args.kwargs["env"])
         self.assertEqual([call.args[0] for call in lookup.call_args_list], ["own-thread", "own-thread"])
 
     def test_manual_guards_environment_stop_and_ambiguous_owner(self):
@@ -396,7 +396,7 @@ class SessionStartGuardTests(unittest.TestCase):
     def test_session_start_without_session_id_does_not_become_manual_prepare(self):
         event = {key: value for key, value in self.event.items() if key != "session_id"}
         result, launch = self.prepare(event)
-        self.assertIn("event_thread_mismatch", result)
+        self.assertIn("event_thread_missing", result)
         launch.assert_not_called()
 
     def test_stop_prevents_launch_and_log_creation(self):
@@ -412,7 +412,7 @@ class SessionStartGuardTests(unittest.TestCase):
         launch.assert_not_called()
 
     def test_missing_environment_never_reads_registry(self):
-        for field in self.environment.copy():
+        for field in ("CODEX_APP_TOOLS_PIPE_PATH",):
             with self.subTest(field=field):
                 environment = self.environment.copy()
                 self.environment.pop(field)
@@ -422,6 +422,57 @@ class SessionStartGuardTests(unittest.TestCase):
                 lookup.assert_not_called()
                 launch.assert_not_called()
                 self.environment = environment
+
+    def test_native_hook_owner_is_scoped_to_preparation_and_child(self):
+        self.environment.pop("CODEX_THREAD_ID")
+        original = self.environment.copy()
+        events = [{**self.event, "source": source} for source in ("startup", "resume", "compact")]
+        events.append({"hook_event_name": "UserPromptSubmit", "session_id": "own-thread", "prompt": "private"})
+        for event in events:
+            with self.subTest(event=event):
+                result, launch = self.prepare(event)
+                self.assertIn("receiver_prepare_started: 3002-s031", result)
+                launch.assert_called_once()
+                child = launch.call_args.kwargs["env"]
+                self.assertEqual(child, {**original, "CODEX_THREAD_ID": "own-thread"})
+                self.assertNotIn("private", str(child))
+                self.assertEqual(self.environment, original)
+
+    def test_native_hook_owner_uses_existing_receiver_connection_checks(self):
+        self.environment.pop("CODEX_THREAD_ID")
+        original = self.environment.copy()
+        runtime = Path(self.target["extension"]["receiver_runtime_file"])
+        runtime.parent.mkdir()
+        runtime.write_bytes(b"original grant")
+        for reusable in (456, None):
+            with self.subTest(reusable=reusable), \
+                 patch.object(hook, "reusable_owned_runtime", return_value=reusable) as check:
+                result, launch = self.prepare()
+            check.assert_called_once_with(runtime, Path(self.target["stop_file"]),
+                                          environment={**original, "CODEX_THREAD_ID": "own-thread"})
+            if reusable is None:
+                self.assertIn("receiver_prepare_started", result)
+                launch.assert_called_once()
+            else:
+                self.assertIn("receiver_prepare_reused", result)
+                launch.assert_not_called()
+            self.assertEqual(runtime.read_bytes(), b"original grant")
+            self.assertEqual(self.environment, original)
+
+    def test_native_hook_owner_still_checks_stop_home_and_manual_environment(self):
+        self.environment.pop("CODEX_THREAD_ID")
+        stop = Path(self.target["stop_file"])
+        stop.touch()
+        result, launch = self.prepare()
+        self.assertIn("original_STOP_present", result)
+        launch.assert_not_called()
+        stop.unlink()
+        result, launch = self.prepare(manual=True)
+        self.assertIn("original_desktop_environment_missing", result)
+        launch.assert_not_called()
+        self.register_rooter("own-thread")
+        with self.assertRaisesRegex(ValueError, "contact_thread_ambiguous"):
+            self.prepare()
 
     def test_startup_resume_compact_are_processed(self):
         for source in ("clear", "fork"):
@@ -456,7 +507,7 @@ class SessionStartGuardTests(unittest.TestCase):
         self.assertIn("receiver_prepare_started: 3002-s031", result)
         launch.assert_called_once()
         self.assertNotIn(event["prompt"], str(launch.call_args))
-        self.assertNotIn("env", launch.call_args.kwargs)
+        self.assertIsNone(launch.call_args.kwargs["env"])
 
     def test_user_prompt_cannot_supply_another_or_missing_session(self):
         for session in ("another-thread", None):
@@ -464,7 +515,7 @@ class SessionStartGuardTests(unittest.TestCase):
             if session is not None:
                 event["session_id"] = session
             result, launch = self.prepare(event)
-            self.assertIn("event_thread_mismatch", result)
+            self.assertIn("event_thread_mismatch" if session else "event_thread_missing", result)
             launch.assert_not_called()
 
     def test_healthy_receiver_is_reused_without_child_or_file_changes(self):

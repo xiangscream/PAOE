@@ -43,6 +43,19 @@ class ReceiverTests(unittest.TestCase):
                                   "process_identity": "windows:123",
                                   "native_status_before_submit": "idle"})
 
+    def test_hook_preparation_environment_does_not_modify_manual_owner(self):
+        manual = {"CODEX_THREAD_ID": "manual-owner", "CODEX_APP_TOOLS_PIPE_PATH": "manual-connection"}
+        native = {"CODEX_THREAD_ID": "hook-owner", "CODEX_APP_TOOLS_PIPE_PATH": "hook-connection"}
+        with patch.dict(os.environ, manual, clear=True):
+            reminder = SelfReminder.from_desktop(self.stop, environment=native)
+            self.assertEqual(reminder.session_id, "hook-owner")
+            self.assertEqual(reminder.client.caller_thread_id, "hook-owner")
+            self.assertEqual(reminder.client.pipe_path, "hook-connection")
+            self.assertEqual(dict(os.environ), manual)
+            self.assertEqual(SelfReminder.from_desktop(self.stop).session_id, "manual-owner")
+            with self.assertRaises(ReceiverError):
+                SelfReminder.from_desktop(self.stop, environment={})
+
     def test_wrong_target_never_reads_or_sends(self):
         self.assert_refused("target_not_granted", {**self.payload, "session_id": "other"})
         self.client.thread_status.assert_not_called()

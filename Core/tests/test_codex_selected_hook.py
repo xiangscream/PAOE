@@ -1,18 +1,91 @@
 """Before/apply/restore through actual Windows command handlers in isolated Homes."""
 import copy
+import ctypes
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 import unittest
 from unittest.mock import patch
+from urllib.request import ProxyHandler, Request, build_opener
 
 import test_codex_context_hook as fixture_module
 import paos_codex_hook_install as install
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'code/personal-agent-os/scripts'
+
+
+def breakaway_restriction():
+    """Skip real detached-child tests only for a verified restrictive Windows Job."""
+    from ctypes import wintypes
+
+    class BasicLimits(ctypes.Structure):
+        _fields_ = [
+            ('PerProcessUserTimeLimit', ctypes.c_int64), ('PerJobUserTimeLimit', ctypes.c_int64),
+            ('LimitFlags', wintypes.DWORD), ('MinimumWorkingSetSize', ctypes.c_size_t),
+            ('MaximumWorkingSetSize', ctypes.c_size_t), ('ActiveProcessLimit', wintypes.DWORD),
+            ('Affinity', ctypes.c_size_t), ('PriorityClass', wintypes.DWORD),
+            ('SchedulingClass', wintypes.DWORD),
+        ]
+
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.IsProcessInJob.argtypes = (wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL))
+    kernel.IsProcessInJob.restype = wintypes.BOOL
+    kernel.QueryInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
+                                               wintypes.DWORD, ctypes.c_void_p)
+    kernel.QueryInformationJobObject.restype = wintypes.BOOL
+    inside = wintypes.BOOL()
+    if not kernel.IsProcessInJob(kernel.GetCurrentProcess(), None, ctypes.byref(inside)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if not inside.value:
+        return None
+    limits = BasicLimits()
+    if not kernel.QueryInformationJobObject(None, 2, ctypes.byref(limits), ctypes.sizeof(limits), None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    if limits.LimitFlags & (0x800 | 0x1000):  # BREAKAWAY_OK or SILENT_BREAKAWAY_OK.
+        return None
+    return f'Current Windows Job explicitly disallows breakaway (LimitFlags={limits.LimitFlags:#x})'
+
+
+@unittest.skipUnless(os.name == 'nt', 'Windows Job capability')
+class BreakawayCapabilityTests(unittest.TestCase):
+    def test_only_known_restrictive_job_skips_the_real_child_test(self):
+        for in_job, flags, restricted in ((False, 0, False), (True, 0x2000, True),
+                                           (True, 0x800, False), (True, 0x1000, False)):
+            with self.subTest(in_job=in_job, flags=flags), patch.object(ctypes, 'WinDLL') as load:
+                kernel = load.return_value
+
+                def membership(process, job, output):
+                    output._obj.value = in_job
+                    return True
+
+                def limits(job, information_class, output, size, returned):
+                    self.assertEqual(information_class, 2)
+                    output._obj.LimitFlags = flags
+                    return True
+
+                kernel.IsProcessInJob.side_effect = membership
+                kernel.QueryInformationJobObject.side_effect = limits
+                self.assertEqual(breakaway_restriction() is not None, restricted)
+                self.assertEqual(kernel.QueryInformationJobObject.call_count, int(in_job))
+
+    def test_job_query_failure_is_an_error_and_does_not_become_a_skip(self):
+        for operation in ('IsProcessInJob', 'QueryInformationJobObject'):
+            with self.subTest(operation=operation), patch.object(ctypes, 'WinDLL') as load:
+                kernel = load.return_value
+
+                def membership(process, job, output):
+                    output._obj.value = True
+                    return operation != 'IsProcessInJob'
+
+                kernel.IsProcessInJob.side_effect = membership
+                kernel.QueryInformationJobObject.return_value = False
+                with self.assertRaises(OSError):
+                    breakaway_restriction()
 
 
 @unittest.skipUnless(os.name == 'nt', 'Windows command configuration')
@@ -162,12 +235,11 @@ class SelectedHookTests(unittest.TestCase):
                     observe.assert_called_once_with(event, installation_path=self.fixture.install, entrypoint='context')
                     context.assert_called_once()
 
-    def test_selected_without_legacy_or_owner_preserves_read_and_requests_same_owner_tool(self):
+    def test_selected_without_connection_preserves_read_and_requests_same_owner_tool(self):
         self.prepare()
         candidate = json.loads((self.packet / 'candidate.json').read_bytes())
         for event in ('SessionStart', 'UserPromptSubmit'):
             candidate['hooks'][event].pop(0)
-        self.env['CODEX_APP_TOOLS_PIPE_PATH'] = 'fixture'
         log = self.fixture.runtime.with_name('runtime.json.lifecycle.jsonl')
         for event in self.events('own-session')[:4]:
             with self.subTest(event=event):
@@ -181,7 +253,7 @@ class SelectedHookTests(unittest.TestCase):
         records = [json.loads(line) for line in log.read_text().splitlines()]
         self.assertEqual(len(records), 4)
         self.assertTrue(all(row['entrypoint'] == 'context' for row in records))
-        self.assertTrue(all(row['desktop_connection_present'] and not row['owner_thread_present']
+        self.assertTrue(all(not row['desktop_connection_present'] and not row['owner_thread_present']
                             and not row['owner_thread_matches'] for row in records))
         self.assertFalse(self.fixture.runtime.exists())
 
@@ -191,6 +263,78 @@ class SelectedHookTests(unittest.TestCase):
         self.assertNotIn('hookSpecificOutput', result)
         self.assertEqual(len(log.read_text().splitlines()), 4)
         self.assertFalse(self.fixture.runtime.exists())
+
+    def test_native_hook_without_owner_prepares_and_reuses_real_isolated_receiver(self):
+        restriction = breakaway_restriction()
+        if restriction is not None:
+            self.skipTest(restriction)
+        self.prepare()
+        candidate = json.loads((self.packet / 'candidate.json').read_bytes())
+        for name in ('SessionStart', 'UserPromptSubmit'):
+            candidate['hooks'][name].pop(0)
+        self.env['CODEX_APP_TOOLS_PIPE_PATH'] = 'isolated-native-hook-fixture'
+        self.env['USERPROFILE'] = str(self.root / 'isolated-user')
+        from wakeup_native.process_identity import process_snapshot, stop_windows_instance
+        from wakeup_native.codex_receiver import desktop_connection_identity
+
+        [first] = self.invoke(candidate, self.events('own-session')[0])
+        self.assertIn('receiver_prepare_started: S010 PID ', first['systemMessage'])
+        pid = int(re.search(r'PID (\d+)', first['systemMessage'])[1])
+
+        def dispose(pid):
+            process = process_snapshot(pid, str(self.fixture.runtime), str(self.fixture.stop))
+            if process.get('alive'):
+                self.assertTrue(process.get('invocation_matches'))
+                stop_windows_instance(pid, process['identity'])
+        self.addCleanup(dispose, pid)
+
+        def wait_ready(expected_pid):
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if self.fixture.runtime.is_file():
+                    try:
+                        value = json.loads(self.fixture.runtime.read_bytes())
+                    except json.JSONDecodeError:
+                        pass  # Exclusive publication is still being written by the child.
+                    else:
+                        if value['pid'] == expected_pid:
+                            return value
+                time.sleep(0.02)
+            self.fail('Isolated receiver did not publish readiness')
+
+        runtime = wait_ready(pid)
+        self.assertEqual(runtime['pid'], pid)
+        self.assertEqual(runtime['session_id'], 'own-session')
+        status = build_opener(ProxyHandler({})).open(Request(
+            runtime['endpoint'] + '/status', headers={'Authorization': 'Bearer ' + runtime['token']}), timeout=2)
+        with status:
+            status_body = json.load(status)
+        self.assertEqual(status_body['desktop_connection_id'],
+                         desktop_connection_identity(self.env['CODEX_APP_TOOLS_PIPE_PATH']))
+        original = self.fixture.runtime.read_bytes()
+        for event in self.events('own-session')[1:4]:
+            [result] = self.invoke(candidate, event)
+            self.assertIn(f'receiver_prepare_reused: S010 PID {pid}', result['systemMessage'])
+            self.assertNotIn('[PAOE 接收器]', result['hookSpecificOutput']['additionalContext'])
+        self.assertEqual(self.fixture.runtime.read_bytes(), original)
+        self.assertNotIn('CODEX_THREAD_ID', self.env)
+
+        self.env['CODEX_APP_TOOLS_PIPE_PATH'] = 'isolated-replacement-connection'
+        [replacement] = self.invoke(candidate, self.events('own-session')[1])
+        self.assertIn('receiver_prepare_started: S010 PID ', replacement['systemMessage'])
+        new_pid = int(re.search(r'PID (\d+)', replacement['systemMessage'])[1])
+        self.addCleanup(dispose, new_pid)
+        self.assertNotEqual(new_pid, pid)
+        runtime = wait_ready(new_pid)
+        self.assertEqual(runtime['session_id'], 'own-session')
+        self.assertFalse(process_snapshot(pid).get('alive'))
+        self.assertTrue(list(self.fixture.runtime.parent.glob(f'runtime.json.stale-{pid}-*.json')))
+        original = self.fixture.runtime.read_bytes()
+        self.env['CODEX_THREAD_ID'] = 'another-owner'
+        [result] = self.invoke(candidate, self.events('own-session')[1])
+        self.assertFalse(result['continue'])
+        self.assertNotIn('hookSpecificOutput', result)
+        self.assertEqual(self.fixture.runtime.read_bytes(), original)
 
     def test_conflicting_apply_restore_and_candidate_mutation_do_not_overwrite(self):
         self.prepare()

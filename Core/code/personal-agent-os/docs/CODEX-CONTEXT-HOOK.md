@@ -11,7 +11,7 @@
 
 Stop 的 action=continue 翻译为原生 `decision=block` 和 next_action；action=stop 正常结束。原生回合 ID 不变时共用动作最多允许一次，宿主明确重入也不继续。Stop 只更新本人参与状态与判断后续行动，不调用 stage deliver，不验收 Task。当前 Waiting/Inflight 由共用动作读取。
 
-Windows Hook 缺少本人 Desktop 环境时继续返回已登记会话的业务原文，同时请当前原会话从自己的终端执行一次 `orient <项目> <工位> --resume`（Rooter 用 `attention rooter-show --resume`）。命令核对恢复工位与真实工具环境的本人身份，再沿原登记、STOP 与复用检查执行。线程不符时直接停止。只有原生事件实际进入、输出实际进入模型及原信实际处理，才能分别确认对应结果。
+已信任的真实读取事件提供本人 session_id，同次 Hook 继承当前 Desktop 连接。Hook 缺 CODEX_THREAD_ID 时，以该事件身份进行本次准备，并只向接收器子进程传递该身份；不修改全局环境。非空 CODEX_THREAD_ID 与事件不符时直接停止。缺 Desktop 连接时继续返回原文及本人正常复工指令。只有原生事件实际进入、输出实际进入模型及原信实际处理，才能分别确认对应结果。
 
 ## 配置与采用
 

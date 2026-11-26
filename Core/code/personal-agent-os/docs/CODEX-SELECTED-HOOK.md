@@ -19,11 +19,12 @@ groups are appended. Before the appended definitions are trusted, the host can
 continue running the exact original trusted definitions for every session. After
 review, the selected adapter runs the existing Owner preparation check and one
 context read for each reading event. Both handlers can reuse the same healthy
-receiver. When a Windows hook lacks the Owner Desktop environment, the selected
-adapter asks the current native session to run its registered Home's resume
-command once from its own terminal. Resume checks that the terminal belongs to
-that Home. Both entry points reject a different Owner and leave the receiver
-unchanged.
+receiver. The trusted native event supplies its session identity when the Hook
+has the current Desktop connection but lacks CODEX_THREAD_ID. Preparation uses
+that identity only for the current check and receiver child. A nonempty
+different Owner is rejected. Manual preparation still requires its original
+Desktop environment. Missing connection information produces an explicit resume
+instruction for the original session.
 The selected adapter uses a
 30-second handler budget, full context for reading events, and the existing
 adapter's explicit-error/STOP/owner checks.
@@ -116,7 +117,7 @@ selected, S052 example and unregistered sessions. The pre-review test selects on
 the unchanged definitions at their original positions, modelling the documented
 host rule that unreviewed definitions are skipped; it is not a live trust-UI test.
 It checks the selected preparation route when the original hook is unavailable,
-the missing-Owner terminal instruction, one appended context read, one Stop
+native-event Owner preparation, the missing-connection instruction, one context read, one Stop
 action, unchanged old output, STOP/owner guards, full-byte restoration,
 unrelated fields, and conflict refusal. The
 original 13 adapter tests remain separate.
