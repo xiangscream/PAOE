@@ -70,7 +70,10 @@ def delete_input(home, *, message_id="", notice_id="", disposition="consumed_del
         return {"source_ref": ref, "state": "active_dependency", "tasks": dependents}
 
     if existing is None:
-        notice = read_notice(base, notice_id)
+        missing_notice = kind == "mail" and not (base / "notices" / (notice_id + ".md")).is_file()
+        if missing_notice and disposition == "consumed_deleted":
+            raise ValueError("Mail 缺少 Notice 消费证明；只能按原决定显式撤回或替代")
+        notice = None if missing_notice else read_notice(base, notice_id)
         if kind == "notice" and notice["source_kind"] == "mail":
             raise ValueError("Mail Notice 请用 --message-id 成组清理")
         if disposition == "consumed_deleted" and (not notice["read"] or notice["state"] != "handled"):
@@ -89,8 +92,9 @@ def delete_input(home, *, message_id="", notice_id="", disposition="consumed_del
                 files.append(handled)
         record = {"schema": SCHEMA, "home_id": home["home_id"],
                   "source_kind": kind, "source_ref": ref, "notice_id": notice_id,
-                  "disposition": disposition, "was_read": bool(notice["read"]),
-                  "was_handled": notice["state"] == "handled", **sender,
+                  "disposition": disposition, "notice_missing": missing_notice,
+                  "was_read": None if missing_notice else bool(notice["read"]),
+                  "was_handled": None if missing_notice else notice["state"] == "handled", **sender,
                   "executed_by": home["home_id"], "decided_by": decided_by,
                   "decision_ref": decision_ref, "preserved_ref": preserved_ref,
                   "deleted_at": datetime.now(timezone.utc).isoformat(),

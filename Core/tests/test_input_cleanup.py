@@ -161,6 +161,32 @@ class InputCleanupTests(unittest.TestCase):
         self.assertEqual(delete_input(ref, message_id="cleanup-rooter-001", preserved_ref="out.md")["state"], "deleted")
         self.assertEqual(self.f.call(*args)[1]["notices"]["external_routes"][0]["mail_state"], "deleted")
 
+    def test_explicit_supersession_can_delete_mail_without_fabricating_notice(self):
+        notice_id = self.send(done=False)
+        (self.home / "notices" / (notice_id + ".md")).unlink()
+        with self.assertRaisesRegex(ValueError, "缺少 Notice 消费证明"):
+            self.delete()
+        self.assertEqual(self.delete(disposition="superseded", decided_by="Human",
+                                     decision_ref="Decisions/end.md")["state"], "deleted")
+        marker = read_deleted(self.home, "mail", "cleanup-test-001")
+        self.assertTrue(marker["notice_missing"])
+        self.assertIsNone(marker["was_read"])
+        self.assertIsNone(marker["was_handled"])
+        self.assertEqual(notice_archive_files(self.home, notice_id), [])
+        replay = self.f.send("cleanup-test-001")
+        self.assertEqual(replay["mail"]["deliveries"][0]["state"], "deleted")
+        self.assertEqual(replay["notices"]["items"], [])
+
+    def test_missing_notice_does_not_override_an_unfinished_task(self):
+        notice_id = self.send(done=False)
+        (self.home / "notices" / (notice_id + ".md")).unlink()
+        (self.home / "TODO.md").write_text(render_todo(
+            home_kind="project_agent", home_id="3002-s002", project_id="3002", objective="Work", next_action="Read",
+            tasks=[dict(id="T1", title="Needs mail", state="doing", source_refs=["mail:cleanup-test-001"])]), encoding="utf-8")
+        self.assertEqual(self.delete(disposition="withdrawn", decided_by="Human",
+                                     decision_ref="Decisions/end.md")["state"], "active_dependency")
+        self.assertIsNone(read_deleted(self.home, "mail", "cleanup-test-001"))
+
 
 if __name__ == "__main__":
     unittest.main()

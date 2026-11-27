@@ -18,6 +18,8 @@
 
 已由原 Owner/Human 撤回或替代的旧输入可在同一命令指定 `--disposition withdrawn|superseded --decided-by <原决定者> --decision-ref <原决定>`。只按准确决定处理，不伪造 read/handled。旧通信按已确认结束的业务组批量执行，不要求重新研究或建立另一套审批。
 
+早期已有 Mail 而从未生成 Notice 时，明确的撤回/替代仍可成组清理；删除标记记录 `notice_missing=true`，未知的 `was_read/was_handled` 为 null，不补造 Notice 或消费事实。普通 `consumed_deleted` 没有消费证明仍拒绝，未完任务依赖继续保留。
+
 ## 删除与重投
 
 每个收件人的 `mailbox/.deleted/<MID>.json` 留最小身份、收尾方式和去重事实，先写标记再删除 Mail、Notice 及侧记录；独立 Notice 使用 `notices/.deleted/`。这些记录不保存正文，也不是历史库。原 dispatch 不改写，同 MID 重投不会重建副本或再次提醒，同 MID 的其他收件人不受影响。
