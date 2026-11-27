@@ -20,6 +20,8 @@ Rooter 用本人 `task accept rooter-001` 验收时，`--artifact` 和 `--basis`
 
 按已结束 Task 成组收尾：`paos input-cleanup <self> --task <TaskID> --preserved-ref <保留入口>`。单条输入使用 `--message-id <MID>` 或 `--notice-id <NoticeID>`。未完成 Task 仍引用的输入返回具体依赖者；确已归档的 Mail 留在原历史批次。
 
+未完依赖同时核 `mail:<MID>`、`notice:<NoticeID>` 和本人Home内对应Mail/Notice文件的路径，复用恢复读面的文件定位：Project成员的相对路径以项目根为基准，Rooter以本人Home为基准，绝对路径保持。Windows的正反斜线按同一文件定位；已登记历史收件身份沿准确原Notice保护。依赖Task进入done或cancelled后解除保护，其他文件或其他Home的路径不会被当成本输入。
+
 已由原 Owner/Human 撤回或替代的旧输入可在同一命令指定 `--disposition withdrawn|superseded --decided-by <原决定者> --decision-ref <原决定>`。只按准确决定处理，不伪造 read/handled。旧通信按已确认结束的业务组批量执行，不要求重新研究或建立另一套审批。
 
 早期已有 Mail 而从未生成 Notice 时，明确的撤回/替代仍可成组清理；删除标记记录 `notice_missing=true`，未知的 `was_read/was_handled` 为 null，不补造 Notice 或消费事实。普通 `consumed_deleted` 没有消费证明仍拒绝，未完任务依赖继续保留。

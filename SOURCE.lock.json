@@ -1,9 +1,9 @@
 {
-  "core_commit": "073a0006957486210a109f56aa6e4aa2b2564ee3",
-  "core_tree": "3e8e4ed636e3b49d1aada1ef0fd52943580378c9",
+  "core_commit": "3b31adfdd54b1cea3d47f4fe100189fe4f1de87c",
+  "core_tree": "0d33770bbf55290adb15a2e5d7aa1bd7852f867b",
   "libraries": "independent registered roots; not bundled",
   "machine_state": "not release source; retain on each machine",
   "platform": "Windows",
   "schema": "paoe-system-source/v1",
-  "system_version": "0.3.16"
+  "system_version": "0.3.17"
 }

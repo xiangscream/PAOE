@@ -111,9 +111,18 @@ def delete_input(home, *, message_id="", notice_id="", disposition="consumed_del
                 project_id=home.get('project_id', ''), source_kind='mail', source_ref=ref))
 
     anchors = {f"{kind}:{ref}", "notice:" + notice_id}
+    from paos_context import local_source
+    source_root = Path(home.get("project_root") or base)
+    input_paths = {(base / "notices" / (notice_id + ".md")).resolve()}
+    if kind == "mail":
+        input_paths.add((base / "mailbox" / (ref + ".md")).resolve())
+
+    def references_input(source):
+        return source in anchors or local_source(source_root, source) in input_paths
+
     todo = read_todo(base / "TODO.md")
     dependents = [t["id"] for t in todo["tasks"] if t["state"] not in {"done", "cancelled"}
-                  and anchors.intersection(t["source_refs"])]
+                  and any(references_input(source) for source in t["source_refs"])]
     if dependents:
         return {"source_ref": ref, "state": "active_dependency", "tasks": dependents}
 
