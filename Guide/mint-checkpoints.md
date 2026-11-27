@@ -49,7 +49,7 @@ paos cat send ROOM --from S034 --body @actual-delivery.md --message-id stable-me
 paos mint check S034 --request-id owner-check-001
 ```
 
-同request-id重入不会重投；新的request-id只可重核rejected/suppressed，不能重发submitted/uncertain。原定时责任的真实状态/等待变化、新正式阶段也可重核被拒绝或抑制的检查点；普通改字或重复保存不是新的重核事件。新的独立CAT事件或新预约点可正常接续。
+同request-id重入不会重投，包括A→B→A交错及进程重启。各次明确检查在同一mint_runs表内保留独立请求行，主检查点仍阻止重发已受理/未知的请求。新的request-id只可重核rejected/suppressed，不能重发submitted/uncertain。原定时责任的真实状态/等待变化、新正式阶段也可重核被拒绝或抑制的检查点；普通改字或重复保存不是新的重核事件。新的独立CAT事件或新预约点可正常接续。
 
 原 `agent send --remind` 与事件检查点对同一准确 `mail:<MID>` 共享来源占位，无论哪个先提交，另一个都不再重复提醒。定时检查点有独立身份，不能因为引用过同一原件就取消以后已明确预约的工作。不同正文只因语义相似不会被猜测合并。
 

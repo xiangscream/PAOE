@@ -35,6 +35,10 @@ def reserve(data, home, key, source='', request_id=''):
     with ledger(data) as db:
         db.execute('BEGIN IMMEDIATE')
         keys = [key] + (['source:' + source] if source else [])
+        attempt = 'check:' + pack([key, request_id]) if request_id else ''
+        if attempt and db.execute('SELECT 1 FROM mint_runs WHERE target_home=? AND checkpoint_id=?',
+                                  (home, attempt)).fetchone():
+            return False
         previous = [db.execute('SELECT * FROM mint_runs WHERE target_home=? AND checkpoint_id=?',
                                (home, k)).fetchone() for k in keys]
         if any(previous):
@@ -46,7 +50,11 @@ def reserve(data, home, key, source='', request_id=''):
         for k in keys:
             db.execute('INSERT OR REPLACE INTO mint_runs VALUES(?,?,?,?)',
                        (home, k, 'uncertain', pack({'reason': 'reserved_before_submit',
-                                                  'retry': False, 'check_request_id': request_id})))
+                                                  'retry': False, 'check_request_id': request_id,
+                                                  'attempt_key': attempt})))
+        if attempt:
+            db.execute('INSERT INTO mint_runs VALUES(?,?,?,?)',
+                       (home, attempt, 'uncertain', pack({'check_request_id': request_id})))
     return True
 
 
@@ -57,9 +65,14 @@ def finish(data, home, key, receipt):
     with ledger(data) as db:
         prior = db.execute('SELECT receipt FROM mint_runs WHERE target_home=? AND checkpoint_id=?',
                            (home, key)).fetchone()
-        receipt = {**receipt, 'check_request_id': json.loads(prior[0]).get('check_request_id', '')}
+        reservation = json.loads(prior[0])
+        receipt = {**receipt, 'check_request_id': reservation.get('check_request_id', ''),
+                   'attempt_key': reservation.get('attempt_key', '')}
         db.execute('UPDATE mint_runs SET status=?,receipt=? WHERE target_home=? AND checkpoint_id=?',
                    (state, pack(receipt), home, key))
+        if receipt['attempt_key']:
+            db.execute('UPDATE mint_runs SET status=?,receipt=? WHERE target_home=? AND checkpoint_id=?',
+                       (state, pack(receipt), home, receipt['attempt_key']))
     return {'home': home, 'checkpoint_id': key, 'status': state, 'receipt': receipt}
 
 
@@ -204,7 +217,12 @@ class MintRunner:
                         matched = [(pack(e), 'cat:' + e['room'] + ':' + e['message_id']) for e in events
                                    if source == 'cat:' + e['room'] + '#' + e['name']]
                     if matched:
-                        target = resolve_home_by_registry(item['to'], installation_file=str(self.installation))
+                        try:
+                            target = resolve_home_by_registry(item['to'], installation_file=str(self.installation))
+                        except (HomeProblem, AttentionServiceProblem, RegistryProblem, OSError) as error:
+                            self.emit({'status': 'unavailable', 'target': item['to'], 'source_home': owner,
+                                       'task_id': task['id'], 'error': str(error)})
+                            continue
                         for event, request_source in matched:
                             yield target['home_id'], pack([owner, task['id'], item, event]), source, '', False, request_source
 
@@ -288,9 +306,17 @@ class MintRunner:
             groups.setdefault(target, []).append((key, source, shared))
         for target, points in groups.items():
             home = targets[target]
+            references = []
+            for key, source, shared in points:
+                parts = json.loads(key)
+                if parts[0] == 'at':
+                    references.append(f"本人Task {parts[1]}，检查点 {parts[2]}，来源 {source}")
+                else:
+                    owner, source_task, item, event = parts
+                    references.append(f"来源工位 {owner} / Task {source_task}，{item['when']}：{source}；原事件 {shared or event}")
             prompt = ('业务检查点已到。请从本人固定ENTRY和TODO恢复，实读匹配来源并继续已授权责任。\n'
                       + str(Path(home['home_path']) / 'ENTRY.md') + '\n'
-                      + '\n'.join(source for _, source, _ in points))
+                      + '\n'.join(references))
             from paos import CliError
             try:
                 receipt = self.wake(self.installation, home, prompt)

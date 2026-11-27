@@ -3168,9 +3168,10 @@ def execute(
         _validate_resolved_identity_subject(args, registry, resolved_installation_path)
     if args.command == "cat":
         from paos_mint import cat_event
-        data = effective_data_root(load_installation_descriptor(resolved_installation_path))
         return execute_cat(args, RestClient(args.url, service="CAT"), text_arg,
-                           checkpoint=lambda room, mid, name: cat_event(data, room, mid, name))
+                           checkpoint=lambda room, mid, name: cat_event(
+                               effective_data_root(load_installation_descriptor(resolved_installation_path)),
+                               room, mid, name))
 
     if args.command == 'mint':
         from paos_mint import execute as execute_mint

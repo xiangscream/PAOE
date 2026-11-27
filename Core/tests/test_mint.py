@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta, timezone
 import json
 import os
+import subprocess
 from pathlib import Path
 import sys
 import unittest
@@ -337,13 +338,67 @@ class MintTests(unittest.TestCase):
         self.assertEqual(self.runner().step(self.now)[0]['status'], 'submitted')
         self.assertEqual(self.wake.call_count, 2)
 
+    def test_regression_interleaved_check_ids_remain_deduplicated(self):
+        self.point()
+        self.wake.return_value = {'accepted': False}
+        runner = self.runner()
+        runner.step(self.now)
+        for request in ('A', 'B', 'A'):
+            runner.step(self.now, request_id=request)
+        self.assertEqual(self.wake.call_count, 3)
+        self.runner().step(self.now, request_id='A')
+        self.assertEqual(self.wake.call_count, 3)
+
+    def test_regression_interleaved_checks_across_real_process_restarts(self):
+        self.point()
+        counter = self.f.root / 'native-calls.txt'
+        program = '''
+import sys
+from pathlib import Path
+from datetime import datetime, timezone
+sys.path.insert(0, sys.argv[1])
+from paos_mint import MintRunner
+def wake(*args):
+    with Path(sys.argv[3]).open('a', encoding='utf-8') as stream:
+        stream.write('submitted\\n')
+    return {'accepted': False}
+MintRunner(Path(sys.argv[2]), wake=wake).step(datetime(2030,1,1,tzinfo=timezone.utc), request_id=sys.argv[4])
+'''
+        scripts = Path(__file__).resolve().parents[1] / 'code/personal-agent-os/scripts'
+        for request in ('', 'A', 'B', 'A'):
+            result = subprocess.run([sys.executable, '-B', '-X', 'utf8', '-c', program, str(scripts),
+                str(self.f.install), str(counter), request], capture_output=True, text=True, encoding='utf-8', timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(counter.read_text(encoding='utf-8').splitlines()), 3)
+
+    def test_regression_invalid_notification_does_not_freeze_valid_pending_timer(self):
+        self.put([dict(id='RUN', title='Real work', state='doing'),
+                  dict(id='BAD', title='Source completed', state='done', notify_after=[
+                    dict(to='missing-unregistered', when='task_done', source_ref='result.md')])])
+        self.point()
+        events = []
+        result = self.runner(emit=events.append).step(self.now)
+        self.assertEqual(result[0]['status'], 'submitted')
+        self.wake.assert_called_once()
+        self.assertTrue(any(e.get('target') == 'missing-unregistered' and e.get('status') == 'unavailable' for e in events))
+        self.assertEqual(self.runner().step(self.now), [])
+
+    def test_regression_wake_prompt_contains_actual_task_and_cat_event_id(self):
+        self.point()
+        self.runner().step(self.now)
+        self.assertIn('RUN', self.wake.call_args.args[2])
+        self.notification('cat_checkpoint', 'cat:room-one#ready')
+        cat_event(self.f.data, 'room-one', 'EXACT-MESSAGE-ID', 'ready')
+        self.runner().step(self.now)
+        self.assertIn('EXACT-MESSAGE-ID', self.wake.call_args.args[2])
+        self.assertIn('EVENT', self.wake.call_args.args[2])
+
 
 @unittest.skipUnless(os.name == 'nt', 'Actual Windows observer subscriptions')
 class MintObserverTests(unittest.TestCase):
-    def test_project_and_rooter_todo_atomic_save_use_existing_observer_only(self):
+    def start_observer(self):
         import test_content_watch as fixtures_watch
         from paos_content_watch import ContentWatcher
-        from paos_content import list_changes
         from paos_installation import write_installation_descriptor
         from paos_todo import render_todo
         f = fixtures_watch.ContentWatchTests()
@@ -368,6 +423,11 @@ class MintObserverTests(unittest.TestCase):
         watcher.start()
         self.addCleanup(watcher.close)
         self.assertIn(f.rooter, watcher.streams)
+        return f, project_home, wake, watcher
+
+    def test_project_and_rooter_todo_atomic_save_use_existing_observer_only(self):
+        from paos_content import list_changes
+        f, project_home, wake, watcher = self.start_observer()
         for home, kind, ident, project in ((project_home, 'project_agent', 'S031', '3002'),
                                            (f.rooter, 'rooter', 'rooter-001', '')):
             ref = dict(home_kind=kind, home_id=ident, project_id=project,
@@ -378,6 +438,24 @@ class MintObserverTests(unittest.TestCase):
         for _ in range(3):
             watcher.step()
         self.assertEqual(wake.call_count, 2)
+
+    def test_invalid_target_keeps_observer_and_other_due_work_running(self):
+        from paos_content import list_changes
+        f, home, wake, watcher = self.start_observer()
+        doc = read_todo(home / 'TODO.md')
+        doc['tasks'].append(dict(id='BAD', title='Invalid notification', state='done', notify_after=[
+            dict(to='missing-unregistered', when='task_done', source_ref='original.md')]))
+        write_todo(home / 'TODO.md', render(doc))
+        ref = dict(home_kind='project_agent', home_id='S031', project_id='3002',
+                   home_path=str(home), project_root=str(f.project))
+        for n in (1, 2):
+            arrange(ref, 'RUN', ident='VALID-' + str(n), at='2020-01-01T00:00:00+00:00', source='original.md')
+            f.wait_for(lambda: wake.call_count == n, watcher)
+        with ledger(f.data) as db:
+            self.assertFalse(db.execute("SELECT 1 FROM mint_runs WHERE status='uncertain'").fetchone())
+        actual = f.write('Works/after-invalid-target.md', 'Real content update')
+        f.wait_for(lambda: any(r['locator'] == str(actual) for r in list_changes(f.data, 0, 500)['changes']), watcher)
+        self.assertTrue(watcher.streams)
 
 
 if __name__ == '__main__':
