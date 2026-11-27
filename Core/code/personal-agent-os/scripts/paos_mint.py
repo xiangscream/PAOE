@@ -263,7 +263,7 @@ class MintRunner:
                 # Only an actual responsibility/arrangement transition or a
                 # new formal stage is a new trigger, never an arbitrary save.
                 signature = pack(['todo', task_id, task['state'], task['waiting'], point,
-                    [r for r in task['source_refs'] if r.startswith('stage:')],
+                    sorted({r for r in task['source_refs'] if r.startswith('stage:')}),
                     doc['current']['waiting'] if 'task:' + task_id in doc['current']['context_refs'] else ''])
                 transition = observe_transition(self.data, target, key, signature)
                 trigger = trigger or transition
