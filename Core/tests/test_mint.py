@@ -338,6 +338,70 @@ class MintTests(unittest.TestCase):
         self.assertEqual(self.runner().step(self.now)[0]['status'], 'submitted')
         self.assertEqual(self.wake.call_count, 2)
 
+    def test_real_responsibility_cycle_is_new_but_unchanged_save_is_not(self):
+        self.point()
+        self.wake.return_value = {'accepted': False}
+        runner = self.runner()
+        self.assertEqual(runner.step(self.now)[0]['status'], 'rejected')
+        for state, waiting, expected in [('waiting', 'Owner reply', 'suppressed'),
+                                         ('doing', '', 'rejected')]:
+            doc = read_todo(self.path / 'TODO.md')
+            doc['tasks'][0].update(state=state, waiting=waiting)
+            write_todo(self.path / 'TODO.md', render(doc))
+            runner.changed(self.path / 'TODO.md')
+            self.assertEqual(runner.step(self.now)[0]['status'], expected)
+        self.assertEqual(self.wake.call_count, 2)
+        doc['tasks'][0]['result'] = 'Only an ordinary note'
+        write_todo(self.path / 'TODO.md', render(doc))
+        runner.changed(self.path / 'TODO.md')
+        self.assertEqual(runner.step(self.now), [])
+        self.assertEqual(self.runner().step(self.now), [])
+        self.assertEqual(self.wake.call_count, 2)
+
+    def test_real_cycle_never_replays_submitted_or_unknown(self):
+        for accepted in (True, None):
+            with self.subTest(accepted=accepted):
+                self.point(ident='ACCEPTED' if accepted else 'UNKNOWN')
+                self.wake.return_value = {'accepted': accepted}
+                runner = self.runner()
+                runner.step(self.now)
+                before = self.wake.call_count
+                for state, waiting in [('waiting', 'Owner'), ('doing', '')]:
+                    doc = read_todo(self.path / 'TODO.md')
+                    doc['tasks'][0].update(state=state, waiting=waiting)
+                    write_todo(self.path / 'TODO.md', render(doc))
+                    runner.changed(self.path / 'TODO.md')
+                    self.assertEqual(runner.step(self.now), [])
+                self.assertEqual(self.runner().step(self.now), [])
+                self.assertEqual(self.wake.call_count, before)
+
+    def test_real_cycle_and_unchanged_restart_in_separate_processes(self):
+        self.point()
+        counter = self.f.root / 'transition-calls.txt'
+        program = '''
+import sys
+from pathlib import Path
+from datetime import datetime, timezone
+sys.path.insert(0, sys.argv[1])
+from paos_mint import MintRunner
+def wake(*args):
+    with Path(sys.argv[3]).open('a', encoding='utf-8') as stream:
+        stream.write('submitted\\n')
+    return {'accepted': False}
+MintRunner(Path(sys.argv[2]), wake=wake).step(datetime(2030,1,1,tzinfo=timezone.utc))
+'''
+        scripts = Path(__file__).resolve().parents[1] / 'code/personal-agent-os/scripts'
+        for state, waiting, count in [('doing', '', 1), ('waiting', 'Owner', 1),
+                                      ('doing', '', 2), ('doing', '', 2)]:
+            doc = read_todo(self.path / 'TODO.md')
+            doc['tasks'][0].update(state=state, waiting=waiting)
+            write_todo(self.path / 'TODO.md', render(doc))
+            result = subprocess.run([sys.executable, '-B', '-X', 'utf8', '-c', program,
+                str(scripts), str(self.f.install), str(counter)], capture_output=True,
+                text=True, encoding='utf-8', timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(len(counter.read_text(encoding='utf-8').splitlines()), count)
+
     def test_regression_interleaved_check_ids_remain_deduplicated(self):
         self.point()
         self.wake.return_value = {'accepted': False}

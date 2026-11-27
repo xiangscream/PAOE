@@ -87,6 +87,22 @@ def reminder_once(installation, home, source, submit):
     return receipt
 
 
+def observe_transition(data, home, key, signature):
+    """Identify observed transitions, including A→B→A, across host restarts."""
+    observation = 'observed:' + key
+    with ledger(data) as db:
+        db.execute('BEGIN IMMEDIATE')
+        row = db.execute('SELECT receipt FROM mint_runs WHERE target_home=? AND checkpoint_id=?',
+                         (home, observation)).fetchone()
+        previous = json.loads(row[0]) if row else None
+        if previous and previous['signature'] == signature:
+            return pack(['todo-transition', previous['generation']])
+        generation = previous['generation'] + 1 if previous else 1
+        db.execute('INSERT OR REPLACE INTO mint_runs VALUES(?,?,?,?)',
+                   (home, observation, 'observed', pack(dict(signature=signature, generation=generation))))
+    return pack(['todo-transition', generation])
+
+
 def cat_event(data, room, message_id, name):
     event = dict(room=room, message_id=message_id, name=name)
     body = pack(event).encode('utf-8')
@@ -240,15 +256,17 @@ class MintRunner:
             # A Mail event's original reminder shares this exact source lock.
             shared = request_source if request_source.startswith(('mail:', 'cat:')) else ''
             trigger = request_id
-            if task_id and not trigger:
+            if task_id:
                 doc = self.docs[target]
                 task = next(t for t in doc['tasks'] if t['id'] == task_id)
                 point = next(p for p in task['checkpoints'] if p['id'] == json.loads(key)[2])
                 # Only an actual responsibility/arrangement transition or a
                 # new formal stage is a new trigger, never an arbitrary save.
-                trigger = pack(['todo', task_id, task['state'], task['waiting'], point,
+                signature = pack(['todo', task_id, task['state'], task['waiting'], point,
                     [r for r in task['source_refs'] if r.startswith('stage:')],
                     doc['current']['waiting'] if 'task:' + task_id in doc['current']['context_refs'] else ''])
+                transition = observe_transition(self.data, target, key, signature)
+                trigger = trigger or transition
             observed = (target, key, trigger)
             if not request_id and observed in self.observed:
                 continue
