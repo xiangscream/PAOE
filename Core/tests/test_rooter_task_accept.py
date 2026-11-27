@@ -103,6 +103,7 @@ class RooterAcceptanceTests(unittest.TestCase):
         self.assertEqual(cleanup.call_args.args[0]['home_path'], str(self.f.rooter))
         self.assertEqual(cleanup.call_args.args[0]['home_kind'], 'rooter')
         self.assertEqual(cleanup.call_args.args[1:], ('R1', str(self.artifact)))
+        self.assertIn(str(self.f.vault), cleanup.call_args.kwargs['source_roots'])
 
 
 if __name__ == '__main__':

@@ -2710,12 +2710,12 @@ def _canonical_identity_and_aliases(
     return canonical, aliases
 
 
-def _cleanup_mail_result(result, args):
-    if getattr(args, "cleanup_inputs", False):
-        from paos_input_cleanup import cleanup_task
-        result["cleanup"] = (cleanup_task(result["home"], result["task_id"], args.preserved_ref)
-                             if result.get("task_state") == "done"
-                             else {"complete": False, "state": "task_unfinished", "task_id": result["task_id"]})
+def _cleanup_mail_result(result, args, installation):
+    from paos_input_cleanup import cleanup_completed_task
+    result["cleanup"] = (cleanup_completed_task(result["home"], result["task_id"],
+                         getattr(args, "preserved_ref", None), installation=installation)
+                         if result.get("task_state") == "done"
+                         else {"complete": False, "state": "task_unfinished", "task_id": result["task_id"]})
     return result
 
 
@@ -2725,8 +2725,6 @@ def execute_mail(
     installation_path: Path | None = None,
 ) -> dict[str, Any]:
     """V1.3 Mail UX backed by immutable Mail + unified Notice handling."""
-    if getattr(args, "cleanup_inputs", False) and not str(getattr(args, "preserved_ref", "") or "").strip():
-        raise ValueError("收尾清理需要 --preserved-ref，先归位有价值原件")
     original_agent_id = str(getattr(args, "agent_id", "") or "").strip()
     agent_aliases = {original_agent_id}
     if original_agent_id:
@@ -2746,7 +2744,7 @@ def execute_mail(
             result=text_arg(args.result, "mail result", required=True),
             task_id=str(getattr(args, "task", "") or ""),
             artifact_ref=str(getattr(args, "artifact_ref", "") or ""))}
-        return _cleanup_mail_result(result, args)
+        return _cleanup_mail_result(result, args, installation_path)
     project = registry.read(args.project_id)
     root_raw = str(
         getattr(args, "root", None)
@@ -2783,7 +2781,7 @@ def execute_mail(
                     recipient_aliases=agent_aliases,
                 ),
             }
-            return _cleanup_mail_result(result, args)
+            return _cleanup_mail_result(result, args, installation_path)
         if args.mail_command == "send":
             if str(args.sender_kind or "human") == "agent" and args.sender_id:
                 args.sender_id = _canonical_identity_and_aliases(
@@ -3972,8 +3970,8 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("--artifact-ref", help="Result artifact path or durable ref")
 
     for command in (mails.choices["result"], mails.choices["rooter-result"]):
-        command.add_argument("--cleanup-inputs", action="store_true")
-        command.add_argument("--preserved-ref", help="Where valuable original content has been preserved")
+        command.add_argument("--cleanup-inputs", action="store_true", help="Explicit synonym: completed inputs are evaluated for cleanup by default")
+        command.add_argument("--preserved-ref", help="Explicit preservation locator; overrides the Task artifact used by default")
 
     x = mails.add_parser("reply", help="Reply to an Agent Mail in this Agent's inbox")
     x.add_argument("project_id")
