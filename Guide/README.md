@@ -10,7 +10,7 @@
 
 | 场景 | 指南入口 | 核心内容 |
 | --- | --- | --- |
-| 项目文件放哪里、历史沉淀与 Git 协作 | [项目工作世界](guide-project-work-world.md) | 正文/材料/决策归位、库外历史、日常顺手维护、项目 TIPS 经验 |
+| 库的阅读网络、价值取舍、批量整理与 Git | [库组织与项目文件](guide-project-work-world.md) | 渐进阅读、主题关系、TODO收尾、历史退出与文本版本 |
 | 按任务查找专业方法、技能与本机工具 | [工作入口与资源检索](guide-work-method.md) | `paos library search` 与 Tool Catalog 核验原则 |
 | 快速查找 CLI 前缀、Contact 与运维入口 | [操作入口速查](ops-entry.md) | 常用运维命令、公开联系包生成与状态检查 |
 
