@@ -123,13 +123,14 @@ def publish_receipt(path, receipt):
         temp.unlink(missing_ok=True)
 
 
-def acceptance_versions(home, evidence, *, archived=None):
+def acceptance_versions(home, evidence, *, archived=None, source_roots=()):
     """Bind only the two reviewed originals. A completed receipt can outlive its files."""
     root = Path(home["project_root"] or home["home_path"]).resolve()
+    roots = (root, *source_roots) if home["home_kind"] == "rooter" else (root,)
     versions = {}
     for key in ("artifact", "basis"):
         path = local_source(root, evidence[key])
-        if path is None or not path.is_relative_to(root):
+        if path is None or not any(path.is_relative_to(Path(r).resolve()) for r in roots):
             raise ValueError(f"验收原件超出项目范围：{evidence[key]}")
         try:
             versions[key] = original_version(path)
@@ -140,8 +141,8 @@ def acceptance_versions(home, evidence, *, archived=None):
     return versions
 
 
-def record_owner_acceptance(data, room, team, acceptance, home):
-    acceptance = {**acceptance, "versions": acceptance_versions(home, acceptance)}
+def record_owner_acceptance(data, room, team, acceptance, home, *, source_roots=()):
+    acceptance = {**acceptance, "versions": acceptance_versions(home, acceptance, source_roots=source_roots)}
     subject = {
         "room": room,
         "owner": team["plan"]["owner"],
@@ -249,10 +250,10 @@ def check_registered_handoffs(members, room, resolve_home, carried):
                 raise ValueError("该目标仍登记在途或等待，请给出实际去向：" + target)
 
 
-def check_goal_originals(home, owner, doc, task, evidence):
+def check_goal_originals(home, owner, doc, task, evidence, *, source_roots=()):
     root = Path(home["project_root"] or home["home_path"])
     for key in ("artifact", "basis"):
-        scoped_file(root, evidence[key])
+        scoped_file(root, evidence[key], source_roots=source_roots if home["home_kind"] == "rooter" else ())
     if not str(evidence.get("remaining") or "").strip():
         raise ValueError("请说明剩余事项的去向")
     carried = evidence.get("carried", {})
@@ -266,7 +267,7 @@ def check_goal_originals(home, owner, doc, task, evidence):
             raise ValueError("本目标还有已登记的等待或在途事项，请先记录其实际去向")
 
 
-def read_owner_acceptance(data, ident, resolve_home=None):
+def read_owner_acceptance(data, ident, resolve_home=None, *, source_roots=()):
     """History is immutable; first application also verifies the originals at the registered Home."""
     if not re.fullmatch(r"oa-[0-9a-f]{32}", ident):
         raise ValueError("验收回执 ID 无效")
@@ -275,11 +276,11 @@ def read_owner_acceptance(data, ident, resolve_home=None):
         raise ValueError("验收回执与原操作不符")
     if resolve_home:
         subject = record["subject"]
-        verify_goal(subject, subject["acceptance"], resolve_home, "owner")
+        verify_goal(subject, subject["acceptance"], resolve_home, "owner", source_roots=source_roots)
     return record
 
 
-def verify_goal(subject, evidence, resolve_home, policy):
+def verify_goal(subject, evidence, resolve_home, policy, *, source_roots=()):
     home = resolve_home(subject["owner"])
     _, _, doc, task = task_snapshot(home, evidence["task"])
     plan = plan_view(home, subject["owner"], task)["plan"]
@@ -289,8 +290,8 @@ def verify_goal(subject, evidence, resolve_home, policy):
         or task["state"] == "cancelled"
     ):
         raise ValueError("验收目标或约定验收人已变化")
-    check_goal_originals(home, subject["owner"], doc, task, evidence)
-    if acceptance_versions(home, evidence) != evidence.get("versions"):
+    check_goal_originals(home, subject["owner"], doc, task, evidence, source_roots=source_roots)
+    if acceptance_versions(home, evidence, source_roots=source_roots) != evidence.get("versions"):
         raise ValueError("验收成果或依据的内容版本已经变化，请复核原件")
     check_registered_handoffs(
         plan["members"], subject["room"], resolve_home, evidence.get("carried", {})

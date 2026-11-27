@@ -12,6 +12,8 @@
 
 `mail result` 挂靠已有大 Task 时只结束本次输入，不会结束整个大 Task；此时返回 `task_unfinished`，不清理其输入。`task accept` 完成的任务可办结它本人已 claim、实读的关联 Notice；其他未读输入不会因关联到它就假装已读。
 
+Rooter 用本人 `task accept rooter-001` 验收时，`--artifact` 和 `--basis` 可引用当前安装已登记 Project 内的原件，跨库请给绝对文件路径。无需复制成果进 Rooter Home；未登记、越出登记根或缺失的原件仍拒绝。普通 Project 的成果范围保持本项目。验收只更新本人 TODO，`--cleanup-inputs` 也仍只清理本人 Home 的输入，活跃依赖保护不变。
+
 ## 独立补办与批量处理
 
 按已结束 Task 成组收尾：`paos input-cleanup <self> --task <TaskID> --preserved-ref <保留入口>`。单条输入使用 `--message-id <MID>` 或 `--notice-id <NoticeID>`。未完成 Task 仍引用的输入返回具体依赖者；确已归档的 Mail 留在原历史批次。

@@ -11,6 +11,7 @@ from paos_attention_service import resolve_home_by_registry
 from paos_content import original_version
 from paos_human_action import confirm, review
 from paos_installation import effective_data_root, load_installation_descriptor
+from paos_phase_cli import _project_roots
 from paos_stage import render, task_snapshot, with_refs
 from paos_team import (
     PLAN,
@@ -116,7 +117,8 @@ def finish_current(current, task, evidence):
     return True
 
 
-def accept_task(home, staff, args, client, resolve, data):
+def accept_task(home, staff, args, client, resolve, data, *, source_roots=()):
+    """Accept own work; only Rooter may read explicitly registered Project originals."""
     if getattr(args, "cleanup_inputs", False) and not str(getattr(args, "preserved_ref", "") or "").strip():
         raise ValueError("收尾清理需要 --preserved-ref，先归位有价值原件")
     path, before, doc, task = task_snapshot(home, args.task)
@@ -157,13 +159,13 @@ def accept_task(home, staff, args, client, resolve, data):
             if evidence != {k: v for k, v in previous.items() if k != "versions"}:
                 raise ValueError("该房已按不同的依据验收")
             if "versions" in previous and acceptance_versions(
-                home, evidence, archived=previous["versions"]
+                home, evidence, archived=previous["versions"], source_roots=source_roots
             ) != previous["versions"]:
                 raise ValueError("此路径现有文件与已验收的内容版本不同")
         if team["accepted"] is None and team["plan"]["close_policy"] == "human_confirm":
             raise ValueError("此目标需先在 Human 入口完成同一项验收")
     if not accepted and (team is None or team["accepted"] is None):
-        check_goal_originals(home, staff, doc, task, evidence)
+        check_goal_originals(home, staff, doc, task, evidence, source_roots=source_roots)
     if not accepted:
         task.update(state="done", result=note, artifact_ref=args.artifact, waiting="")
         task["acceptance_refs"] = with_refs(task["acceptance_refs"], [args.basis, *carried.values()])
@@ -178,7 +180,7 @@ def accept_task(home, staff, args, client, resolve, data):
         if args.read_to is None:
             raise ValueError("专用房验收需要实际已读的 --read-to")
         check_registered_handoffs(team["plan"]["members"], args.room, resolve, carried)
-        receipt = record_owner_acceptance(data, args.room, team, evidence, home)
+        receipt = record_owner_acceptance(data, args.room, team, evidence, home, source_roots=source_roots)
         client.request("POST", team_path(args.room) + "/accept", {"receipt_id": receipt})
     if not accepted or current_updated:
         try:
@@ -228,7 +230,8 @@ def execute_team_actions(args, installation, identity, cat_client, text_arg):
     op = "accept" if args.command == "task" else args.plan_command
     if op == "receipt":
         if args.receipt_id.startswith("oa-"):
-            proof = read_owner_acceptance(data, args.receipt_id, resolve if args.verify else None)
+            proof = read_owner_acceptance(data, args.receipt_id, resolve if args.verify else None,
+                                          source_roots=_project_roots(installation, data) if args.verify else ())
         else:
             proof = read_action(data, args.receipt_id, require_approval=args.verify)
         if args.verify and proof["action"] == "accept-goal":
@@ -263,7 +266,8 @@ def execute_team_actions(args, installation, identity, cat_client, text_arg):
     home = resolve(args.home)
     staff = identity(args.home, installation_path=installation)["staff_number"] or args.home
     if op == "accept":
-        return accept_task(home, staff, args, client, resolve, data)
+        return accept_task(home, staff, args, client, resolve, data,
+                           source_roots=_project_roots(installation, data) if home["home_kind"] == "rooter" else ())
     if op == "role":
         role = {k: getattr(args, k) for k in ("duty", "arrangement", "deliverables")}
         return client.request(
