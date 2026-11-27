@@ -749,7 +749,14 @@ def execute_status(args, registry, installation_path):
     return result
 
 
-def _remind_via_native(
+def _remind_via_native(**kwargs):
+    from paos_mint import reminder_once
+    installation = kwargs.get('installation_path') or resolve_installation_path(None)
+    return reminder_once(installation, kwargs['agent_id'], 'mail:' + kwargs['message_id'],
+                         lambda: _remind_via_native_untracked(**kwargs))
+
+
+def _remind_via_native_untracked(
     *,
     root: Path,
     project: dict[str, Any],
@@ -3160,7 +3167,14 @@ def execute(
         _resolve_staff_number_recipients(args)
         _validate_resolved_identity_subject(args, registry, resolved_installation_path)
     if args.command == "cat":
-        return execute_cat(args, RestClient(args.url, service="CAT"), text_arg)
+        from paos_mint import cat_event
+        data = effective_data_root(load_installation_descriptor(resolved_installation_path))
+        return execute_cat(args, RestClient(args.url, service="CAT"), text_arg,
+                           checkpoint=lambda room, mid, name: cat_event(data, room, mid, name))
+
+    if args.command == 'mint':
+        from paos_mint import execute as execute_mint
+        return execute_mint(args, resolved_installation_path)
 
 
     if args.command == "install":
@@ -3346,6 +3360,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_team_parsers(sub)
     add_cleanup_parser(sub)
     add_cat_parser(sub)
+    from paos_mint import add_parser as add_mint_parser
+    add_mint_parser(sub)
 
     sub.add_parser("health", help="Check local installation (not Runtime availability)")
 

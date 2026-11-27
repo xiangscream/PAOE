@@ -61,8 +61,11 @@ def _ensure_task(*, doc: dict[str, Any], todo_path: Path, fingerprint: str,
             tasks.append(selected)
             created = True
     changed = source_ref not in (selected.get("source_refs") or [])
+    from paos_todo import arm_checkpoints
+    changed = arm_checkpoints(selected, 'claim') or changed
     if changed:
-        selected["source_refs"] = [*(selected.get("source_refs") or []), source_ref]
+        if source_ref not in selected.get('source_refs', []):
+            selected["source_refs"] = [*(selected.get("source_refs") or []), source_ref]
         text = render_todo(
             home_kind=doc["home_kind"], home_id=doc["home_id"],
             project_id=doc["project_id"], pinned=doc.get("pinned", ""),
@@ -127,12 +130,16 @@ def claim_mail(*, root: Path, project: dict[str, Any], agent_id: str,
         claimant_project_id=home["project_id"], task_ref=linked_task,
         action_ref=_source_ref(message_id), task_auto_created=created,
         claimant_aliases=recipient_aliases or set())
+    from paos_todo import checkpoint_schedule
+    doc, _ = _load_todo(todo_path)
+    schedule = checkpoint_schedule(next(t for t in doc['tasks'] if t['id'] == linked_task), 'claim')
     return {
         "schema": "paos-mail-claim/v1", "message_id": message_id,
         "home": home, "mail": read["mail"], "notice": claimed,
         "read": marked.get("notice", {}), "task_id": linked_task,
         "task_changed": task_changed, "task_auto_created": created,
         "claim_changed": claimed.get("claim_changed"), "quiet": True,
+        "checkpoint_schedule": schedule,
     }
 
 
@@ -268,12 +275,15 @@ def claim_rooter_mail(*, home: dict[str, Any], message_id: str,
         claimant_home_kind="rooter", claimant_home_id=str(home["home_id"]),
         claimant_project_id="", task_ref=linked_task,
         action_ref=_source_ref(message_id), task_auto_created=created)
+    from paos_todo import checkpoint_schedule
+    doc, _ = _load_todo(todo_path)
     return {
         "schema": "paos-mail-claim/v1", "message_id": message_id,
         "home": home, "notice": claimed, "read": marked.get("notice", {}),
         "task_id": linked_task, "task_changed": task_changed,
         "task_auto_created": created, "claim_changed": claimed.get("claim_changed"),
         "quiet": True,
+        "checkpoint_schedule": checkpoint_schedule(next(t for t in doc['tasks'] if t['id'] == linked_task), 'claim'),
     }
 
 

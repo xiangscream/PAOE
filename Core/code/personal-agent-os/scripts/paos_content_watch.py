@@ -127,13 +127,14 @@ def single_watcher(data):
 
 class ContentWatcher:
     def __init__(self, scope, *, subscription=DirectorySubscription, emit=lambda event: None,
-                 settle_seconds=0.3, rules=None):
+                 settle_seconds=0.3, rules=None, mint=None):
         self.scope, self.subscription, self.emit = scope, subscription, emit
         self.settle_seconds = settle_seconds
         self.streams, self.pending, self.retry_at = {}, {}, {}
         self.identities = {}
         self.next_health = 0.0
         self.rules = rules
+        self.mint = mint
         self.rules_due = None
         self.last_rules = None
         self.rules_ok = True
@@ -178,7 +179,10 @@ class ContentWatcher:
         self.identities[root] = identity
 
     def subscribe_rules(self, now):
-        extra = {directory for directory in self.rules.directories()
+        directories = self.rules.directories() if self.rules is not None else set()
+        if self.mint is not None:
+            directories = set(directories) | self.mint.directories()
+        extra = {directory for directory in directories
                  if not any(directory.is_relative_to(root) for root in self.content_roots)}
         existing = (self.streams.keys() | self.retry_at.keys()) - self.content_roots
         for root in existing - extra:
@@ -194,8 +198,15 @@ class ContentWatcher:
                 self.emit({"event": "disconnected", "root": str(root), "error": str(exc)})
 
     def refresh_rules(self, now):
-        self.rules.refresh()
+        if self.rules is not None:
+            self.rules.refresh()
+        if self.mint is not None:
+            self.mint.refresh()
         self.subscribe_rules(now)
+        if self.mint is not None:
+            # Re-read after subscriptions are queued; a save between the first
+            # snapshot and opening a directory handle must not be lost.
+            self.mint.dirty = True
 
     def sync_rules(self, now):
         result, retry = self.rules.reconcile(apply=True)
@@ -208,6 +219,8 @@ class ContentWatcher:
         self.last_rules = signature
 
     def reconcile_root_event(self, root, now):
+        if self.mint is not None:
+            self.mint.dirty = True
         if root in self.content_roots:
             self.pending[root] = now
         self.schedule_rules_for_root(root, now)
@@ -219,7 +232,7 @@ class ContentWatcher:
     def start(self):
         started = False
         try:
-            if not self.content_roots and self.rules is None:
+            if not self.content_roots and self.rules is None and self.mint is None:
                 raise ValueError("No registered content roots")
             now = time.monotonic()
             for root in self.scope.watch_roots:
@@ -228,7 +241,7 @@ class ContentWatcher:
                 except OSError as exc:
                     self.retry_at[root] = now + 1
                     self.emit({"event": "disconnected", "root": str(root), "error": str(exc)})
-            if self.rules is not None:
+            if self.rules is not None or self.mint is not None:
                 # Queue registry notifications before taking the first registry snapshot.
                 self.subscribe_rules(now)
                 self.refresh_rules(now)
@@ -236,6 +249,8 @@ class ContentWatcher:
             if self.rules is not None:
                 self.sync_rules(time.monotonic())
             self.reconcile(sorted(self.content_roots & self.streams.keys()))
+            if self.mint is not None:
+                self.mint.step()
             self.emit({"event": "ready"})
             started = True
         finally:
@@ -253,6 +268,8 @@ class ContentWatcher:
         for root, stream in list(self.streams.items()):
             try:
                 for path in stream.poll():
+                    if self.mint is not None:
+                        self.mint.changed(path)
                     if self.rules is not None and self.rules.accepts(path):
                         self.rules_due = now + self.settle_seconds
                     if root in self.content_roots and self.scope.allows(path):
@@ -285,6 +302,10 @@ class ContentWatcher:
         for path in due:
             del self.pending[path]
         self.reconcile(due)
+        if self.mint is not None:
+            if self.mint.dirty:
+                self.refresh_rules(now)
+            self.mint.step(monotonic=now)
 
     def close(self):
         errors = []

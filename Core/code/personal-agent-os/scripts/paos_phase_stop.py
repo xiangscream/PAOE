@@ -54,9 +54,7 @@ def _stop_decision(data, home, *, event, task_id, interrupted, reentry,
     focused = task_id or (active[0] if len(active) == 1 else "")
     # Current waiting belongs to its selected responsibility. Inflight is a
     # free-text description, never proof that the native executor is occupied.
-    available = [t for t in todo["tasks"] if t["state"] in {"doing", "todo"}
-                 and not t["waiting"] and not (t["id"] == focused and current["waiting"])]
-    available.sort(key=lambda t: (t["state"] != "doing", t["id"] != focused))
+    available = executable_tasks(todo, task_id)
     if not available:
         answer["reason"] = "waiting" if any(t["state"] in {"doing", "todo", "waiting"} for t in todo["tasks"]) else "no_current_task"
         return answer
@@ -76,3 +74,14 @@ def _stop_decision(data, home, *, event, task_id, interrupted, reentry,
     else:
         answer["reason"] = "already_observed"
     return answer
+
+
+def executable_tasks(todo, task_id=''):
+    """Shared business eligibility, independent of native Stop or busy state."""
+    current = todo['current']
+    active = [r.removeprefix('task:') for r in current['context_refs'] if r.startswith('task:')]
+    focused = task_id or (active[0] if len(active) == 1 else '')
+    available = [t for t in todo['tasks'] if t['state'] in {'doing', 'todo'}
+                 and not t['waiting'] and not (t['id'] == focused and current['waiting'])]
+    available.sort(key=lambda t: (t['state'] != 'doing', t['id'] != focused))
+    return available
