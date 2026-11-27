@@ -24,6 +24,8 @@
 
 每个收件人的 `mailbox/.deleted/<MID>.json` 留最小身份、收尾方式和去重事实，先写标记再删除 Mail、Notice 及侧记录；独立 Notice 使用 `notices/.deleted/`。这些记录不保存正文，也不是历史库。原 dispatch 不改写，同 MID 重投不会重建副本或再次提醒，同 MID 的其他收件人不受影响。
 
+清理后仍可用原 `attention source-status`（Rooter用 `attention rooter-source-status`）查询原来源。已删除时返回 `state=deleted` 和 `deletion` 中的收尾事实、保留入口，不把预期删除误报为Notice丢失，也不伪造一条仍存在的Notice。原未删除输入的读取格式保持。
+
 TODO、文件删除和 CAT 不是同一个事务。任务已完成但个别文件清理失败时，任务不回滚，回执给出 `cleanup_pending`、失败文件和同一 `input-cleanup` 补办入口。不得把部分成功说成全部完成。
 
 ## Stop 的本批边界
