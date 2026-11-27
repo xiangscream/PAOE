@@ -48,6 +48,8 @@ def _apply(doc, task, req, marker):
         return False
     if task["state"] in {"done", "cancelled"}:
         raise ValueError(f"任务 {task['id']} 已结束，不能写新阶段")
+    from paos_todo import arm_checkpoints
+    arm_checkpoints(task, 'stage')
     task.update(
         result=req["result"],
         artifact_ref=req["artifacts"][0],
@@ -100,6 +102,7 @@ def deliver(
             scoped_file(root, locator, source_roots=source_roots)
 
     def receipt(sources, replay):
+        from paos_todo import checkpoint_schedule
         return {
             "ok": True,
             "schema": "paoe-stage-delivery/v1",
@@ -109,6 +112,7 @@ def deliver(
             "replayed": replay,
             "result": result,
             "sources": sources,
+            "checkpoint_schedule": checkpoint_schedule(task_snapshot(home, task_id)[3], 'stage'),
         }
 
     with changes_db(data) as db:

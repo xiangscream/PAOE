@@ -77,6 +77,7 @@ def add_cat_parser(sub):
         post.add_argument("--message-id", required=True, help="Reuse this ID for idempotent replay")
     invite.add_argument("--to", dest="target_id", required=True, help="Employee to invite to this room")
     send.add_argument("--reply-to", help="Existing message ID in this room")
+    send.add_argument('--checkpoint', help='Exact checkpoint event name; requires --no-notify')
     send.add_argument("--invite", action="store_true", help="Invite the selected employees in the same message write")
     reminders = send.add_mutually_exclusive_group()
     reminders.add_argument("--mention", action="append", default=[], dest="target_ids",
@@ -132,7 +133,7 @@ def _room_summary(room: dict) -> dict:
     return summary
 
 
-def execute_cat(args, client, text_arg):
+def execute_cat(args, client, text_arg, *, checkpoint=None):
     command = args.cat_command
     if command == "list":
         query = "?" + urlencode({"home_id": args.home}) if args.home else ""
@@ -206,4 +207,16 @@ def execute_cat(args, client, text_arg):
             payload["invite"] = True
         if args.notify is not None:
             payload["notify"] = args.notify
-    return client.request("POST", path + "/messages", payload)
+    explicit = bool(getattr(args, 'checkpoint', False))
+    if explicit and (checkpoint is None or args.notify is not False or args.target_ids or args.invite):
+        raise ValueError('CAT检查点须使用--no-notify，不能叠加mention/invite/notify')
+    result = client.request("POST", path + "/messages", payload)
+    if explicit:
+        import sqlite3
+        try:
+            result['checkpoint'] = checkpoint(args.room_id, args.message_id, args.checkpoint)
+        except (OSError, ValueError, sqlite3.Error) as error:
+            return {**result, 'ok': False, 'cat_saved': True, 'message_id': args.message_id,
+                    'checkpoint': {'state': 'publication_failed', 'error': str(error),
+                                   'next_action': '沿原message-id正常重入补登记，不改ID新增消息'}}
+    return result

@@ -14,6 +14,7 @@ from paos_registry import RegistryProblem
 def add_watch_parser(content_subparsers):
     parser = content_subparsers.add_parser("watch", help="Observe local originals and sync System public rules")
     parser.add_argument("--rules-status", action="store_true", help="Check current rules alignment without writing or starting the observer")
+    parser.add_argument('--mint-paused-home', action='append', default=[], help='Explicit installation pause for a Home')
     return parser
 
 
@@ -36,7 +37,9 @@ def execute_watch(args, installation, *, stop=None, emit=None):
                 signals.append(signal.SIGBREAK)
             for sig in signals:
                 previous[sig] = signal.signal(sig, lambda *_: stop.set())
-        return ContentWatcher(ContentScope(installation), emit=emit, rules=rules).run(stop)
+        from paos_mint import MintRunner
+        mint = MintRunner(installation, paused=getattr(args, 'mint_paused_home', []), emit=emit)
+        return ContentWatcher(ContentScope(installation), emit=emit, rules=rules, mint=mint).run(stop)
     except WatcherAlreadyRunning as error:
         return {"ok": False, "error_code": "content_watch_already_running", "error": str(error)}
     finally:

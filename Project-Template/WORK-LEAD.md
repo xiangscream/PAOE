@@ -5,7 +5,7 @@ title: 项目级 Work 临时负责人指南
 description: 仅在被指定为某项 Work（含 0 类综合工作）的临时负责人时载入；普通成员无需加载本指南。
 tags: template, work, lead, alignment, closeout
 status: active
-version: 3
+version: 4
 ---
 
 # 项目 <project-id> · Work 临时负责人指南
@@ -40,6 +40,8 @@ Work 仍是软流程概念，不建注册库、编号或状态机；状态留在
 - **一次决定生效（F87）**：`open-plan`、`approve-roles`、`save-role`、`accept-goal`、`close-room` 均只需 Human 在原对话或可选界面明确表态一次，经 `team-plan review` / `confirm --decision` 直接记录并应用，不再叠加本机弹窗（参数合同见 System OPS 操作指南）。两次放行与最终验收各自独立，未作决定不得伪造，改版不可沿用旧批准。Hook 信任与系统权限弹窗不属 PAOE 业务节点。
 
 ## 3. 过程汇集与成员离席
+
+需要稍后回看或依赖同事交付再行动时，把准确时间／交付条件和来源留在相关成员本人的现有Task，由该成员登记铸币检查点；负责人不另建一份接续台账。普通即时工作按原计划连续推进，安排变更或暂停时同步调整相应检查点。完整操作从本人ENTRY所链的System Guide进入《铸币程序：显式检查点接续》（`Guide/mint-checkpoints.md`）。整体述职与Human验收仍按本指南。
 
 - **CAT 汇集本工作 Human 介入**：成员若在与 Human 直接对话中收到本工作介入，由本人判断范围后将相关原话、谁说的、何时及属于本工作哪部分带回本房 CAT（房内已有 Human 发言不重复转帖，Agent 转述不伪装 Human；不做全会话采集或程序审查门）。
 - **分阶段退出不扰人**：成员交清本段成果、经历与未完交接即可 `left` 离席（区分暂时 `offline` 与完成本段 `left`）。早期调研等已顺利交付且无待答问题者，不为收尾再唤醒写稿或点离席；必要时由负责人依据已交付事实更新席位。退出房间不丢失成果、原身份或后续再邀请的能力。

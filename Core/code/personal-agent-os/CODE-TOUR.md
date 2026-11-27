@@ -62,6 +62,15 @@ external Runtime, and a successful transport receipt is **not** task completion.
 
 ## Source modules by responsibility
 
+`paos_mint.py` is the replaceable business-checkpoint consumer. Task definitions
+stay in TODO; `paos_todo.arm_checkpoints` is called by normal claim, doing and
+stage entries only for explicit arrangements. `paos_phase_stop.executable_tasks`
+is the shared evaluator. The existing content observer hosts one consumer and
+receives registered TODO notifications without indexing Home contents. Explicit
+CAT signals use the existing content journal; `mint_runs` reserves native calls
+before submission and shares exact Mail source identities with normal reminders.
+No transport, business completion state, or per-Harness scheduler is added.
+
 | Module(s) | Why retained | Important boundary |
 | --- | --- | --- |
 | `paos.py`, `paos_orient.py` | CLI command dispatch and human-readable current entry | No parallel Project database |

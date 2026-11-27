@@ -42,8 +42,9 @@ TASK_FIELDS = {
     "source_refs": "Source refs",
     "acceptance_refs": "Acceptance refs",
     "notify_after": "Notify after",
+    "checkpoints": "Checkpoints",
 }
-_TASK_LIST_FIELDS = {"source_refs", "acceptance_refs", "notify_after"}
+_TASK_LIST_FIELDS = {"source_refs", "acceptance_refs", "notify_after", "checkpoints"}
 _TASK_HEADER = re.compile(r"^- \[([ /?x-])\] \*\*([A-Za-z0-9][A-Za-z0-9._-]*)\*\* · (.+)$")
 _CURRENT_LINE = re.compile(r"^- \*\*([^*]+):\*\*(?: (.*))?$")
 _TASK_LINE = re.compile(r"^  - \*\*([^*]+):\*\*(?: (.*))?$")
@@ -108,6 +109,29 @@ def normalize_task(task: dict[str, Any]) -> dict[str, Any]:
             "when": _scalar(item.get("when"), "notify_after.when", required=True),
             "source_ref": _scalar(item.get("source_ref", ""), "notify_after.source_ref"),
         })
+    checkpoints = task.get('checkpoints') or []
+    if not isinstance(checkpoints, list):
+        _bad('checkpoints 必须为对象列表。')
+    points = []
+    from datetime import datetime
+    for point in checkpoints:
+        if not isinstance(point, dict) or set(point) != {'id', 'on', 'at', 'source_ref', 'armed', 'cancelled'}:
+            _bad('检查点须含id/on/at/source_ref/armed/cancelled。')
+        ident_point = _scalar(point['id'], 'checkpoint.id', required=True)
+        entry = _scalar(point['on'], 'checkpoint.on', required=True)
+        if not _TASK_ID.fullmatch(ident_point) or entry not in {'manual', 'claim', 'doing', 'stage'}:
+            _bad('检查点ID或接入点无效。')
+        try:
+            due = datetime.fromisoformat(point['at'])
+            if due.tzinfo is None:
+                raise ValueError('timezone required')
+        except (TypeError, ValueError):
+            _bad('检查点at需要带时区的ISO日期时间。')
+        if type(point['armed']) is not bool or type(point['cancelled']) is not bool:
+            _bad('检查点armed/cancelled需要布尔值。')
+        points.append({**point, 'source_ref': _scalar(point['source_ref'], 'checkpoint.source_ref', required=True)})
+    if len({p['id'] for p in points}) != len(points):
+        _bad('同Task的检查点ID不能重复。')
     return {
         "schema": TASK_SCHEMA, "id": ident, "title": title, "state": state,
         "waiting": _scalar(task.get("waiting", ""), "task.waiting"),
@@ -116,6 +140,7 @@ def normalize_task(task: dict[str, Any]) -> dict[str, Any]:
         "source_refs": _refs(task.get("source_refs", []), "task.source_refs"),
         "acceptance_refs": _refs(task.get("acceptance_refs", []), "task.acceptance_refs"),
         "notify_after": normalized_notify,
+        "checkpoints": points,
     }
 
 
@@ -184,6 +209,10 @@ def render_todo(*, home_kind: str, home_id: str, project_id: str = "",
                         lines += [f"    - **To:** {notice['to']}", f"      - **When:** {notice['when']}"]
                         if notice["source_ref"]:
                             lines.append(f"      - **Source:** {notice['source_ref']}")
+            elif key == 'checkpoints':
+                if value:
+                    lines.append('  - **Checkpoints:**')
+                    lines += ['    - ' + json.dumps(p, ensure_ascii=False, separators=(',', ':')) for p in value]
             elif value:
                 lines.append(f"  - **{label}:** {value}")
         lines.append("")
@@ -305,6 +334,12 @@ def _parse_tasks(rows: list[str], first_line: int) -> list[dict[str, Any]]:
                     _bad("重复通知来源。", line=first_line+offset)
                 current_notice["source_ref"] = m.group(1).strip()
                 continue
+        if current_list == 'checkpoints' and line.startswith('    - '):
+            try:
+                task['checkpoints'].append(json.loads(line[6:]))
+            except json.JSONDecodeError:
+                _bad('检查点条目需要JSON对象。', line=first_line+offset)
+            continue
         if current_list in {"source_refs", "acceptance_refs"} and line.startswith("    - "):
             task[current_list].append(_scalar(line[6:], current_list, required=True, max_chars=1000))
             continue
@@ -424,10 +459,37 @@ def write_todo(path: Path, text: str, *, create_only: bool = False,
     Compare the caller's SHA-256 with the live file to detect a human edit
     made after reading. This is file-level optimistic concurrency, like CAS.
     """
-    parse_todo(text)
+    candidate = parse_todo(text)
     with todo_lock(path):
+        if Path(path).is_file():
+            previous = read_todo(Path(path))
+            old = {t['id']: t for t in previous['tasks']}
+            changed = False
+            for task in candidate['tasks']:
+                if task['state'] == 'doing' and old.get(task['id'], {}).get('state') != 'doing':
+                    changed |= arm_checkpoints(task, 'doing')
+            if changed:
+                text = render_todo(home_kind=candidate['home_kind'], home_id=candidate['home_id'],
+                    project_id=candidate['project_id'], pinned=candidate['pinned'],
+                    tasks=candidate['tasks'], **candidate['current'])
         _write_locked(Path(path), text.encode("utf-8"), create_only=create_only,
                       expected_fingerprint=expected_fingerprint)
+
+
+def arm_checkpoints(task, entry):
+    """Arm only the explicit arrangement for this natural business entry."""
+    changed = False
+    for point in task.get('checkpoints', []):
+        if point['on'] == entry and not point['armed'] and not point['cancelled']:
+            point['armed'] = True
+            changed = True
+    return changed
+
+
+def checkpoint_schedule(task, entry):
+    points = [p['id'] for p in task.get('checkpoints', []) if p['on'] == entry and not p['cancelled']]
+    return {'task_id': task['id'], 'entry': entry, 'state': 'arranged' if points else 'schedule_missing',
+            'checkpoint_ids': points}
 
 
 
