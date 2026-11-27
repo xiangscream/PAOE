@@ -142,8 +142,9 @@ class ContextReadTests(unittest.TestCase):
         from paos_phase_stop import on_stop
         stopped = on_stop(self.root / "Data", self.ref, staff="S001", event="repair-ends",
                           task_id=got["task_id"], interrupted=False, reentry=False, waiting_human=False)
-        self.assertEqual(stopped["action"], "stop")
-        self.assertEqual(stopped["reason"], "no_current_task")
+        self.assertEqual(stopped["action"], "continue")
+        self.assertIn(stopped["task_id"], {"T1", "T2"})
+        self.assertIn(stopped["task_id"], stopped["next_action"])
         update_todo_current(path, {"context_refs": ["task:T1"]})
         repaired = read_context(self.ref, staff_number="S001")
         self.assertTrue(repaired["ok"])

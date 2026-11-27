@@ -19,6 +19,7 @@
 | 场景 | 指南入口 | 核心内容 |
 | --- | --- | --- |
 | 成员间 Mail、Notice、CAT、Wake 通信实操 | [通信操作](guide-paos-cat-operations.md) | 持久邮件投递、通知处理生命周期与断点排查 |
+| 任务完成后的普通输入清理 | [输入收尾](input-cleanup.md) | 完成出口接清理、保留原话、删除后同 ID 不重投 |
 | 会话压缩、接班与在途输入接续 | [Runtime 接班](guide-runtime-handoff.md) | 压缩前状态固化、薄状态恢复与新旧会话平滑接力 |
 | Coordinator 总体安排、方向与跨组协调 | [Coordinator 工作循环](wf-coordinator-governance-cycle.md) | 优先级管理、阻碍拔除、依赖对齐与阶段收口 |
 | 跨机协作、两机采用与经历同步 | [跨机协作](guide-cross-machine-experience.md) | 跨机员工联系、资料同步维护与经历库刷新 |
