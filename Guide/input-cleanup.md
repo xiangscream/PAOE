@@ -32,4 +32,4 @@ TODO、文件删除和 CAT 不是同一个事务。任务已完成但个别文�
 
 `Current.inflight` 是在途说明，不作为全局停机信号；Current 的等待只影响对应任务，其他已授权、无等待的 TODO 可继续。只有最终 Stop 才将正在看的 CAT 席位记为 offline；续工不先离线。STOP 和人工中断仍优先。
 
-Codex 多次 Stop block 和同请求内事件粒度仍需真实 Desktop 实测，本批不据单测宣告支持，也不扩展各 Harness 的忙时队列。手工有限试验入口在 `Core/tests/manual/CODEX-STOP-PROBE.md`。
+Codex 多次 Stop block 和同请求内事件粒度仍需真实 Desktop 实测，本批不据单测宣告支持，也不扩展各 Harness 的忙时队列。有限试验的范围与正常配置步骤见[Desktop Stop 试验说明](../Core/tests/manual/CODEX-STOP-PROBE.md)。
