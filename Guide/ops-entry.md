@@ -5,7 +5,7 @@ title: 操作入口：按目的找命令
 description: 定位本人工作、已登记资源、同事与安装级 Rooter；使用现有文件和联系入口。
 tags: ops, operations, entry
 status: active
-version: 48
+version: 49
 ---
 
 # 操作入口
@@ -25,7 +25,7 @@ version: 48
 
 ## 常用 CLI 速查
 
-以下 PowerShell 命令已在 System 0.2.29 核对，0.2.30 沿用同一接口。先从本人 ENTRY 确认项目号、员工号与 CLI 前缀。下列变量以 REMO 为例，调用前换成本次实际值，各小节按需使用。
+以下速查沿当前System的正式联络与检查点入口。先从本人 ENTRY 确认项目号、员工号与 CLI 前缀。下列变量以 REMO 为例，调用前换成本次实际值，各小节按需使用。
 
 ~~~powershell
 $paos = Join-Path $env:USERPROFILE '.paos/bin/paos.cmd'
@@ -46,6 +46,17 @@ $targetProject = '3004'  # 接手人所在项目，查对方唤醒状态时用
 | 写回交付结果 | `& $paos mail result $project $me $mailId --result '已改稿并回读，原件见 Works/...' --artifact-ref $artifact`（Rooter 用 `mail rooter-result $mailId ...`） | `--result` 用单行、最多 500 字，需发件人直接打开原件时把路径写进结果；`--artifact-ref` 记入接件人 Task。本命令写回关联 Task 与 Notice 并收口原信，无需再跑 `attention handle`；不唤醒对方，需验收或接续时按下一节定向提醒。 |
 | 更新本人 Current | `& $paos attention todo-update $project $me --set 'next_action=核对原稿后交付链接'` | 写当前可执行的一步。Tasks/Pinned 的修改用 `attention todo-write --help` 查看正文与指纹参数。 |
 | 处理普通通知 | `& $paos attention handle $project $me $noticeId --resolution '已处理' --action-ref $artifact` | 用于不走 `mail result` 路径的普通通知收口；`$artifact` 填实际成果或记录路径，业务结果写回项目。 |
+
+### 铸币检查点接续
+
+需要按明确时间或交付条件接续时，读[铸币程序：显式检查点接续](mint-checkpoints.md)。先在本人已有Task登记准确安排与来源；普通即时任务直接推进，没有安排时如实保留下一步／等待。
+
+| 要做的事 | 命令 | 使用时机 |
+| --- | --- | --- |
+| 预先登记业务接入点 | `paos mint plan <本人Sxxx> --task <TaskID> --id <检查点ID> --on claim\|doing\|stage --at <带时区时间> --source-ref <原件>` | 在该次接手、进入doing或阶段交付前登记；`--on`只选一个值。 |
+| 直接预约到时回看 | `paos mint arm <本人Sxxx> --task <TaskID> --id <检查点ID> --at <带时区时间> --source-ref <原件>` | 已明确预约，直接激活该点。 |
+| 取消一个预约 | `paos mint cancel <本人Sxxx> --task <TaskID> --id <检查点ID>` | 改期先取消原点，再用新ID预约。 |
+| 暂停／恢复本人铸币接续 | `paos mint pause <本人Sxxx> --reason "暂停原因"`；`paos mint resume <本人Sxxx>` | 保留其他联系能力；resume不移除原STOP。 |
 
 ### 阶段来源、增量与主题关系
 
