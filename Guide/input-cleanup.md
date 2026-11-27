@@ -30,6 +30,10 @@ Rooter 用本人 `task accept rooter-001` 验收时，`--artifact` 和 `--basis`
 
 清理后仍可用原 `attention source-status`（Rooter用 `attention rooter-source-status`）查询原来源。已删除时返回 `state=deleted` 和 `deletion` 中的收尾事实、保留入口，不把预期删除误报为Notice丢失，也不伪造一条仍存在的Notice。原未删除输入的读取格式保持。
 
+工位迁址为S号后，同一已登记Home的历史收件身份仍沿原Notice与原read/handled记录核消费。正常读面、独立清理和Task默认清理使用同一登记定位；不改旧邮件/Notice身份来制造消费。删除记录属于当前合法Home，保存准确原Notice定位；其他Home的身份或目录中误放的他人输入不能因此获得清理授权。
+
+迁址前已归档的输入也按同一登记关系识别，返回 `archived_retained`，不改旧归档收件身份或历史文件。同一Task同时引用Mail及其原Notice时作为同一组保留，重入不重新删除或伪造消费。
+
 TODO、文件删除和 CAT 不是同一个事务。任务已完成但个别文件清理失败时，任务不回滚，回执给出 `cleanup_pending`、失败文件和同一 `input-cleanup` 补办入口。不得把部分成功说成全部完成。
 
 ## Stop 的本批边界

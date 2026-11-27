@@ -159,7 +159,7 @@ class InputCleanupTests(unittest.TestCase):
         notice_id = list_notices(path)["items"][0]["notice_id"]
         self.f.call("attention", "rooter-read", notice_id)
         self.f.call("attention", "rooter-handle", notice_id, "--resolution", "done", "--action-ref", "out.md")
-        ref = dict(home_kind="rooter", home_id="rooter-001", project_id="", home_path=str(path))
+        ref = dict(schema="paos-home-ref/v1", home_kind="rooter", home_id="rooter-001", project_id="", home_path=str(path))
         self.assertEqual(delete_input(ref, message_id="cleanup-rooter-001", preserved_ref="out.md")["state"], "deleted")
         self.assertEqual(self.f.call(*args)[1]["notices"]["external_routes"][0]["mail_state"], "deleted")
 

@@ -862,6 +862,33 @@ def update_home_todo_fields(
             "todo_path": str(path)}
 
 
+def _source_home_aliases(ref, installation_file=None):
+    """Only aliases that resolve to this same registered Home may locate old inputs."""
+    legacy_ids: list[str] = []
+    if str(ref["home_id"]).upper().startswith("S"):
+        try:
+            from paos_agent_numbers import NumbersProblem, resolve_numbers_path
+            numbers = load_numbers(resolve_numbers_path(
+                None, resolve_installation_path(installation_file)))
+        except NumbersProblem as numbers_problem:
+            raise AttentionServiceProblem(
+                "attention_agent_numbers_invalid",
+                f"员工号登记不可用，无法回查历史 Notice：{numbers_problem}",
+                {"home_id": ref["home_id"], "code": numbers_problem.code},
+            ) from numbers_problem
+        legacy_ids = sorted(
+            key for key, value in numbers.items()
+            if value.upper() == str(ref["home_id"]).upper()
+            and key != ref["home_id"])
+    verified = []
+    for alias in legacy_ids:
+        home = resolve_home_by_registry(alias, installation_file=installation_file)
+        if (home["home_kind"], home["home_id"], home["project_id"], Path(home["home_path"]).resolve()) == (
+                ref["home_kind"], ref["home_id"], ref["project_id"], Path(ref["home_path"]).resolve()):
+            verified.append(alias)
+    return verified
+
+
 def read_source_status(
     *,
     home_ref: dict[str, Any],
@@ -889,33 +916,20 @@ def read_source_status(
         from paos_input_cleanup import read_deleted
         deletion = ((read_deleted(path, "mail", source_ref) if source_kind == "mail" else None)
                     or read_deleted(path, "notice", notice_id_for(identity)))
-        if deletion:
+        def deleted_status(deletion):
             return {"schema": ATTENTION_SERVICE_SCHEMA, "home": ref,
                     "state": "deleted", "source_kind": source_kind, "source_ref": source_ref,
                     "deletion": {key: deletion.get(key) for key in (
                         "disposition", "preserved_ref", "deleted_at", "notice_missing",
                         "was_read", "was_handled", "decided_by", "decision_ref")}}
+        if deletion:
+            return deleted_status(deletion)
         try:
             item = read_notice(path, notice_id_for(identity))
         except NoticeProblem as problem:
             if problem.code != "notice_missing":
                 raise
-            legacy_ids: list[str] = []
-            if str(ref["home_id"]).upper().startswith("S"):
-                try:
-                    from paos_agent_numbers import NumbersProblem, resolve_numbers_path
-                    numbers = load_numbers(resolve_numbers_path(
-                        None, resolve_installation_path(installation_file)))
-                except NumbersProblem as numbers_problem:
-                    raise AttentionServiceProblem(
-                        "attention_agent_numbers_invalid",
-                        f"员工号登记不可用，无法回查历史 Notice：{numbers_problem}",
-                        {"home_id": ref["home_id"], "code": numbers_problem.code},
-                    ) from numbers_problem
-                legacy_ids = sorted(
-                    key for key, value in numbers.items()
-                    if value.upper() == str(ref["home_id"]).upper()
-                    and key != ref["home_id"])
+            legacy_ids = _source_home_aliases(ref, installation_file)
             for legacy_id in legacy_ids:
                 legacy_identity = input_identity(
                     home_kind=ref["home_kind"],
@@ -924,6 +938,9 @@ def read_source_status(
                     source_kind=source_kind,
                     source_ref=source_ref,
                 )
+                deletion = read_deleted(path, "notice", notice_id_for(legacy_identity))
+                if deletion:
+                    return deleted_status(deletion)
                 try:
                     item = read_notice(path, notice_id_for(legacy_identity))
                     break
