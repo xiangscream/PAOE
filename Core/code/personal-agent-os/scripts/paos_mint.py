@@ -80,7 +80,7 @@ def reminder_once(installation, home, source, submit):
     """Share one request identity with explicit Mail reminders, in both orders."""
     data = effective_data_root(load_installation_descriptor(installation))
     key = 'source:' + source
-    if not reserve(data, home, key):
+    if not reserve(data, home, key, request_id='explicit-reminder:' + source):
         return {'agent_id': home, 'state': 'already_reminded', 'accepted': False, 'retry': False}
     receipt = submit()
     finish(data, home, key, receipt)
@@ -252,21 +252,22 @@ class MintRunner:
             observed = (target, key, trigger)
             if not request_id and observed in self.observed:
                 continue
-            if not reserve(self.data, target, key, shared, trigger):
+
+            def record_without_submit(receipt):
+                # An automation pause/ineligible point is not a transport
+                # attempt and must not claim the shared explicit-contact slot.
+                if reserve(self.data, target, key, request_id=trigger):
+                    row = finish(self.data, target, key, receipt)
+                    rows.append(row)
+                    self.emit(row)
                 self.observed.add(observed)
-                continue
-            self.observed.add(observed)
+
             home = resolve_home_by_registry(target, installation_file=str(self.installation))
             targets[target] = home
             try:
                 fresh = home_todo(home)
             except (OSError, ValueError, TodoProblem) as error:
-                receipt = dict(accepted=False, state='home_unavailable', error=str(error))
-                row = finish(self.data, target, key, receipt)
-                if shared:
-                    finish(self.data, target, 'source:' + shared, receipt)
-                rows.append(row)
-                self.emit(row)
+                record_without_submit(dict(accepted=False, state='home_unavailable', error=str(error)))
                 continue
             available = executable_tasks(fresh)
             # A timer resumes an executable responsibility. A new explicit
@@ -283,12 +284,7 @@ class MintRunner:
                 try:
                     source_doc = home_todo(self.homes[owner])
                 except (OSError, ValueError, TodoProblem) as error:
-                    receipt = dict(accepted=False, state='source_unavailable', error=str(error))
-                    row = finish(self.data, target, key, receipt)
-                    if shared:
-                        finish(self.data, target, 'source:' + shared, receipt)
-                    rows.append(row)
-                    self.emit(row)
+                    record_without_submit(dict(accepted=False, state='source_unavailable', error=str(error)))
                     continue
                 live_source = next((t for t in source_doc['tasks'] if t['id'] == source_task), None)
                 cancelled = (live_source is None or item not in live_source['notify_after']
@@ -296,13 +292,13 @@ class MintRunner:
                              or (item['when'] == 'cat_checkpoint' and live_source['state'] in {'done', 'cancelled'}))
             paused = target in self.paused or (self.data / 'mint-paused' / target).is_file()
             if cancelled or paused or not eligible:
-                row = finish(self.data, target, key, dict(suppressed=True, accepted=False,
+                record_without_submit(dict(suppressed=True, accepted=False,
                     reason='cancelled' if cancelled else 'paused' if paused else 'no_executable_task'))
-                if shared:
-                    finish(self.data, target, 'source:' + shared, row['receipt'])
-                self.emit(row)
-                rows.append(row)
                 continue
+            if not reserve(self.data, target, key, shared, trigger):
+                self.observed.add(observed)
+                continue
+            self.observed.add(observed)
             groups.setdefault(target, []).append((key, source, shared))
         for target, points in groups.items():
             home = targets[target]
