@@ -358,6 +358,28 @@ class MintTests(unittest.TestCase):
         self.assertEqual(self.runner().step(self.now), [])
         self.assertEqual(self.wake.call_count, 2)
 
+    def test_stage_reference_reordering_is_not_a_new_transition(self):
+        self.point()
+        self.f.vault.joinpath('out.md').write_text('Actual result', encoding='utf-8')
+        for ident in ('FIRST', 'SECOND'):
+            deliver(self.f.data, self.home, task_id='RUN', operation=ident, artifacts=['out.md'],
+                intents=['out.md'], result='Delivered', next_action='Continue', waiting='', current=False)
+        self.wake.return_value = {'accepted': False}
+        runner = self.runner()
+        self.assertEqual(runner.step(self.now)[0]['status'], 'rejected')
+        doc = read_todo(self.path / 'TODO.md')
+        doc['tasks'][0]['source_refs'].reverse()
+        write_todo(self.path / 'TODO.md', render(doc))
+        runner.changed(self.path / 'TODO.md')
+        self.assertEqual(runner.step(self.now), [])
+        self.assertEqual(self.runner().step(self.now), [])
+        self.wake.assert_called_once()
+        deliver(self.f.data, self.home, task_id='RUN', operation='THIRD', artifacts=['out.md'],
+            intents=['out.md'], result='New delivery', next_action='Continue', waiting='', current=False)
+        runner.changed(self.path / 'TODO.md')
+        self.assertEqual(runner.step(self.now)[0]['status'], 'rejected')
+        self.assertEqual(self.wake.call_count, 2)
+
     def test_real_cycle_never_replays_submitted_or_unknown(self):
         for accepted in (True, None):
             with self.subTest(accepted=accepted):
