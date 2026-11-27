@@ -117,7 +117,7 @@ def finish_current(current, task, evidence):
     return True
 
 
-def accept_task(home, staff, args, client, resolve, data, *, source_roots=()):
+def accept_task(home, staff, args, client, resolve, data, *, source_roots=(), installation=None):
     """Accept own work; only Rooter may read explicitly registered Project originals."""
     path, before, doc, task = task_snapshot(home, args.task)
     if any(r.startswith(PLAN) for r in task["source_refs"]) and not args.room:
@@ -214,7 +214,7 @@ def accept_task(home, staff, args, client, resolve, data, *, source_roots=()):
     }
     from paos_input_cleanup import cleanup_completed_task
     result["cleanup"] = cleanup_completed_task(home, args.task,
-        getattr(args, "preserved_ref", None), source_roots=source_roots)
+        getattr(args, "preserved_ref", None), source_roots=source_roots, installation=installation)
     return result
 
 
@@ -265,7 +265,8 @@ def execute_team_actions(args, installation, identity, cat_client, text_arg):
     staff = identity(args.home, installation_path=installation)["staff_number"] or args.home
     if op == "accept":
         return accept_task(home, staff, args, client, resolve, data,
-                           source_roots=_project_roots(installation, data) if home["home_kind"] == "rooter" else ())
+                           source_roots=_project_roots(installation, data) if home["home_kind"] == "rooter" else (),
+                           installation=installation)
     if op == "role":
         role = {k: getattr(args, k) for k in ("duty", "arrangement", "deliverables")}
         return client.request(
