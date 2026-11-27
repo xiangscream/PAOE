@@ -96,6 +96,8 @@ class InputCleanupTests(unittest.TestCase):
         self.assertEqual(create_notice(**args)["state"], "deleted")
 
     def test_mail_result_closes_auto_task_and_cleans_in_one_existing_exit(self):
+        (self.f.vault / 'Works').mkdir(exist_ok=True)
+        (self.f.vault / 'Works/out.md').write_text('Preserved result', encoding='utf-8')
         self.send(done=False)
         claimed = self.f.call("mail", "claim", "3002", "3002-s002", "cleanup-test-001")[1]
         result = self.f.call("mail", "result", "3002", "3002-s002", "cleanup-test-001",

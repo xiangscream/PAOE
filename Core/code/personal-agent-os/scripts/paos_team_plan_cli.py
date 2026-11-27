@@ -55,8 +55,8 @@ def add_team_parsers(sub):
         help="Existing waiting responsibility as HOME/TASK=continuation",
     )
     accept.add_argument("--cat-url", default="http://127.0.0.1:8870")
-    accept.add_argument("--cleanup-inputs", action="store_true", help="Delete consumed short-lived inputs after acceptance")
-    accept.add_argument("--preserved-ref", help="Where valuable original content has been preserved")
+    accept.add_argument("--cleanup-inputs", action="store_true", help="Explicit synonym: completed inputs are evaluated for cleanup by default")
+    accept.add_argument("--preserved-ref", help="Explicit preservation locator; overrides the verified artifact used by default")
 
 
 def add_team_actions(group):
@@ -119,8 +119,6 @@ def finish_current(current, task, evidence):
 
 def accept_task(home, staff, args, client, resolve, data, *, source_roots=()):
     """Accept own work; only Rooter may read explicitly registered Project originals."""
-    if getattr(args, "cleanup_inputs", False) and not str(getattr(args, "preserved_ref", "") or "").strip():
-        raise ValueError("收尾清理需要 --preserved-ref，先归位有价值原件")
     path, before, doc, task = task_snapshot(home, args.task)
     if any(r.startswith(PLAN) for r in task["source_refs"]) and not args.room:
         raise ValueError("此计划需关联已有专用房后验收")
@@ -214,9 +212,9 @@ def accept_task(home, staff, args, client, resolve, data, *, source_roots=()):
         "room_closed": team is not None,
         "artifact": args.artifact,
     }
-    if getattr(args, "cleanup_inputs", False):
-        from paos_input_cleanup import cleanup_task
-        result["cleanup"] = cleanup_task(home, args.task, args.preserved_ref)
+    from paos_input_cleanup import cleanup_completed_task
+    result["cleanup"] = cleanup_completed_task(home, args.task,
+        getattr(args, "preserved_ref", None), source_roots=source_roots)
     return result
 
 

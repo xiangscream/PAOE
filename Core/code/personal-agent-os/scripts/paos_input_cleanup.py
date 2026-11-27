@@ -117,10 +117,10 @@ def delete_input(home, *, message_id="", notice_id="", disposition="consumed_del
             "replayed": replayed, "removed": removed}
 
 
-def cleanup_task(home, task_id, preserved_ref):
+def cleanup_task(home, task_id, preserved_ref="", *, source_roots=()):
     from paos_todo import read_todo, TodoProblem
     from paos_mail import MailProblem, read_mail_archive_home
-    from paos_notice import NoticeProblem, input_identity, notice_id_for, read_notice, handle_notice
+    from paos_notice import NoticeProblem, input_identity, notice_id_for, read_notice, handle_notice, notice_archive_files
     task = next((t for t in read_todo(Path(home["home_path"]) / "TODO.md")["tasks"] if t["id"] == task_id), None)
     if task is None:
         raise ValueError(f"收尾 Task 不存在：{task_id}")
@@ -128,6 +128,51 @@ def cleanup_task(home, task_id, preserved_ref):
         raise ValueError("任务尚未结束，不能收尾删除输入")
     results, deleted_notices = [], set()
     anchors = sorted(dict.fromkeys(task["source_refs"]), key=lambda value: not value.startswith("mail:"))
+    archived_notices = set()
+    active = []
+    for anchor in anchors:
+        kind, _, ref = anchor.partition(":")
+        if kind == "mail" and read_mail_archive_home(Path(home["home_path"]), home["home_id"], ref):
+            results.append({"source_ref": ref, "state": "archived_retained"})
+            archived_notices.add(notice_id_for(input_identity(home_kind=home["home_kind"], home_id=home["home_id"],
+                project_id=home.get("project_id", ""), source_kind="mail", source_ref=ref)))
+        elif kind in {"mail", "notice"} and not (kind == "notice" and ref in archived_notices):
+            active.append(anchor)
+    anchors = active
+    if not anchors:
+        return {"task_id": task_id, "items": results, "complete": True}
+    preserved_ref = str(preserved_ref or "").strip()
+    automatic = not preserved_ref
+    preserved_ref = preserved_ref or str(task.get("artifact_ref") or "").strip()
+    from paos_content import scoped_file
+    from paos_context import local_source
+    root = Path(home.get("project_root") or home["home_path"])
+    try:
+        if not preserved_ref:
+            raise ValueError("缺少保全入口：请先归位成果或必要原话")
+        preserved = (scoped_file(root, preserved_ref,
+                     source_roots=source_roots if home["home_kind"] == "rooter" else ())
+                     if automatic else local_source(root, preserved_ref))
+        for anchor in anchors:
+            kind, _, ref = anchor.partition(":")
+            if kind not in {"mail", "notice"}:
+                continue
+            notice = (notice_id_for(input_identity(home_kind=home["home_kind"], home_id=home["home_id"],
+                       project_id=home.get("project_id", ""), source_kind="mail", source_ref=ref))
+                       if kind == "mail" else ref)
+            base = Path(home["home_path"])
+            inputs = [base / "mailbox" / (ref + ".md"), base / "mailbox/.handled" / (ref + ".json"),
+                      *notice_archive_files(base, notice)]
+            if preserved_ref in {anchor, 'notice:' + notice} or preserved in {p.resolve() for p in inputs}:
+                raise ValueError("保全入口不能是待删输入自身")
+        if automatic:
+            with preserved.open("rb") as stream:
+                stream.read(1)
+    except (OSError, ValueError) as error:
+        return {"task_id": task_id, "complete": False, "items": results + [
+            {"source_ref": a.partition(":")[2], "state": "cleanup_pending", "error": str(error),
+             "retry": f"paos input-cleanup {home['home_id']} --task {task_id} --preserved-ref <可读保全原件>"}
+            for a in anchors if a.startswith(("mail:", "notice:"))]}
     for anchor in anchors:
         kind, _, ref = anchor.partition(":")
         if kind not in {"mail", "notice"}:
@@ -157,6 +202,24 @@ def cleanup_task(home, task_id, preserved_ref):
         results.append(result)
     return {"task_id": task_id, "items": results,
             "complete": all(r["state"] in {"deleted", "archived_retained"} for r in results)}
+
+
+def cleanup_completed_task(home, task_id, preserved_ref="", *, source_roots=(), installation=None):
+    """A committed business result survives a pending input cleanup."""
+    from paos_todo import TodoProblem
+    from paos_registry import RegistryProblem
+    from paos_installation import InstallationProblem
+    from paos_mail import MailProblem
+    from paos_notice import NoticeProblem
+    try:
+        if installation is not None and home["home_kind"] == "rooter" and not str(preserved_ref or '').strip():
+            from paos_phase_cli import _project_roots
+            from paos_installation import effective_data_root, load_installation_descriptor
+            source_roots = _project_roots(installation, effective_data_root(load_installation_descriptor(installation)))
+        return cleanup_task(home, task_id, preserved_ref, source_roots=source_roots)
+    except (OSError, ValueError, TodoProblem, RegistryProblem, InstallationProblem, MailProblem, NoticeProblem) as error:
+        return {"task_id": task_id, "complete": False, "state": "cleanup_pending", "error": str(error),
+                "retry": f"paos input-cleanup {home['home_id']} --task {task_id} --preserved-ref <可读保全原件>"}
 
 
 def add_cleanup_parser(sub):

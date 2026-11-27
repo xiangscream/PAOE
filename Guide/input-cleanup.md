@@ -4,11 +4,13 @@
 
 ## 在原完成入口一次交清
 
-- 自动新建的 Mail Task：`paos mail result <project> <self> <MID> --result "结果" --cleanup-inputs --preserved-ref <长期正文或已完成业务入口>`。
-- 已有普通 Task 或按原 Human 决定验收的整体事项：原 `paos task accept <self> --task <TaskID> --artifact <成果> --basis <依据> --remaining <剩余事项> --cleanup-inputs --preserved-ref <保留入口>`。原审批和 CAT 合同保持，不重复验收。
+- 自动新建的 Mail Task：`paos mail result <project> <self> <MID> --result "结果" --artifact-ref <成果>`。
+- 已有普通 Task 或按原 Human 决定验收的整体事项：原 `paos task accept <self> --task <TaskID> --artifact <成果> --basis <依据> --remaining <剩余事项>`。原审批和 CAT 合同保持，不重复验收。
 - 安装级 Rooter 复用 `mail rooter-result` 的相同清理参数。
 
-`--preserved-ref` 是本项成果、已归位原话或无需长期保存内容的业务定位，由执行者在收尾时说明。不能把唯一原话换成摘要，也不能把将被删除的 Mail/Notice 自己当成保留入口。无需为普通旧回执再造意图稿或逐封审批。
+两条入口先提交业务完成，再默认评估输入清理，`--cleanup-inputs` 保留为同义显式参数。未传 `--preserved-ref` 时，使用 Task 的 `artifact_ref`；`task accept` 使用本次已核成果。自动成果须为本项目内可读文件，Rooter另可读已登记Project。缺失或不可读时业务照常完成、输入保留，回执说明原因及正式 `input-cleanup` 补办命令，无需重做验收。
+
+调用方正常结项表示已将必要成果与独有Human原话归位。若原话在另一份EXM/System正文、云端权威原件或其他已完成业务入口，显式传 `--preserved-ref <实际定位>`；此参数最高优先，保留原有业务定位合同，由结项者承担归位判断，不套用自动成果的项目范围或猜测正文价值。不能把唯一原话换成摘要，也不能把将被删除的 Mail/Notice 自己当成保留入口。无需为普通旧回执再造意图稿或逐封审批。
 
 `mail result` 挂靠已有大 Task 时只结束本次输入，不会结束整个大 Task；此时返回 `task_unfinished`，不清理其输入。`task accept` 完成的任务可办结它本人已 claim、实读的关联 Notice；其他未读输入不会因关联到它就假装已读。
 
