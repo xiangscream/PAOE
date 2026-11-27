@@ -295,6 +295,11 @@ def _deliver_external_mail_copy(
     recipient_id = str(home_ref["home_id"])
     target_mailbox = home_path / "mailbox"
     mail_path = target_mailbox / f"{message_id}.md"
+    from paos_input_cleanup import read_deleted
+    if read_deleted(home_path, "mail", message_id):
+        return {"recipient": recipient_id, "home_kind": str(home_ref["home_kind"]),
+                "project_id": str(home_ref.get("project_id") or ""), "mail_path": str(mail_path),
+                "mail_state": "deleted", "notice_id": "", "notice_state": "", "created": False}
     archived = read_mail_archive_home(home_path, recipient_id, message_id)
     if archived is not None:
         return {

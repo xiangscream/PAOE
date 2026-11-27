@@ -731,6 +731,11 @@ def create_notice(
     summary = _required_single_line(summary, label="summary", max_chars=500)
     request_id = _single_line(activation_request_id, label="activation_request_id", max_chars=160)
     notice_id = notice_id_for(identity)
+    from paos_input_cleanup import read_deleted
+    if (read_deleted(home_path, "notice", notice_id)
+            or (source_kind == "mail" and read_deleted(home_path, "mail", source_ref))):
+        return {"schema": NOTICE_SCHEMA, **identity, "notice_id": notice_id,
+                "state": "deleted", "created": False, "read": False, "claimed": False}
     path = notice_path(home_path, notice_id)
     record = {
         "schema": NOTICE_SCHEMA, "notice_id": notice_id, **identity,
@@ -1300,6 +1305,9 @@ def list_notices(home_path: Path, blobs: dict[str, bytes] | None = None) -> dict
     items: list[dict[str, Any]] = []
     for path in sorted(directory.glob("notice-*.md")):
         notice_id = path.stem
+        from paos_input_cleanup import read_deleted
+        if read_deleted(home_path, "notice", notice_id):
+            continue
         try:
             text = (
                 blobs[path.relative_to(directory).as_posix()].decode("utf-8")
@@ -1310,9 +1318,12 @@ def list_notices(home_path: Path, blobs: dict[str, bytes] | None = None) -> dict
             raise NoticeProblem(
                 "notice_unreadable", f"Notice 无法读取：{path}", {"path": str(path)}
             ) from exc
+        parsed = _parse_notice_text(text, path=path)
+        if parsed["source_kind"] == "mail" and read_deleted(home_path, "mail", parsed["source_ref"]):
+            continue
         items.append(
             _project_notice(
-                _parse_notice_text(text, path=path),
+                parsed,
                 index["handled"].get(notice_id),
                 index["read"].get(notice_id),
                 index["activation"].get(notice_id, []),

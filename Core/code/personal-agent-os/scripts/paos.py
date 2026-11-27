@@ -136,6 +136,7 @@ from paos_cat_cli import add_cat_parser, execute_cat  # noqa: E402
 from paos_phase_cli import add_phase_parsers, execute_phase  # noqa: E402
 from paos_data_cli import add_data_parsers, execute_data
 from paos_team_plan_cli import add_team_parsers, execute_team_actions
+from paos_input_cleanup import add_cleanup_parser, execute_cleanup
 from paos_todo import TodoProblem
 from sqlite3 import Error as SqliteError
 PEERS_SCHEMA = "paos-peers/v2"
@@ -2709,12 +2710,23 @@ def _canonical_identity_and_aliases(
     return canonical, aliases
 
 
+def _cleanup_mail_result(result, args):
+    if getattr(args, "cleanup_inputs", False):
+        from paos_input_cleanup import cleanup_task
+        result["cleanup"] = (cleanup_task(result["home"], result["task_id"], args.preserved_ref)
+                             if result.get("task_state") == "done"
+                             else {"complete": False, "state": "task_unfinished", "task_id": result["task_id"]})
+    return result
+
+
 def execute_mail(
     args: argparse.Namespace,
     registry: ProjectRegistry,
     installation_path: Path | None = None,
 ) -> dict[str, Any]:
     """V1.3 Mail UX backed by immutable Mail + unified Notice handling."""
+    if getattr(args, "cleanup_inputs", False) and not str(getattr(args, "preserved_ref", "") or "").strip():
+        raise ValueError("收尾清理需要 --preserved-ref，先归位有价值原件")
     original_agent_id = str(getattr(args, "agent_id", "") or "").strip()
     agent_aliases = {original_agent_id}
     if original_agent_id:
@@ -2729,11 +2741,12 @@ def execute_mail(
                 home=home, message_id=str(args.message_id),
                 task_id=str(getattr(args, "task", "") or ""),
                 title=str(getattr(args, "title", "") or ""))}
-        return {"ok": True, **result_rooter_mail(
+        result = {"ok": True, **result_rooter_mail(
             home=home, message_id=str(args.message_id),
             result=text_arg(args.result, "mail result", required=True),
             task_id=str(getattr(args, "task", "") or ""),
             artifact_ref=str(getattr(args, "artifact_ref", "") or ""))}
+        return _cleanup_mail_result(result, args)
     project = registry.read(args.project_id)
     root_raw = str(
         getattr(args, "root", None)
@@ -2759,7 +2772,7 @@ def execute_mail(
                 ),
             }
         if args.mail_command == "result":
-            return {
+            result = {
                 "ok": True,
                 **result_mail(
                     root=root, project=project, agent_id=str(args.agent_id),
@@ -2770,6 +2783,7 @@ def execute_mail(
                     recipient_aliases=agent_aliases,
                 ),
             }
+            return _cleanup_mail_result(result, args)
         if args.mail_command == "send":
             if str(args.sender_kind or "human") == "agent" and args.sender_id:
                 args.sender_id = _canonical_identity_and_aliases(
@@ -3222,6 +3236,8 @@ def execute(
         return execute_phase(args, resolved_installation_path, _resolve_agent_identity, RestClient)
     if args.command in {"team-plan", "task"}:
         return execute_team_actions(args, resolved_installation_path, _resolve_agent_identity, RestClient,text_arg)
+    if args.command == "input-cleanup":
+        return execute_cleanup(args, resolved_installation_path)
 
     if args.command == "status":
         return execute_status(args, registry, resolved_installation_path)
@@ -3330,6 +3346,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_phase_parsers(sub)
     add_data_parsers(sub)
     add_team_parsers(sub)
+    add_cleanup_parser(sub)
     add_cat_parser(sub)
 
     sub.add_parser("health", help="Check local installation (not Runtime availability)")
@@ -3953,6 +3970,10 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("--result", required=True, help="One line up to 500 characters (literal, @FILE or -)")
     x.add_argument("--task", help="Rooter Task ID; omit to use the linked Task")
     x.add_argument("--artifact-ref", help="Result artifact path or durable ref")
+
+    for command in (mails.choices["result"], mails.choices["rooter-result"]):
+        command.add_argument("--cleanup-inputs", action="store_true")
+        command.add_argument("--preserved-ref", help="Where valuable original content has been preserved")
 
     x = mails.add_parser("reply", help="Reply to an Agent Mail in this Agent's inbox")
     x.add_argument("project_id")

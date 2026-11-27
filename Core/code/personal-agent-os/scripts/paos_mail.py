@@ -12,6 +12,7 @@ import json
 import os
 import re
 import uuid
+from paos_input_cleanup import read_deleted
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -621,6 +622,9 @@ def send_mail(
     for recipient_id in frozen_recipients:
         mailbox = root / "Workstations" / recipient_id / "mailbox"
         destination = _mail_path(root, recipient_id, message_id)
+        if read_deleted(destination.parent.parent, "mail", message_id):
+            deliveries.append({"recipient_agent_id": recipient_id, "state": "deleted", "path": str(destination)})
+            continue
         if not mailbox.is_dir():
             deliveries.append(
                 {
@@ -765,6 +769,9 @@ def dispatch_status(
         expected_sha = str(
             (expected_files.get(str(recipient_id)) or {}).get("sha256") or ""
         )
+        if read_deleted(path.parent.parent, "mail", message_id):
+            states.append({"recipient_agent_id": str(recipient_id), "state": "deleted", "path": str(path)})
+            continue
         if not path.is_file():
             archived = read_mail_archive_home(
                 path.parent.parent, str(recipient_id), message_id
@@ -850,6 +857,8 @@ def list_mail(root: Path, agent_id: str) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     unhandled_count = 0
     for path in sorted(mailbox.glob("*.md"), reverse=True):
+        if read_deleted(mailbox.parent, "mail", path.stem):
+            continue
         try:
             meta = parse_mail_frontmatter(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError) as exc:

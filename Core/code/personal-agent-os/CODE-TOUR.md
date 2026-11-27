@@ -75,6 +75,7 @@ external Runtime, and a successful transport receipt is **not** task completion.
 | `paos_relations.py` | Read named topic relations and derive bounded neighbors/backlinks from Markdown | Explanations and source attribution remain the author's text; no independent graph store |
 | `paos_exm_originals.py`, `paos_exm_publish.py` | Import explicitly selected native Human originals and commit cursors after publication | Unknown authors/cropped text stay gaps; source revisions and human edits survive restart |
 | `paos_mail.py`, `paos_notice.py` | Immutable Mail and durable Notice | Input handled != task finished |
+| `paos_input_cleanup.py` | Clean short-lived recipient inputs after task completion | Preserve business originals first; recipient tombstones suppress redelivery; unfinished task dependencies remain |
 | `paos_attention_service.py`, `paos_agent_activation.py` | Compose Home, Mail, Notice and explicit activation | Do not invent an execution-state database |
 | `paos_library.py`, `paos_guide.py` | Discover independent Workflow/Skill/Tool and support Guide diffs | Does not own the method documents |
 | `paos_agents_common.py` | Verify/distribute marked AGENTS and WORK-LEAD regions | Keep project-specific text verbatim; explicit targets only |

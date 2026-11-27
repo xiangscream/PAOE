@@ -1,0 +1,183 @@
+"""Delete short-lived recipient inputs after preserving their durable value.
+
+The per-recipient tombstone is written before removal. It carries identity and
+disposition, not message content; same-ID delivery must consult it even when a
+previous deletion stopped halfway through.
+"""
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+SCHEMA = "paoe-input-deleted/v1"
+
+
+def deletion_path(home, kind, ref):
+    if kind not in {"mail", "notice"} or not ref or Path(ref).name != ref or any(c in ref for c in '/\\:'):
+        raise ValueError("删除输入需要准确的 Mail 或 Notice ID")
+    return Path(home) / ("mailbox" if kind == "mail" else "notices") / ".deleted" / (ref + ".json")
+
+
+def read_deleted(home, kind, ref, home_id=None):
+    # These existing archive locators are not message IDs. Their Notice still
+    # has its own identity; do not reinterpret a historical locator as a file.
+    if kind == "mail" and ref.startswith(("legacy-mail-file:", "rooter-mail-file:")):
+        return None
+    path = deletion_path(home, kind, ref)
+    if not path.exists():
+        return None
+    record = json.loads(path.read_text(encoding="utf-8"))
+    if (not isinstance(record, dict) or record.get("schema") != SCHEMA
+            or record.get("source_kind") != kind or record.get("source_ref") != ref
+            or not record.get("home_id") or (home_id is not None and record["home_id"] != home_id)):
+        raise ValueError(f"输入删除标记无效：{path}")
+    return record
+
+
+def delete_input(home, *, message_id="", notice_id="", disposition="consumed_deleted",
+                 preserved_ref="", decision_ref="", decided_by=""):
+    from paos_mail import _atomic_create, parse_mail_frontmatter, read_mail_archive_home
+    from paos_notice import input_identity, notice_id_for, read_notice, notice_archive_files
+    from paos_todo import read_todo
+
+    if bool(message_id) == bool(notice_id):
+        raise ValueError("必须且只能指定一个 Mail 或 Notice")
+    if disposition not in {"consumed_deleted", "withdrawn", "superseded"}:
+        raise ValueError("未知的输入收尾方式")
+    if not preserved_ref.strip():
+        raise ValueError("请先归位长期内容，提供保留原件或已完成业务的 --preserved-ref")
+    if disposition != "consumed_deleted" and (not decision_ref.strip() or not decided_by.strip()):
+        raise ValueError("撤回或替代须提供原 Owner/Human 的决定者和原决定")
+    base = Path(home["home_path"])
+    kind, ref = ("mail", message_id) if message_id else ("notice", notice_id)
+    marker = deletion_path(base, kind, ref)
+    existing = read_deleted(base, kind, ref, home["home_id"])
+    replayed = existing is not None
+    if kind == "mail" and read_mail_archive_home(base, home["home_id"], ref):
+        return {"source_ref": ref, "state": "archived_retained"}
+    if existing:
+        notice_id = existing["notice_id"]
+    elif kind == "mail":
+        notice_id = notice_id_for(input_identity(
+            home_kind=home["home_kind"], home_id=home["home_id"],
+            project_id=home.get("project_id", ""), source_kind="mail", source_ref=ref))
+
+    anchors = {f"{kind}:{ref}", "notice:" + notice_id}
+    todo = read_todo(base / "TODO.md")
+    dependents = [t["id"] for t in todo["tasks"] if t["state"] not in {"done", "cancelled"}
+                  and anchors.intersection(t["source_refs"])]
+    if dependents:
+        return {"source_ref": ref, "state": "active_dependency", "tasks": dependents}
+
+    if existing is None:
+        notice = read_notice(base, notice_id)
+        if kind == "notice" and notice["source_kind"] == "mail":
+            raise ValueError("Mail Notice 请用 --message-id 成组清理")
+        if disposition == "consumed_deleted" and (not notice["read"] or notice["state"] != "handled"):
+            raise ValueError("普通输入须先实际消费并办结；撤回/替代不能冒充消费")
+        files = notice_archive_files(base, notice_id)
+        sender = {}
+        if kind == "mail":
+            mail = base / "mailbox" / (ref + ".md")
+            meta = parse_mail_frontmatter(mail.read_text(encoding="utf-8"))
+            if meta.get("message_id") != ref or meta.get("recipient_agent_id") != home["home_id"]:
+                raise ValueError("待清理 Mail 与收件人身份不一致")
+            sender = {k: meta.get(k, "") for k in ("sender_kind", "sender_id")}
+            files.append(mail)
+            handled = base / "mailbox" / ".handled" / (ref + ".json")
+            if handled.exists():
+                files.append(handled)
+        record = {"schema": SCHEMA, "home_id": home["home_id"],
+                  "source_kind": kind, "source_ref": ref, "notice_id": notice_id,
+                  "disposition": disposition, "was_read": bool(notice["read"]),
+                  "was_handled": notice["state"] == "handled", **sender,
+                  "executed_by": home["home_id"], "decided_by": decided_by,
+                  "decision_ref": decision_ref, "preserved_ref": preserved_ref,
+                  "deleted_at": datetime.now(timezone.utc).isoformat(),
+                  "files": [p.relative_to(base).as_posix() for p in files]}
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_create(marker, json.dumps(record, ensure_ascii=False, indent=2) + "\n")
+        existing = read_deleted(base, kind, ref, home["home_id"])
+    removed = []
+    for name in existing["files"]:
+        path = base / name
+        if not path.resolve().is_relative_to(base.resolve()):
+            raise ValueError(f"删除标记含工位外路径：{name}")
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as error:
+            return {"source_ref": ref, "state": "cleanup_pending", "removed": removed,
+                    "failed": name, "error": str(error), "retry": "使用相同输入再次执行 input-cleanup"}
+        removed.append(name)
+    return {"source_ref": ref, "notice_id": notice_id, "state": "deleted", "disposition": existing["disposition"],
+            "replayed": replayed, "removed": removed}
+
+
+def cleanup_task(home, task_id, preserved_ref):
+    from paos_todo import read_todo, TodoProblem
+    from paos_mail import MailProblem, read_mail_archive_home
+    from paos_notice import NoticeProblem, input_identity, notice_id_for, read_notice, handle_notice
+    task = next((t for t in read_todo(Path(home["home_path"]) / "TODO.md")["tasks"] if t["id"] == task_id), None)
+    if task is None:
+        raise ValueError(f"收尾 Task 不存在：{task_id}")
+    if task["state"] not in {"done", "cancelled"}:
+        raise ValueError("任务尚未结束，不能收尾删除输入")
+    results, deleted_notices = [], set()
+    anchors = sorted(dict.fromkeys(task["source_refs"]), key=lambda value: not value.startswith("mail:"))
+    for anchor in anchors:
+        kind, _, ref = anchor.partition(":")
+        if kind not in {"mail", "notice"}:
+            continue
+        if kind == "notice" and ref in deleted_notices:
+            continue
+        try:
+            if kind == "mail" and read_mail_archive_home(Path(home["home_path"]), home["home_id"], ref):
+                results.append({"source_ref": ref, "state": "archived_retained"})
+                continue
+            # An accepted Task can finish its own claimed/read input. It cannot
+            # manufacture consumption of other inputs merely linked to it.
+            notice_id = (notice_id_for(input_identity(home_kind=home["home_kind"], home_id=home["home_id"],
+                         project_id=home.get("project_id", ""), source_kind="mail", source_ref=ref))
+                         if kind == "mail" else ref)
+            if not read_deleted(home["home_path"], kind, ref):
+                notice = read_notice(Path(home["home_path"]), notice_id)
+                if notice["read"] and notice.get("claim_task_ref") == task_id and notice["state"] != "handled":
+                    handle_notice(home_path=Path(home["home_path"]), notice_id=notice_id,
+                                  resolution=f"Task {task_id} 已完成，结果见本人 TODO", action_ref=task_id)
+            result = delete_input(home, message_id=ref if kind == "mail" else "",
+                                  notice_id=ref if kind == "notice" else "", preserved_ref=preserved_ref)
+            if result["state"] == "deleted":
+                deleted_notices.add(result["notice_id"])
+        except (OSError, ValueError, NoticeProblem, MailProblem, TodoProblem) as error:
+            result = {"source_ref": ref, "state": "cleanup_pending", "error": str(error)}
+        results.append(result)
+    return {"task_id": task_id, "items": results,
+            "complete": all(r["state"] in {"deleted", "archived_retained"} for r in results)}
+
+
+def add_cleanup_parser(sub):
+    cmd = sub.add_parser("input-cleanup", help="Delete short-lived recipient inputs; preserve deduplication")
+    cmd.add_argument("home")
+    target = cmd.add_mutually_exclusive_group(required=True)
+    target.add_argument("--task")
+    target.add_argument("--message-id")
+    target.add_argument("--notice-id")
+    cmd.add_argument("--preserved-ref", required=True, help="Durable content or completed business reference")
+    cmd.add_argument("--disposition", choices=["consumed_deleted", "withdrawn", "superseded"], default="consumed_deleted")
+    cmd.add_argument("--decision-ref", default="")
+    cmd.add_argument("--decided-by", default="")
+
+
+def execute_cleanup(args, installation):
+    from paos_attention_service import resolve_home_by_registry
+    home = resolve_home_by_registry(args.home, installation_file=str(installation))
+    if args.task:
+        if args.disposition != "consumed_deleted":
+            raise ValueError("撤回/替代只接受原决定明确指向的单条输入")
+        result = cleanup_task(home, args.task, args.preserved_ref)
+    else:
+        result = delete_input(home, message_id=args.message_id or "", notice_id=args.notice_id or "",
+                              disposition=args.disposition, preserved_ref=args.preserved_ref,
+                              decision_ref=args.decision_ref, decided_by=args.decided_by)
+    complete = result.get("complete", result.get("state") in {"deleted", "archived_retained"})
+    return {"ok": complete, "schema": "paoe-input-cleanup/v1", **result}
