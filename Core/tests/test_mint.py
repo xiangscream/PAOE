@@ -393,6 +393,69 @@ MintRunner(Path(sys.argv[2]), wake=wake).step(datetime(2030,1,1,tzinfo=timezone.
         self.assertIn('EXACT-MESSAGE-ID', self.wake.call_args.args[2])
         self.assertIn('EVENT', self.wake.call_args.args[2])
 
+    def test_contact_paused_mint_keeps_original_wrapper_available_after_process_restart(self):
+        self.notification('task_done', 'mail:PAUSED-DELIVERY')
+        self.f.send('PAUSED-DELIVERY')
+        self.f.call('mint', 'pause', self.ident, '--reason', 'Pause automation only')
+        self.assertEqual(self.runner().step(self.now)[0]['status'], 'suppressed')
+        calls = self.f.root / 'explicit-native-calls.txt'
+        program = '''
+import sys,json
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import paos
+from paos_registry import ProjectRegistry
+def submit(*args, **kwargs):
+    with Path(sys.argv[3]).open('a', encoding='utf-8') as stream:
+        stream.write('submitted\\n')
+    return {'accepted':True}
+paos._inject_from_contact_store=submit
+installation=Path(sys.argv[2])
+project=ProjectRegistry(installation).read('3002')
+print(json.dumps(paos._remind_via_native(root=Path(project['root_path']), project=project,
+    agent_id='3002-s002', message_id='PAUSED-DELIVERY', sender_id='3002-s001',
+    subject='Actual explicit input', installation_path=installation)))
+'''
+        scripts = Path(__file__).resolve().parents[1] / 'code/personal-agent-os/scripts'
+        for n in (1, 2):
+            result = subprocess.run([sys.executable, '-B', '-X', 'utf8', '-c', program, str(scripts),
+                str(self.f.install), str(calls)], capture_output=True, text=True, encoding='utf-8', timeout=20)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)['accepted'], n == 1)
+        self.assertEqual(len(calls.read_text(encoding='utf-8').splitlines()), 1)
+        self.f.call('mint', 'resume', self.ident)
+        self.assertEqual(self.runner().step(self.now, request_id='AFTER-RESUME'), [])
+        self.wake.assert_not_called()
+
+    def test_contact_explicit_first_keeps_source_acceptance_when_mint_is_paused(self):
+        self.notification('task_done', 'mail:EXPLICIT-FIRST')
+        submit = Mock(return_value={'accepted': True})
+        reminder_once(self.f.install, self.ident, 'mail:EXPLICIT-FIRST', submit)
+        result = self.runner(paused=[self.ident]).step(self.now)
+        self.assertEqual(result[0]['status'], 'suppressed')
+        self.assertEqual(self.runner().step(self.now, request_id='RESUME'), [])
+        submit.assert_called_once()
+        self.wake.assert_not_called()
+
+    def test_contact_explicit_request_can_follow_known_mint_rejection_once(self):
+        self.notification('task_done', 'mail:KNOWN-REJECTED')
+        self.wake.return_value = {'accepted': False, 'state': 'native_busy'}
+        self.runner().step(self.now)
+        submit = Mock(return_value={'accepted': True})
+        result = reminder_once(self.f.install, self.ident, 'mail:KNOWN-REJECTED', submit)
+        self.assertTrue(result['accepted'])
+        reminder_once(self.f.install, self.ident, 'mail:KNOWN-REJECTED', submit)
+        submit.assert_called_once()
+
+    def test_contact_unknown_mint_submission_still_blocks_explicit_duplicate(self):
+        self.notification('task_done', 'mail:UNKNOWN-SOURCE')
+        self.wake.return_value = {'accepted': None}
+        self.runner().step(self.now)
+        submit = Mock(return_value={'accepted': True})
+        result = reminder_once(self.f.install, self.ident, 'mail:UNKNOWN-SOURCE', submit)
+        self.assertFalse(result['accepted'])
+        submit.assert_not_called()
+
 
 @unittest.skipUnless(os.name == 'nt', 'Actual Windows observer subscriptions')
 class MintObserverTests(unittest.TestCase):
