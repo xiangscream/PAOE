@@ -79,6 +79,14 @@ class DefaultCompletionTests(unittest.TestCase):
         self.assertTrue(self.f.call(*args)[1]['replayed'])
         self.assertEqual(self.task(task)['source_refs'], refs)
 
+    def test_completed_deletion_reentry_does_not_require_moved_artifact(self):
+        task = self.claim()
+        self.assertTrue(self.finish('--artifact-ref', 'out.md')['cleanup']['complete'])
+        self.artifact.rename(self.f.vault / 'moved-result.md')
+        result = cleanup_task(self.fixture.ref, task)
+        self.assertTrue(result['complete'])
+        self.assertTrue(all(item.get('replayed') for item in result['items']))
+
     def test_unreadable_automatic_artifact_does_not_rollback_mail_result(self):
         task = self.claim()
         original = Path.open
@@ -172,6 +180,7 @@ class DefaultCompletionTests(unittest.TestCase):
             result = self.finish('--artifact-ref', 'out.md')
         self.assertEqual(self.task(task)['state'], 'done')
         self.assertFalse(result['cleanup']['complete'])
+        self.artifact.rename(self.f.vault / 'moved-result.md')
         self.assertTrue(self.f.call('input-cleanup', '3002-s002', '--task', task, '--preserved-ref', 'out.md')[1]['complete'])
 
     def test_rooter_auto_task_uses_registered_project_artifact(self):

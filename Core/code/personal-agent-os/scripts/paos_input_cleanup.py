@@ -128,19 +128,32 @@ def cleanup_task(home, task_id, preserved_ref="", *, source_roots=()):
         raise ValueError("任务尚未结束，不能收尾删除输入")
     results, deleted_notices = [], set()
     anchors = sorted(dict.fromkeys(task["source_refs"]), key=lambda value: not value.startswith("mail:"))
-    archived_notices = set()
+    covered_notices = set()
     active = []
     for anchor in anchors:
         kind, _, ref = anchor.partition(":")
         if kind == "mail" and read_mail_archive_home(Path(home["home_path"]), home["home_id"], ref):
             results.append({"source_ref": ref, "state": "archived_retained"})
-            archived_notices.add(notice_id_for(input_identity(home_kind=home["home_kind"], home_id=home["home_id"],
+            covered_notices.add(notice_id_for(input_identity(home_kind=home["home_kind"], home_id=home["home_id"],
                 project_id=home.get("project_id", ""), source_kind="mail", source_ref=ref)))
-        elif kind in {"mail", "notice"} and not (kind == "notice" and ref in archived_notices):
-            active.append(anchor)
+        elif kind in {"mail", "notice"} and not (kind == "notice" and ref in covered_notices):
+            if kind == 'notice' and ref in deleted_notices:
+                continue
+            existing = read_deleted(home['home_path'], kind, ref, home['home_id'])
+            if existing:
+                # Resume the already committed deletion, not a new preservation decision.
+                result = delete_input(home, message_id=ref if kind == 'mail' else '',
+                    notice_id=ref if kind == 'notice' else '', preserved_ref=existing['preserved_ref'])
+                results.append(result)
+                covered_notices.add(existing['notice_id'])
+                if result['state'] == 'deleted':
+                    deleted_notices.add(result['notice_id'])
+            else:
+                active.append(anchor)
     anchors = active
     if not anchors:
-        return {"task_id": task_id, "items": results, "complete": True}
+        return {"task_id": task_id, "items": results,
+                "complete": all(r['state'] in {'deleted', 'archived_retained'} for r in results)}
     preserved_ref = str(preserved_ref or "").strip()
     automatic = not preserved_ref
     preserved_ref = preserved_ref or str(task.get("artifact_ref") or "").strip()
