@@ -161,6 +161,29 @@ class SameHomeCleanupTests(unittest.TestCase):
         self.assertEqual({p: p.read_bytes() for p in files}, before)
         self.assertIsNone(read_deleted(self.home, 'notice', ident))
 
+    def test_default_cleanup_checks_foreign_identity_before_handling_claim(self):
+        from paos_notice import create_notice, mark_notice_read, claim_notice, notice_archive_files
+        item = create_notice(home_path=self.home, home_kind='project_agent', home_id='3003-s002',
+            project_id='3003', source_kind='cat', source_ref='foreign-claimed', summary='Foreign work')
+        ident = item['notice_id']
+        mark_notice_read(home_path=self.home, notice_id=ident, reader_home_kind='project_agent',
+                        reader_home_id='3003-s002', reader_project_id='3003')
+        claim_notice(home_path=self.home, notice_id=ident, claimant_home_kind='project_agent',
+                     claimant_home_id='3003-s002', claimant_project_id='3003', task_ref='T1', action_ref='T1')
+        self.migrate()
+        path = self.home / 'TODO.md'
+        doc = read_todo(path)
+        doc['tasks'] = [dict(id='T1', title='Own task with same local ID', state='done',
+                            artifact_ref='result.md', source_refs=['notice:' + ident])]
+        path.write_text(render(doc), encoding='utf-8')
+        files = notice_archive_files(self.home, ident)
+        before = {p: p.read_bytes() for p in files}
+        result = self.f.call('input-cleanup', self.current, '--task', 'T1',
+                             '--preserved-ref', 'result.md', ok=False)[1]
+        self.assertFalse(result['complete'])
+        self.assertEqual({p: p.read_bytes() for p in files}, before)
+        self.assertFalse((self.home / 'notices/.handled' / (ident + '.json')).exists())
+
     def test_original_notice_and_mail_task_dependencies_both_protect(self):
         self.consume()
         self.migrate()

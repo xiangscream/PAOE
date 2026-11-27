@@ -37,6 +37,23 @@ def _mail_source(home, message_id, installation_file=None):
     return meta, notice
 
 
+def _mail_archive(home, message_id, installation_file=None):
+    """Read the existing archive marker using the same registered Home aliases."""
+    from paos_attention_service import _source_home_aliases
+    from paos_mail import _archive_path, _validate_message_id, read_mail_archive_home
+    message_id = _validate_message_id(message_id)
+    path = _archive_path(Path(home['home_path']), message_id)
+    if not path.is_file():
+        return None
+    record = json.loads(path.read_text(encoding='utf-8'))
+    recipient = record.get('recipient_agent_id') if isinstance(record, dict) else None
+    aliases = (_source_home_aliases(home, installation_file)
+               if recipient and recipient != home['home_id'] else ())
+    # The existing reader still validates the full archive schema and identity.
+    return read_mail_archive_home(Path(home['home_path']), home['home_id'], message_id,
+                                  recipient_aliases=set(aliases))
+
+
 def deletion_path(home, kind, ref):
     if kind not in {"mail", "notice"} or not ref or Path(ref).name != ref or any(c in ref for c in '/\\:'):
         raise ValueError("删除输入需要准确的 Mail 或 Notice ID")
@@ -61,7 +78,7 @@ def read_deleted(home, kind, ref, home_id=None):
 
 def delete_input(home, *, message_id="", notice_id="", disposition="consumed_deleted",
                  preserved_ref="", decision_ref="", decided_by="", installation_file=None):
-    from paos_mail import _atomic_create, parse_mail_frontmatter, read_mail_archive_home
+    from paos_mail import _atomic_create, parse_mail_frontmatter
     from paos_notice import input_identity, notice_id_for, read_notice, notice_archive_files
     from paos_todo import read_todo
 
@@ -78,7 +95,7 @@ def delete_input(home, *, message_id="", notice_id="", disposition="consumed_del
     marker = deletion_path(base, kind, ref)
     existing = read_deleted(base, kind, ref, home["home_id"])
     replayed = existing is not None
-    if kind == "mail" and read_mail_archive_home(base, home["home_id"], ref):
+    if kind == "mail" and _mail_archive(home, ref, installation_file):
         return {"source_ref": ref, "state": "archived_retained"}
     if existing:
         notice_id = existing["notice_id"]
@@ -150,9 +167,9 @@ def delete_input(home, *, message_id="", notice_id="", disposition="consumed_del
 
 
 def cleanup_task(home, task_id, preserved_ref="", *, source_roots=(), installation_file=None):
-    from paos_attention_service import AttentionServiceProblem
+    from paos_attention_service import AttentionServiceProblem, _source_home_aliases
     from paos_todo import read_todo, TodoProblem
-    from paos_mail import MailProblem, read_mail_archive_home
+    from paos_mail import MailProblem
     from paos_notice import NoticeProblem, input_identity, notice_id_for, read_notice, handle_notice, notice_archive_files
     task = next((t for t in read_todo(Path(home["home_path"]) / "TODO.md")["tasks"] if t["id"] == task_id), None)
     if task is None:
@@ -165,10 +182,12 @@ def cleanup_task(home, task_id, preserved_ref="", *, source_roots=(), installati
     active = []
     for anchor in anchors:
         kind, _, ref = anchor.partition(":")
-        if kind == "mail" and read_mail_archive_home(Path(home["home_path"]), home["home_id"], ref):
+        archive = _mail_archive(home, ref, installation_file) if kind == 'mail' else None
+        if archive:
             results.append({"source_ref": ref, "state": "archived_retained"})
-            covered_notices.add(notice_id_for(input_identity(home_kind=home["home_kind"], home_id=home["home_id"],
-                project_id=home.get("project_id", ""), source_kind="mail", source_ref=ref)))
+            for ident in {home['home_id'], archive['recipient_agent_id'], *_source_home_aliases(home, installation_file)}:
+                covered_notices.add(notice_id_for(input_identity(home_kind=home["home_kind"], home_id=ident,
+                    project_id=home.get("project_id", ""), source_kind="mail", source_ref=ref)))
         elif kind in {"mail", "notice"} and not (kind == "notice" and ref in covered_notices):
             if kind == 'notice' and ref in deleted_notices:
                 continue
@@ -226,7 +245,7 @@ def cleanup_task(home, task_id, preserved_ref="", *, source_roots=(), installati
         if kind == "notice" and ref in deleted_notices:
             continue
         try:
-            if kind == "mail" and read_mail_archive_home(Path(home["home_path"]), home["home_id"], ref):
+            if kind == "mail" and _mail_archive(home, ref, installation_file):
                 results.append({"source_ref": ref, "state": "archived_retained"})
                 continue
             # An accepted Task can finish its own claimed/read input. It cannot
@@ -235,6 +254,7 @@ def cleanup_task(home, task_id, preserved_ref="", *, source_roots=(), installati
                          if kind == "mail" else ref)
             if not read_deleted(home["home_path"], kind, ref):
                 notice = read_notice(Path(home["home_path"]), notice_id)
+                _check_notice_home(home, notice, installation_file)
                 if notice["read"] and notice.get("claim_task_ref") == task_id and notice["state"] != "handled":
                     handle_notice(home_path=Path(home["home_path"]), notice_id=notice_id,
                                   resolution=f"Task {task_id} 已完成，结果见本人 TODO", action_ref=task_id)
