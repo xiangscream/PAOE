@@ -112,15 +112,13 @@ def delete_input(home, *, message_id="", notice_id="", disposition="consumed_del
 
     anchors = {f"{kind}:{ref}", "notice:" + notice_id}
     from paos_context import local_source
-    from paos_workstation import posix_windows_drive_locator
+    source_root = Path(home.get("project_root") or base)
     input_paths = {(base / "notices" / (notice_id + ".md")).resolve()}
     if kind == "mail":
         input_paths.add((base / "mailbox" / (ref + ".md")).resolve())
 
     def references_input(source):
-        return (source in anchors or
-                (Path(posix_windows_drive_locator(source)).is_absolute()
-                 and local_source(base, source) in input_paths))
+        return source in anchors or local_source(source_root, source) in input_paths
 
     todo = read_todo(base / "TODO.md")
     dependents = [t["id"] for t in todo["tasks"] if t["state"] not in {"done", "cancelled"}

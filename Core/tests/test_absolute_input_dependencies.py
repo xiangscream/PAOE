@@ -105,14 +105,14 @@ class AbsoluteInputDependencyTests(unittest.TestCase):
         self.assertEqual(self.f.f.call('input-cleanup', self.f.current, '--notice-id', ident,
                                      '--preserved-ref', 'result.md')[1]['state'], 'deleted')
 
-    def completion(self, command):
+    def completion(self, command, relative=False):
         # Claim belongs to the completing Task; another active Task needs the same original file.
         self.make_fixture(handled=False)
         task = self.f.f.call('mail', 'claim', '3003', self.f.current, self.f.mid)[1]['task_id']
         path = self.home / 'TODO.md'
         doc = read_todo(path)
-        doc['tasks'].append(dict(id='KEEP', title='Needs original file', state='doing',
-                                 source_refs=[str(self.notice)]))
+        source = self.notice.relative_to(self.f.f.vault).as_posix() if relative else str(self.notice)
+        doc['tasks'].append(dict(id='KEEP', title='Needs original file', state='doing', source_refs=[source]))
         path.write_text(render(doc), encoding='utf-8')
         before = {p: p.read_bytes() for p in (self.mail, self.notice)}
         if command == 'mail':
@@ -136,6 +136,53 @@ class AbsoluteInputDependencyTests(unittest.TestCase):
 
     def test_default_task_completion_keeps_other_active_file_dependency(self):
         self.completion('task')
+
+    def test_project_relative_mail_and_notice_match_normal_context(self):
+        from paos_context import local_source
+        for kind in ('mail', 'notice'):
+            self.make_fixture()
+            path = getattr(self, kind)
+            source = path.relative_to(self.f.f.vault).as_posix()
+            self.assertEqual(local_source(self.f.f.vault, source), path.resolve())
+            self.tasks(source, 'waiting')
+            before = self.snapshot()
+            self.assertEqual(self.f.cleanup(ok=False)[1]['state'], 'active_dependency')
+            self.assertEqual(self.snapshot(), before)
+            self.assertIsNone(read_deleted(self.home, 'mail', self.f.mid))
+
+    def test_relative_paths_use_project_base_and_nonfile_sources_do_not_match(self):
+        source = self.mail.relative_to(self.home).as_posix()  # Not a project-relative input.
+        self.tasks(source, extra=[dict(id='OTHER', title='Other sources', state='waiting', source_refs=[
+            'Workstations/3003-s002/mailbox/' + self.mail.name,
+            'https://example.com/' + self.mail.name,
+            'file://' + self.mail.as_posix(), 'work-group:original'])])
+        self.assertEqual(self.f.cleanup()[1]['state'], 'deleted')
+
+    def test_rooter_relative_notice_uses_own_home_base(self):
+        from paos_input_cleanup import delete_input
+        home = self.f.f.rooter
+        item = create_notice(home_path=home, home_kind='rooter', home_id='rooter-001',
+                             project_id='', source_kind='cat', source_ref='rooter-original', summary='Original')
+        ident = item['notice_id']
+        mark_notice_read(home_path=home, notice_id=ident, reader_home_kind='rooter',
+                         reader_home_id='rooter-001', reader_project_id='')
+        handle_notice(home_path=home, notice_id=ident, resolution='Done', action_ref='result.md')
+        path = home / 'TODO.md'
+        doc = read_todo(path)
+        doc['tasks'] = [dict(id='KEEP', title='Rooter original', state='doing',
+                             source_refs=['notices/' + ident + '.md'])]
+        path.write_text(render(doc), encoding='utf-8')
+        before = {p: p.read_bytes() for p in home.rglob('*') if p.is_file()}
+        ref = dict(home_kind='rooter', home_id='rooter-001', project_id='', project_root='', home_path=str(home))
+        result = delete_input(ref, notice_id=ident, preserved_ref='result.md')
+        self.assertEqual(result['state'], 'active_dependency')
+        self.assertEqual({p: p.read_bytes() for p in home.rglob('*') if p.is_file()}, before)
+
+    def test_default_mail_completion_keeps_project_relative_dependency(self):
+        self.completion('mail', relative=True)
+
+    def test_default_task_completion_keeps_project_relative_dependency(self):
+        self.completion('task', relative=True)
 
 
 if __name__ == '__main__':
