@@ -886,6 +886,15 @@ def read_source_status(
             source_ref=source_ref,
         )
         path = Path(ref["home_path"])
+        from paos_input_cleanup import read_deleted
+        deletion = ((read_deleted(path, "mail", source_ref) if source_kind == "mail" else None)
+                    or read_deleted(path, "notice", notice_id_for(identity)))
+        if deletion:
+            return {"schema": ATTENTION_SERVICE_SCHEMA, "home": ref,
+                    "state": "deleted", "source_kind": source_kind, "source_ref": source_ref,
+                    "deletion": {key: deletion.get(key) for key in (
+                        "disposition", "preserved_ref", "deleted_at", "notice_missing",
+                        "was_read", "was_handled", "decided_by", "decision_ref")}}
         try:
             item = read_notice(path, notice_id_for(identity))
         except NoticeProblem as problem:

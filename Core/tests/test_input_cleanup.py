@@ -19,7 +19,7 @@ class InputCleanupTests(unittest.TestCase):
         self.f.setUp()
         self.addCleanup(self.f.doCleanups)
         self.home = self.f.vault / "Workstations/3002-s002"
-        self.ref = {"home_kind": "project_agent", "home_id": "3002-s002", "project_id": "3002",
+        self.ref = {"schema": "paos-home-ref/v1", "home_kind": "project_agent", "home_id": "3002-s002", "project_id": "3002",
                     "home_path": str(self.home), "project_root": str(self.f.vault)}
 
     def send(self, mid="cleanup-test-001", done=True):
@@ -186,6 +186,26 @@ class InputCleanupTests(unittest.TestCase):
         self.assertEqual(self.delete(disposition="withdrawn", decided_by="Human",
                                      decision_ref="Decisions/end.md")["state"], "active_dependency")
         self.assertIsNone(read_deleted(self.home, "mail", "cleanup-test-001"))
+
+    def test_source_status_reads_deleted_fact_without_recreating_a_notice(self):
+        from paos_attention_service import read_source_status
+        self.send()
+        self.delete()
+        result = read_source_status(home_ref=self.ref, source_kind="mail", source_ref="cleanup-test-001")
+        self.assertEqual(result["state"], "deleted")
+        self.assertTrue(result["deletion"]["was_read"])
+        self.assertNotIn("notice", result)
+        self.assertEqual(result["deletion"]["preserved_ref"], "Works/durable.md")
+
+    def test_source_status_preserves_unknown_consumption_for_missing_notice(self):
+        from paos_attention_service import read_source_status
+        notice_id = self.send(done=False)
+        (self.home / "notices" / (notice_id + ".md")).unlink()
+        self.delete(disposition="withdrawn", decided_by="Human", decision_ref="Decisions/end.md")
+        result = read_source_status(home_ref=self.ref, source_kind="mail", source_ref="cleanup-test-001")
+        self.assertTrue(result["deletion"]["notice_missing"])
+        self.assertIsNone(result["deletion"]["was_read"])
+        self.assertEqual(notice_archive_files(self.home, notice_id), [])
 
 
 if __name__ == "__main__":
