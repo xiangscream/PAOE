@@ -204,6 +204,8 @@ Notice 的 Markdown 文件只是输入登记；当前 `state`、`read`、`archiv
 
 ### 已处理输入的库外归档
 
+**保留策略已更新**：普通已完成交接按[运行规则](../Project-Template/AGENTS.md#4-阶段交付与收尾重读)归位成果和必要原话，再沿[输入收尾](input-cleanup.md)删除Mail／Notice及关联记录。下列归档命令只用于确需追溯的独有原件，不代替普通回执的删除。
+
 System 0.2.2 提供 Project 工位与安装级 Rooter 的物理归档操作，历史 Mail 的处理状态与关联 Notice 一致。Owner 先核官方读面中的已读和 handled 状态，选定没有当前依赖的输入，再执行：
 
 ```text
